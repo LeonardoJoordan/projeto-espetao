@@ -101,20 +101,31 @@ def adicionar_categoria():
 def adicionar_produto():
     """
     Rota inteligente que decide se deve criar um novo produto ou
-    adicionar estoque a um produto existente, com base no ID.
+    adicionar estoque a um produto existente.
     """
     try:
         # Pega o ID do produto do campo escondido do formulário
         id_produto = request.form.get('id_produto')
-
+        
         # --- LÓGICA DE DECISÃO ---
         if id_produto:
-            # Se existe um ID, significa que estamos ADICIONANDO ESTOQUE
-            quantidade_adicionada = int(request.form.get('quantidade'))
-            preco_compra_unitario = float(request.form.get('preco_compra'))
+            # Se existe um ID, significa que estamos ADICIONANDO ESTOQUE OU ATUALIZANDO DADOS
+            id_produto = int(id_produto)
             
+            # Pega a quantidade e o preço de compra para a adição de estoque
+            quantidade_adicionada = request.form.get('quantidade') 
+            preco_compra_unitario = request.form.get('preco_compra')
+            
+            # CORREÇÃO: Pega o preço de venda ANTES de usá-lo na condição
+            novo_preco_venda_str = request.form.get('preco_venda') 
+
+            # Se a quantidade e o preço de compra foram fornecidos, adiciona estoque
             if quantidade_adicionada and preco_compra_unitario:
-                gerenciador_db.adicionar_estoque(int(id_produto), quantidade_adicionada, preco_compra_unitario)
+                gerenciador_db.adicionar_estoque(id_produto, int(quantidade_adicionada), float(preco_compra_unitario))
+            
+            # Se um novo preço de venda foi fornecido, atualiza APENAS o preço de venda
+            if novo_preco_venda_str: # AQUI A VARIÁVEL ESTÁ DEFINIDA
+                gerenciador_db.atualizar_preco_venda_produto(id_produto, float(novo_preco_venda_str))
         
         else:
             # Se NÃO existe um ID, estamos CRIANDO UM NOVO PRODUTO
@@ -158,41 +169,5 @@ if __name__ == '__main__':
     # O 'debug=True' faz o servidor reiniciar automaticamente quando salvamos o arquivo.
     app.run(debug=True, host='0.0.0.0', port=5001)
 
-
-@app.route('/adicionar_produto', methods=['POST'])
-def adicionar_produto():
-    """
-    Rota inteligente que decide se deve criar um novo produto ou
-    adicionar estoque a um produto existente.
-    """
-    try:
-        # Pega o ID do produto do campo escondido do formulário
-        id_produto = request.form.get('id_produto')
-
-        # --- LÓGICA DE DECISÃO ---
-        if id_produto:
-            # Se existe um ID, significa que estamos ADICIONANDO ESTOQUE
-            quantidade = int(request.form.get('quantidade'))
-            preco_compra = float(request.form.get('preco_compra'))
-            
-            if quantidade and preco_compra:
-                gerenciador_db.adicionar_estoque(int(id_produto), quantidade, preco_compra)
-        
-        else:
-            # Se NÃO existe um ID, estamos CRIANDO UM NOVO PRODUTO
-            nome = request.form.get('nome_produto')
-            categoria_id = int(request.form.get('categoria_produto'))
-            preco_venda = float(request.form.get('preco_venda'))
-            preco_compra = float(request.form.get('preco_compra'))
-            quantidade = int(request.form.get('quantidade'))
-
-            if nome and preco_venda and preco_compra and quantidade:
-                gerenciador_db.adicionar_novo_produto(nome, preco_venda, quantidade, preco_compra, categoria_id)
-
-    except (ValueError, TypeError) as e:
-        print(f"Erro ao converter dados do formulário: {e}")
-
-    # Redireciona de volta para a página de produtos para vermos o resultado
-    return redirect(url_for('tela_produtos'))
 
 

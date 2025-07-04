@@ -71,10 +71,28 @@ def criar_novo_pedido(nome_cliente, itens_pedido, metodo_pagamento):
     global _proximo_id
 
     valor_total = 0
-    # Calcula o valor total do pedido
-    for item in itens_pedido:
-        preco_unitario = CARDAPIO.get(item['item'], 0) # Pega o preço do cardápio, ou 0 se não encontrar
-        valor_total += preco_unitario * item['quantidade']
+    # Calcula o valor total do pedido buscando preços do banco de dados
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+        
+        for item in itens_pedido:
+            # Busca o preço do produto no banco de dados
+            cursor.execute("SELECT preco_venda FROM produtos WHERE nome = ?", (item['item'],))
+            resultado = cursor.fetchone()
+            
+            if resultado:
+                preco_unitario = resultado[0]
+            else:
+                preco_unitario = 0  # Se não encontrar o produto, preço = 0
+            
+            valor_total += preco_unitario * item['quantidade']
+        
+        conn.close()
+        
+    except sqlite3.Error as e:
+        print(f"Erro ao buscar preços do banco: {e}")
+        valor_total = 0
 
     novo_pedido = {
         'id': _proximo_id,
@@ -289,50 +307,27 @@ def adicionar_estoque(id_produto, quantidade_adicionada, custo_da_nova_compra):
         if conn:
             conn.close()
 
-def adicionar_estoque(id_produto, quantidade_adicionada, custo_da_nova_compra):
+def atualizar_preco_venda_produto(id_produto, novo_preco_venda):
     """
-    Adiciona novo estoque a um produto existente, recalcula o custo total
-    e registra a entrada no histórico.
+    Atualiza o preço de venda de um produto existente no banco de dados.
     """
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # PASSO A: Ler o estado atual do produto
-        cursor.execute("SELECT estoque_atual, custo_total_do_estoque FROM produtos WHERE id = ?", (id_produto,))
-        resultado = cursor.fetchone()
+        # Comando SQL para atualizar o preco_venda do produto com base no ID
+        cursor.execute('''
+            UPDATE produtos 
+            SET preco_venda = ?
+            WHERE id = ?
+        ''', (novo_preco_venda, id_produto))
 
-        if resultado:
-            estoque_atual, custo_total_atual = resultado
-
-            # PASSO B: Calcular os novos valores em Python
-            novo_estoque = estoque_atual + quantidade_adicionada
-            custo_desta_compra = quantidade_adicionada * custo_da_nova_compra
-            novo_custo_total = custo_total_atual + custo_desta_compra
-
-            # PASSO C: Atualizar o produto com os novos valores
-            cursor.execute('''
-                UPDATE produtos 
-                SET estoque_atual = ?, custo_total_do_estoque = ?
-                WHERE id = ?
-            ''', (novo_estoque, novo_custo_total, id_produto))
-
-            # PASSO D: Registrar esta compra no histórico (entradas_de_estoque)
-            data_atual = datetime.datetime.now().isoformat()
-            cursor.execute('''
-                INSERT INTO entradas_de_estoque (id_produto, quantidade_comprada, custo_unitario_compra, data_entrada)
-                VALUES (?, ?, ?, ?)
-            ''', (id_produto, quantidade_adicionada, custo_da_nova_compra, data_atual))
-
-            conn.commit()
-            print(f"Estoque do produto ID {id_produto} atualizado com sucesso.")
-            return True
-        else:
-            print(f"Erro: Produto com ID {id_produto} não encontrado.")
-            return False
+        conn.commit()
+        print(f"Preço de venda do produto ID {id_produto} atualizado para R$ {novo_preco_venda:.2f} com sucesso.")
+        return True
 
     except sqlite3.Error as e:
-        print(f"Ocorreu um erro ao adicionar estoque: {e}")
+        print(f"Ocorreu um erro ao atualizar o preço de venda do produto: {e}")
         return False
     finally:
         if conn:

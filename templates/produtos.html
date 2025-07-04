@@ -99,9 +99,12 @@
                     {% for categoria in categorias %}
                     <li class="flex justify-between items-center bg-white/10 p-2 rounded-lg">
                         <span>{{ categoria.nome }}</span>
-                        <button class="text-red-500 hover:text-red-400">
-                            <i class="fas fa-trash"></i>
-                        </button>
+                        
+                        <a href="{{ url_for('rota_excluir_categoria', id_categoria=categoria.id) }}" title="Excluir Categoria">
+                            <button class="text-red-500 hover:text-red-400">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </a>
                     </li>
                     {% endfor %}
                 </ul>
@@ -141,8 +144,10 @@
                                         <td class="p-2 text-lg">
                                             <div class="flex items-center space-x-3">
                                                 <button title="Editar / Adicionar Estoque" class="text-yellow-400 hover:text-yellow-300 transition-colors"><i class="fas fa-pencil-alt"></i></button>
-                                                <button title="Ver Histórico de Compras" class="text-blue-400 hover:text-blue-300 transition-colors"><i class="fas fa-history"></i></button>
-                                                <button title="Excluir Produto" class="text-red-500 hover:text-red-400 transition-colors"><i class="fas fa-trash"></i></button>
+                                                <button title="Ver Histórico de Compras" class="text-blue-400 hover:text-blue-300 transition-colors"><i class="fas fa-history"></i></button>                                             
+                                                <a href="{{ url_for('rota_excluir_produto', id_produto=produto.id) }}" title="Excluir Produto" class="text-red-500 hover:text-red-400">
+                                                    <i class="fas fa-trash"></i>
+                                                </a>
                                             </div>
                                         </td>
                                     </tr>

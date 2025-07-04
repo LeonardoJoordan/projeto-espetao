@@ -191,3 +191,51 @@ def obter_pedidos_por_status(lista_de_status):
             pedidos_encontrados.append(pedido)
     
     return pedidos_encontrados
+
+def excluir_categoria(id_categoria):
+    """
+    Exclui uma categoria da tabela 'categorias' com base no seu ID.
+    """
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # Executa o comando SQL para deletar a categoria
+        # A cláusula WHERE é crucial para garantir que estamos apagando a linha certa.
+        cursor.execute("DELETE FROM categorias WHERE id = ?", (id_categoria,))
+
+        conn.commit()
+        print(f"Categoria com ID {id_categoria} excluída com sucesso.")
+        return True
+
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao excluir a categoria: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def excluir_produto(id_produto):
+    """
+    Exclui um produto e todas as suas entradas de estoque associadas.
+    """
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # Primeiro, exclui o histórico de entradas para este produto
+        cursor.execute("DELETE FROM entradas_de_estoque WHERE id_produto = ?", (id_produto,))
+        
+        # Depois, exclui o produto principal
+        cursor.execute("DELETE FROM produtos WHERE id = ?", (id_produto,))
+
+        conn.commit()
+        print(f"Produto com ID {id_produto} e seu histórico foram excluídos com sucesso.")
+        return True
+
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao excluir o produto: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()

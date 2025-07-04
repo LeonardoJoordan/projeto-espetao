@@ -119,6 +119,22 @@ def adicionar_produto():
     # Redireciona de volta para a página de produtos, que agora mostrará o novo item
     return redirect(url_for('tela_produtos'))
 
+@app.route('/excluir_categoria/<int:id_categoria>')
+def rota_excluir_categoria(id_categoria):
+    """
+    Rota para excluir uma categoria. Recebe o ID da categoria pela URL.
+    """
+    gerenciador_db.excluir_categoria(id_categoria)
+    return redirect(url_for('tela_produtos'))
+
+@app.route('/excluir_produto/<int:id_produto>')
+def rota_excluir_produto(id_produto):
+    """
+    Rota para excluir um produto. Recebe o ID do produto pela URL.
+    """
+    gerenciador_db.excluir_produto(id_produto)
+    return redirect(url_for('tela_produtos'))
+
 @app.route('/')
 def index():
     # Redireciona a rota principal para a tela do cliente por padrão
@@ -127,3 +143,6 @@ def index():
 if __name__ == '__main__':
     # O 'debug=True' faz o servidor reiniciar automaticamente quando salvamos o arquivo.
     app.run(debug=True, host='0.0.0.0', port=5001)
+
+
+

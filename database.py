@@ -1,0 +1,78 @@
+import sqlite3
+
+NOME_BANCO_DADOS = 'espetao.db'
+
+def inicializar_banco():
+    """
+    Cria e inicializa o banco de dados e suas tabelas, se não existirem.
+    """
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+        print(f"Banco de dados '{NOME_BANCO_DADOS}' conectado com sucesso.")
+
+        # Tabela de Categorias
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS categorias (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT NOT NULL UNIQUE
+            )
+        ''')
+        print("Tabela 'categorias' verificada/criada.")
+
+        # Tabela de Produtos
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS produtos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT NOT NULL UNIQUE,
+                preco_venda REAL NOT NULL,
+                estoque_atual INTEGER NOT NULL,
+                custo_total_do_estoque REAL NOT NULL,
+                categoria_id INTEGER,
+                FOREIGN KEY (categoria_id) REFERENCES categorias (id)
+            )
+        ''')
+        print("Tabela 'produtos' verificada/criada.")
+
+        # Tabela de Entradas de Estoque (Histórico de Compras)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS entradas_de_estoque (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_produto INTEGER NOT NULL,
+                quantidade_comprada INTEGER NOT NULL,
+                custo_unitario_compra REAL NOT NULL,
+                data_entrada TEXT NOT NULL,
+                FOREIGN KEY (id_produto) REFERENCES produtos (id)
+            )
+        ''')
+        print("Tabela 'entradas_de_estoque' verificada/criada.")
+
+        # Tabela de Pedidos
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS pedidos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome_cliente TEXT,
+                status TEXT NOT NULL,
+                metodo_pagamento TEXT,
+                valor_total REAL,
+                timestamp_criacao TEXT NOT NULL,
+                itens_json TEXT 
+            )
+        ''')
+        print("Tabela 'pedidos' verificada/criada.")
+
+
+        conn.commit()
+        print("Alterações salvas no banco de dados.")
+
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao trabalhar com o banco de dados: {e}")
+    finally:
+        if conn:
+            conn.close()
+            print("Conexão com o banco de dados fechada.")
+
+if __name__ == '__main__':
+    print("Iniciando configuração do banco de dados...")
+    inicializar_banco()
+    print("Configuração do banco de dados concluída.")

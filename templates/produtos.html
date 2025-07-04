@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestão de Produtos - Espetão do Léo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #6B73FF 0%, #000DFF 100%);
+            min-height: 100vh;
+        }
+        .glass-container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+        }
+        input, select {
+            background: rgba(255, 255, 255, 0.2) !important;
+            border: 1px solid rgba(255, 255, 255, 0.3) !important;
+            color: white !important;
+        }
+        input::placeholder {
+            color: rgba(255, 255, 255, 0.6) !important;
+        }
+        option {
+            background-color: #764ba2;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8 text-white">
+
+    <header class="mb-12 glass-container rounded-2xl p-6 max-w-6xl mx-auto">
+        <div class="flex items-center justify-center">
+            <i class="fas fa-boxes-stacked text-white text-3xl mr-4"></i>
+            <h1 class="text-4xl font-bold text-white text-center">Gestão de Produtos</h1>
+        </div>
+        <p class="text-center text-white/80 mt-2">Adicione categorias e produtos ao seu cardápio.</p>
+    </header>
+
+    <main class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
+
+        <div class="lg:col-span-1 space-y-8">
+
+            <div class="glass-container rounded-2xl p-6">
+                <h2 class="text-2xl font-bold mb-4 flex items-center"><i class="fas fa-drumstick-bite mr-3"></i>Adicionar/Atualizar Produto</h2>
+                <form action="/adicionar_produto" method="POST" class="space-y-4">
+                    <div>
+                        <label for="nome_produto" class="block mb-2 font-semibold">Nome do Produto</label>
+                        <input type="text" id="nome_produto" name="nome_produto" placeholder="Ex: Espeto de Carne" class="w-full p-2 rounded-lg">
+                    </div>
+                    <div>
+                        <label for="categoria_produto" class="block mb-2 font-semibold">Categoria</label>
+                        <select id="categoria_produto" name="categoria_produto" class="w-full p-2 rounded-lg">
+                            {% for categoria in categorias %}
+                            <option value="{{ categoria.id }}">{{ categoria.nome }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label for="preco_venda" class="block mb-2 font-semibold">Preço Venda (R$)</label>
+                            <input type="number" step="0.01" id="preco_venda" name="preco_venda" placeholder="10.00" class="w-full p-2 rounded-lg">
+                        </div>
+                        <div>
+                            <label for="preco_compra" class="block mb-2 font-semibold">Preço Compra (R$)</label>
+                            <input type="number" step="0.01" id="preco_compra" name="preco_compra" placeholder="4.50" class="w-full p-2 rounded-lg">
+                        </div>
+                    </div>
+                    <div>
+                        <label for="quantidade" class="block mb-2 font-semibold">Quantidade</label>
+                        <input type="number" id="quantidade" name="quantidade" placeholder="100" class="w-full p-2 rounded-lg">
+                    </div>
+                    <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 font-bold py-3 rounded-lg transition-colors">Salvar Produto</button>
+                </form>
+            </div>
+
+            <div class="glass-container rounded-2xl p-6">
+                <h2 class="text-2xl font-bold mb-4 flex items-center"><i class="fas fa-tags mr-3"></i>Gerenciar Categorias</h2>
+                
+                <form action="/adicionar_categoria" method="POST" class="space-y-4 mb-6">
+                    <div>
+                        <label for="nome_categoria" class="block mb-2 font-semibold">Nova Categoria</label>
+                        <input type="text" id="nome_categoria" name="nome_categoria" placeholder="Ex: Espetinhos" class="w-full p-2 rounded-lg">
+                    </div>
+                    <button type="submit" class="w-full bg-green-500 hover:bg-green-600 font-bold py-3 rounded-lg transition-colors">Salvar Categoria</button>
+                </form>
+            
+                <hr class="border-white/20 my-4">
+            
+                <h3 class="text-lg font-semibold mb-3">Categorias Atuais:</h3>
+                <ul class="space-y-2 max-h-40 overflow-y-auto pr-2">
+                    {% for categoria in categorias %}
+                    <li class="flex justify-between items-center bg-white/10 p-2 rounded-lg">
+                        <span>{{ categoria.nome }}</span>
+                        <button class="text-red-500 hover:text-red-400">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            
+        </div>
+
+        <div class="lg:col-span-2 glass-container rounded-2xl p-6 space-y-6">
+            <h2 class="text-2xl font-bold flex items-center"><i class="fas fa-list-ul mr-3"></i>Produtos Cadastrados</h2>
+            
+            {% for categoria, lista_de_produtos in produtos_agrupados.items() %}
+            
+                {% if lista_de_produtos %}
+                    <div class="categoria-bloco">
+                        <h3 class="text-xl font-semibold mb-3 border-b-2 border-white/20 pb-2">{{ categoria }}</h3>
+        
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead>
+                                    <tr class="border-b-2 border-white/20 bg-black/20 text-white/70 uppercase text-xs tracking-wider">
+                                        <th class="p-3 font-semibold">Produto</th>
+                                        <th class="p-3 font-semibold">Preço Venda</th>
+                                        <th class="p-3 font-semibold">Custo Médio</th>
+                                        <th class="p-3 font-semibold text-green-300/80">Lucro</th>
+                                        <th class="p-3 font-semibold">Estoque</th>
+                                        <th class="p-3 font-semibold">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for produto in lista_de_produtos %}
+                                    <tr class="border-b border-white/10 hover:bg-white/5 transition-colors">
+                                        <td class="p-2 font-semibold">{{ produto.nome }}</td>
+                                        <td class="p-2">R$ {{ "%.2f"|format(produto.preco_venda) | replace('.', ',') }}</td>
+                                        <td class="p-2">R$ {{ "%.2f"|format(produto.custo_medio) | replace('.', ',') }}</td>
+                                        <td class="p-2 text-green-300 font-bold">R$ {{ "%.2f"|format(produto.lucro) | replace('.', ',') }}</td>
+                                        <td class="p-2">{{ produto.estoque }}</td>
+                                        <td class="p-2 text-lg">
+                                            <div class="flex items-center space-x-3">
+                                                <button title="Editar / Adicionar Estoque" class="text-yellow-400 hover:text-yellow-300 transition-colors"><i class="fas fa-pencil-alt"></i></button>
+                                                <button title="Ver Histórico de Compras" class="text-blue-400 hover:text-blue-300 transition-colors"><i class="fas fa-history"></i></button>
+                                                <button title="Excluir Produto" class="text-red-500 hover:text-red-400 transition-colors"><i class="fas fa-trash"></i></button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                {% endif %}
+            {% endfor %}
+        </div>
+    </main>
+
+</body>
+</html>

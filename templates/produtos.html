@@ -50,7 +50,8 @@
 
             <div class="glass-container rounded-2xl p-6">
                 <h2 class="text-2xl font-bold mb-4 flex items-center"><i class="fas fa-drumstick-bite mr-3"></i>Adicionar/Atualizar Produto</h2>
-                <form action="/adicionar_produto" method="POST" class="space-y-4">
+                <form id="form-produto" action="/adicionar_produto" method="POST" class="space-y-4">
+                    <input type="hidden" id="id_produto" name="id_produto">
                     <div>
                         <label for="nome_produto" class="block mb-2 font-semibold">Nome do Produto</label>
                         <input type="text" id="nome_produto" name="nome_produto" placeholder="Ex: Espeto de Carne" class="w-full p-2 rounded-lg">
@@ -135,7 +136,11 @@
                                 </thead>
                                 <tbody>
                                     {% for produto in lista_de_produtos %}
-                                    <tr class="border-b border-white/10 hover:bg-white/5 transition-colors">
+                                    <tr class="border-b border-white/10 hover:bg-white/5 transition-colors"
+                                        data-id="{{ produto.id }}"
+                                        data-nome="{{ produto.nome }}"
+                                        data-categoria_id="{{ produto.categoria_id }}"
+                                        data-preco_venda="{{ produto.preco_venda }}">
                                         <td class="p-2 font-semibold">{{ produto.nome }}</td>
                                         <td class="p-2">R$ {{ "%.2f"|format(produto.preco_venda) | replace('.', ',') }}</td>
                                         <td class="p-2">R$ {{ "%.2f"|format(produto.custo_medio) | replace('.', ',') }}</td>
@@ -143,7 +148,9 @@
                                         <td class="p-2">{{ produto.estoque }}</td>
                                         <td class="p-2 text-lg">
                                             <div class="flex items-center space-x-3">
-                                                <button title="Editar / Adicionar Estoque" class="text-yellow-400 hover:text-yellow-300 transition-colors"><i class="fas fa-pencil-alt"></i></button>
+                                                <a href="#" title="Editar / Adicionar Estoque" class="btn-editar text-yellow-400 hover:text-yellow-300 transition-colors">
+                                                    <i class="fas fa-pencil-alt"></i>
+                                                </a>
                                                 <button title="Ver Histórico de Compras" class="text-blue-400 hover:text-blue-300 transition-colors"><i class="fas fa-history"></i></button>                                             
                                                 <a href="{{ url_for('rota_excluir_produto', id_produto=produto.id) }}" title="Excluir Produto" class="text-red-500 hover:text-red-400">
                                                     <i class="fas fa-trash"></i>
@@ -160,6 +167,28 @@
             {% endfor %}
         </div>
     </main>
-
+    <script>
+        document.addEventListener('click', function(event) {
+            const editButton = event.target.closest('.btn-editar');
+            if (editButton) {
+                event.preventDefault(); // <-- NOVA LINHA: Impede o link de pular para o topo.
+                const linhaProduto = editButton.closest('tr');
+                const id = linhaProduto.dataset.id;
+                const nome = linhaProduto.dataset.nome;
+                const categoriaId = linhaProduto.dataset.categoria_id;
+                const precoVenda = linhaProduto.dataset.preco_venda;
+    
+                document.getElementById('id_produto').value = id;
+                document.getElementById('nome_produto').value = nome;
+                document.getElementById('categoria_produto').value = categoriaId;
+                document.getElementById('preco_venda').value = precoVenda;
+    
+                document.getElementById('preco_compra').value = '';
+                document.getElementById('quantidade').value = '';
+    
+                document.getElementById('nome_produto').focus();
+            }
+        });
+    </script>
 </body>
 </html>

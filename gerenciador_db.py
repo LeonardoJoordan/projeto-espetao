@@ -239,3 +239,101 @@ def excluir_produto(id_produto):
     finally:
         if conn:
             conn.close()
+
+def adicionar_estoque(id_produto, quantidade_adicionada, custo_da_nova_compra):
+    """
+    Adiciona novo estoque a um produto existente, recalcula o custo total
+    e registra a entrada no histórico.
+    """
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # PASSO 1: Ler o estado atual do produto
+        cursor.execute("SELECT estoque_atual, custo_total_do_estoque FROM produtos WHERE id = ?", (id_produto,))
+        resultado = cursor.fetchone()
+
+        if resultado:
+            estoque_atual, custo_total_atual = resultado
+
+            # PASSO 2: Calcular os novos valores em Python
+            novo_estoque = estoque_atual + quantidade_adicionada
+            custo_desta_compra = quantidade_adicionada * custo_da_nova_compra
+            novo_custo_total = custo_total_atual + custo_desta_compra
+
+            # PASSO 3: Atualizar o produto com os novos valores
+            cursor.execute('''
+                UPDATE produtos 
+                SET estoque_atual = ?, custo_total_do_estoque = ?
+                WHERE id = ?
+            ''', (novo_estoque, novo_custo_total, id_produto))
+
+            # PASSO 4: Registrar esta compra no histórico
+            data_atual = datetime.datetime.now().isoformat()
+            cursor.execute('''
+                INSERT INTO entradas_de_estoque (id_produto, quantidade_comprada, custo_unitario_compra, data_entrada)
+                VALUES (?, ?, ?, ?)
+            ''', (id_produto, quantidade_adicionada, custo_da_nova_compra, data_atual))
+
+            conn.commit()
+            print(f"Estoque do produto ID {id_produto} atualizado com sucesso.")
+            return True
+        else:
+            print(f"Erro: Produto com ID {id_produto} não encontrado.")
+            return False
+
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao adicionar estoque: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def adicionar_estoque(id_produto, quantidade_adicionada, custo_da_nova_compra):
+    """
+    Adiciona novo estoque a um produto existente, recalcula o custo total
+    e registra a entrada no histórico.
+    """
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # PASSO A: Ler o estado atual do produto
+        cursor.execute("SELECT estoque_atual, custo_total_do_estoque FROM produtos WHERE id = ?", (id_produto,))
+        resultado = cursor.fetchone()
+
+        if resultado:
+            estoque_atual, custo_total_atual = resultado
+
+            # PASSO B: Calcular os novos valores em Python
+            novo_estoque = estoque_atual + quantidade_adicionada
+            custo_desta_compra = quantidade_adicionada * custo_da_nova_compra
+            novo_custo_total = custo_total_atual + custo_desta_compra
+
+            # PASSO C: Atualizar o produto com os novos valores
+            cursor.execute('''
+                UPDATE produtos 
+                SET estoque_atual = ?, custo_total_do_estoque = ?
+                WHERE id = ?
+            ''', (novo_estoque, novo_custo_total, id_produto))
+
+            # PASSO D: Registrar esta compra no histórico (entradas_de_estoque)
+            data_atual = datetime.datetime.now().isoformat()
+            cursor.execute('''
+                INSERT INTO entradas_de_estoque (id_produto, quantidade_comprada, custo_unitario_compra, data_entrada)
+                VALUES (?, ?, ?, ?)
+            ''', (id_produto, quantidade_adicionada, custo_da_nova_compra, data_atual))
+
+            conn.commit()
+            print(f"Estoque do produto ID {id_produto} atualizado com sucesso.")
+            return True
+        else:
+            print(f"Erro: Produto com ID {id_produto} não encontrado.")
+            return False
+
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao adicionar estoque: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()

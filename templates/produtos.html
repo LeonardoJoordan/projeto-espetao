@@ -32,6 +32,28 @@
         option {
             background-color: #764ba2;
         }
+        .sortable-ghost {
+            opacity: 0.5;
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(0.95);
+        }
+        
+        .categoria-handle:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+        }
+        
+        .produto-item:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+        
+        .cursor-move {
+            cursor: grab;
+        }
+        
+        .cursor-move:active {
+            cursor: grabbing;
+        }
     </style>
 </head>
 <body class="p-4 md:p-8 text-white">
@@ -116,79 +138,144 @@
         <div class="lg:col-span-2 glass-container rounded-2xl p-6 space-y-6">
             <h2 class="text-2xl font-bold flex items-center"><i class="fas fa-list-ul mr-3"></i>Produtos Cadastrados</h2>
             
-            {% for categoria, lista_de_produtos in produtos_agrupados.items() %}
-            
-                {% if lista_de_produtos %}
-                    <div class="categoria-bloco">
-                        <h3 class="text-xl font-semibold mb-3 border-b-2 border-white/20 pb-2">{{ categoria }}</h3>
+            <!-- Container para arrastar categorias -->
+            <div id="categorias-container">
+                {% for categoria_nome, categoria_data in produtos_agrupados.items() %}
+                {% if categoria_data.produtos %}
+                    <!-- Bloco de categoria arrastável COM ID -->
+                    <div class="categoria-bloco mb-6 p-4 bg-white/5 rounded-lg" 
+                         data-categoria-id="{{ categoria_data.id }}"
+                         data-categoria-nome="{{ categoria_nome }}">
+                        
+                        <!-- Título da categoria (handle para arrastar) -->
+                        <div class="categoria-handle cursor-move">
+                            <h3 class="text-xl font-semibold mb-3 border-b-2 border-white/20 pb-2 flex items-center">
+                                <i class="fas fa-grip-vertical mr-2 text-white/50"></i>
+                                {{ categoria_nome }}
+                            </h3>
+                        </div>
         
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left">
-                                <thead>
-                                    <tr class="border-b-2 border-white/20 bg-black/20 text-white/70 uppercase text-xs tracking-wider">
-                                        <th class="p-3 font-semibold">Produto</th>
-                                        <th class="p-3 font-semibold">Preço Venda</th>
-                                        <th class="p-3 font-semibold">Custo Médio</th>
-                                        <th class="p-3 font-semibold text-green-300/80">Lucro</th>
-                                        <th class="p-3 font-semibold">Estoque</th>
-                                        <th class="p-3 font-semibold">Ações</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for produto in lista_de_produtos %}
-                                    <tr class="border-b border-white/10 hover:bg-white/5 transition-colors"
-                                        data-id="{{ produto.id }}"
-                                        data-nome="{{ produto.nome }}"
-                                        data-categoria_id="{{ produto.categoria_id }}"
-                                        data-preco_venda="{{ produto.preco_venda }}">
-                                        <td class="p-2 font-semibold">{{ produto.nome }}</td>
-                                        <td class="p-2">R$ {{ "%.2f"|format(produto.preco_venda) | replace('.', ',') }}</td>
-                                        <td class="p-2">R$ {{ "%.2f"|format(produto.custo_medio) | replace('.', ',') }}</td>
-                                        <td class="p-2 text-green-300 font-bold">R$ {{ "%.2f"|format(produto.lucro) | replace('.', ',') }}</td>
-                                        <td class="p-2">{{ produto.estoque }}</td>
-                                        <td class="p-2 text-lg">
-                                            <div class="flex items-center space-x-3">
-                                                <a href="#" title="Editar / Adicionar Estoque" class="btn-editar text-yellow-400 hover:text-yellow-300 transition-colors">
-                                                    <i class="fas fa-pencil-alt"></i>
-                                                </a>
-                                                <button title="Ver Histórico de Compras" class="text-blue-400 hover:text-blue-300 transition-colors"><i class="fas fa-history"></i></button>                                             
-                                                <a href="{{ url_for('rota_excluir_produto', id_produto=produto.id) }}" title="Excluir Produto" class="text-red-500 hover:text-red-400">
-                                                    <i class="fas fa-trash"></i>
-                                                </a>
+                        <!-- Container de produtos dentro da categoria -->
+                        <div class="produtos-container space-y-2">
+                            {% for produto in categoria_data.produtos %}
+                            <div class="produto-item p-3 bg-white/10 rounded-lg cursor-move" 
+                                 data-id="{{ produto.id }}"
+                                 data-nome="{{ produto.nome }}"
+                                 data-categoria_id="{{ produto.categoria_id }}"
+                                 data-preco_venda="{{ produto.preco_venda }}">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center space-x-3">
+                                        <i class="fas fa-grip-vertical text-white/50"></i>
+                                        <div>
+                                            <div class="font-semibold">{{ produto.nome }}</div>
+                                            <div class="text-sm text-white/70">
+                                                Venda: R$ {{ "%.2f"|format(produto.preco_venda) | replace('.', ',') }} | 
+                                                Estoque: {{ produto.estoque }} | 
+                                                Lucro: R$ {{ "%.2f"|format(produto.lucro) | replace('.', ',') }}
                                             </div>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center space-x-3">
+                                        <a href="#" title="Editar / Adicionar Estoque" class="btn-editar text-yellow-400 hover:text-yellow-300 transition-colors">
+                                            <i class="fas fa-pencil-alt"></i>
+                                        </a>
+                                        <button title="Ver Histórico de Compras" class="text-blue-400 hover:text-blue-300 transition-colors">
+                                            <i class="fas fa-history"></i>
+                                        </button>                                             
+                                        <a href="{{ url_for('rota_excluir_produto', id_produto=produto.id) }}" title="Excluir Produto" class="text-red-500 hover:text-red-400">
+                                            <i class="fas fa-trash"></i>
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
                         </div>
                     </div>
                 {% endif %}
-            {% endfor %}
+                {% endfor %}
+            </div>
         </div>
     </main>
+    {# INÍCIO DOS NOVOS SCRIPTS PARA DRAG-AND-DROP #}
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <script>
+        // Função para enviar a ordem para o backend
+        function enviarNovaOrdem(tipo, idsOrdenados) {
+            fetch('/atualizar_ordem', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ tipo: tipo, ids_ordenados: idsOrdenados }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === "sucesso") {
+                    console.log(`Ordem de ${tipo} atualizada no servidor.`);
+                } else {
+                    console.error(`Erro ao atualizar ordem de ${tipo}:`, data.mensagem);
+                }
+            })
+            .catch((error) => {
+                console.error('Erro de rede ao enviar ordem:', error);
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // 1. Sortable para CATEGORIAS (salva no banco!)
+            const categoriasContainer = document.getElementById('categorias-container');
+            if (categoriasContainer) {
+                new Sortable(categoriasContainer, {
+                    animation: 150,
+                    ghostClass: 'sortable-ghost',
+                    handle: '.categoria-handle',
+                    onEnd: function(evt) {
+                        const categorias = Array.from(evt.to.children);
+                        const idsOrdenados = categorias.map(el => parseInt(el.dataset.categoriaId));
+                        console.log('Nova ordem das categorias:', idsOrdenados);
+                        enviarNovaOrdem('categoria', idsOrdenados); // AGORA SALVA NO BANCO!
+                    }
+                });
+            }
+
+            // 2. Sortable para PRODUTOS (já funciona)
+            document.querySelectorAll('.produtos-container').forEach(container => {
+                new Sortable(container, {
+                    animation: 150,
+                    ghostClass: 'sortable-ghost',
+                    onEnd: function(evt) {
+                        const produtos = Array.from(evt.to.children);
+                        const idsOrdenados = produtos.map(el => parseInt(el.dataset.id));
+                        console.log('Nova ordem dos produtos:', idsOrdenados);
+                        enviarNovaOrdem('produto', idsOrdenados);
+                    }
+                });
+            });
+        });
+
+        // Script de edição de produto (mantido)
         document.addEventListener('click', function(event) {
             const editButton = event.target.closest('.btn-editar');
             if (editButton) {
-                event.preventDefault(); // <-- NOVA LINHA: Impede o link de pular para o topo.
-                const linhaProduto = editButton.closest('tr');
-                const id = linhaProduto.dataset.id;
-                const nome = linhaProduto.dataset.nome;
-                const categoriaId = linhaProduto.dataset.categoria_id;
-                const precoVenda = linhaProduto.dataset.preco_venda;
-    
+                event.preventDefault();
+                const produtoItem = editButton.closest('.produto-item');
+                const id = produtoItem.dataset.id;
+                const nome = produtoItem.dataset.nome;
+                const categoriaId = produtoItem.dataset.categoria_id;
+                const precoVenda = produtoItem.dataset.preco_venda;
+
                 document.getElementById('id_produto').value = id;
                 document.getElementById('nome_produto').value = nome;
                 document.getElementById('categoria_produto').value = categoriaId;
                 document.getElementById('preco_venda').value = precoVenda;
-    
+
                 document.getElementById('preco_compra').value = '';
                 document.getElementById('quantidade').value = '';
-    
+
                 document.getElementById('nome_produto').focus();
             }
         });
     </script>
+    {# FIM DOS NOVOS SCRIPTS PARA DRAG-AND-DROP #}
 </body>
 </html>

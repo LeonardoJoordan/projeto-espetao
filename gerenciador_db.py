@@ -36,20 +36,16 @@ def adicionar_nova_categoria(nome_categoria):
 
 def obter_todas_categorias():
     """
-    Busca e retorna todas as categorias cadastradas no banco de dados.
+    Busca e retorna todas as categorias cadastradas no banco de dados, ordenadas pelo campo 'ordem'.
     """
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
-        # conn.row_factory = sqlite3.Row nos permitiria acessar colunas por nome
-        # mas vamos fazer manualmente para o aprendizado ser mais claro.
         cursor = conn.cursor()
 
-        cursor.execute("SELECT id, nome FROM categorias ORDER BY nome")
+        # Adicionamos ORDER BY ordem
+        cursor.execute("SELECT id, nome FROM categorias ORDER BY ordem, nome") 
         
-        # fetchall() busca todas as linhas do resultado da consulta
         categorias_tuplas = cursor.fetchall()
-
-        # Converte a lista de tuplas em uma lista de dicionários
         categorias_lista = []
         for tupla in categorias_tuplas:
             categorias_lista.append({'id': tupla[0], 'nome': tupla[1]})
@@ -58,7 +54,7 @@ def obter_todas_categorias():
 
     except sqlite3.Error as e:
         print(f"Ocorreu um erro ao obter as categorias: {e}")
-        return [] # Retorna uma lista vazia em caso de erro
+        return [] 
     finally:
         if conn:
             conn.close()
@@ -149,35 +145,31 @@ def adicionar_novo_produto(nome, preco_venda, estoque_inicial, custo_inicial, ca
 def obter_todos_produtos():
     """
     Busca todos os produtos, juntando com o nome da categoria,
-    e calcula o custo médio e o lucro para cada um.
+    e calcula o custo médio e o lucro para cada um, ordenados pela 'ordem' do produto.
     """
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # Comando SQL que busca os produtos e "cruza" com a tabela de categorias
-        # para pegar o nome da categoria, em vez de só o ID.
+        # Adicionamos ORDER BY p.ordem
         cursor.execute('''
             SELECT p.id, p.nome, p.preco_venda, p.estoque_atual, p.custo_total_do_estoque, c.nome as categoria_nome
             FROM produtos p
             LEFT JOIN categorias c ON p.categoria_id = c.id
-            ORDER BY c.nome, p.nome
+            ORDER BY c.ordem, p.ordem, p.nome 
         ''')
         
         produtos_tuplas = cursor.fetchall()
-
-        # Converte a lista de tuplas em uma lista de dicionários, já fazendo os cálculos
         produtos_lista = []
         for tupla in produtos_tuplas:
             id_produto, nome, preco_venda, estoque, custo_total, categoria = tupla
             
-            # Lógica para calcular o custo médio e o lucro
             if estoque > 0:
                 custo_medio = custo_total / estoque
                 lucro = preco_venda - custo_medio
             else:
                 custo_medio = 0
-                lucro = preco_venda # Ou 0, dependendo da regra de negócio
+                lucro = preco_venda 
 
             produtos_lista.append({
                 'id': id_produto,
@@ -328,6 +320,39 @@ def atualizar_preco_venda_produto(id_produto, novo_preco_venda):
 
     except sqlite3.Error as e:
         print(f"Ocorreu um erro ao atualizar o preço de venda do produto: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def atualizar_ordem_itens(tabela, ids_ordenados):
+    """
+    Atualiza a coluna 'ordem' de itens em uma tabela específica
+    com base em uma lista de IDs ordenados.
+    
+    Args:
+        tabela (str): O nome da tabela ('categorias' ou 'produtos').
+        ids_ordenados (list): Uma lista de IDs na ordem desejada.
+    """
+    if tabela not in ['categorias', 'produtos']:
+        print(f"Erro: Tabela '{tabela}' não suportada para atualização de ordem.")
+        return False
+
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # Itera sobre a lista de IDs ordenados para atualizar a ordem de cada item
+        for indice, item_id in enumerate(ids_ordenados):
+            nova_ordem = indice + 1  # A ordem começa de 1 para facilitar
+            cursor.execute(f"UPDATE {tabela} SET ordem = ? WHERE id = ?", (nova_ordem, item_id))
+
+        conn.commit()
+        print(f"Ordem dos itens na tabela '{tabela}' atualizada com sucesso.")
+        return True
+
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao atualizar a ordem dos itens na tabela '{tabela}': {e}")
         return False
     finally:
         if conn:

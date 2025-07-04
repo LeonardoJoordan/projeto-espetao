@@ -15,7 +15,8 @@ def inicializar_banco():
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS categorias (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                nome TEXT NOT NULL UNIQUE
+                nome TEXT NOT NULL UNIQUE,
+                ordem INTEGER DEFAULT 0  -- NOVO CAMPO: Ordem para arrastar e soltar
             )
         ''')
         print("Tabela 'categorias' verificada/criada.")
@@ -29,6 +30,7 @@ def inicializar_banco():
                 estoque_atual INTEGER NOT NULL,
                 custo_total_do_estoque REAL NOT NULL,
                 categoria_id INTEGER,
+                ordem INTEGER DEFAULT 0, -- NOVO CAMPO: Ordem para arrastar e soltar
                 FOREIGN KEY (categoria_id) REFERENCES categorias (id)
             )
         ''')

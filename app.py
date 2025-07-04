@@ -61,19 +61,22 @@ def tela_produtos():
     """
     # --- BUSCANDO DADOS 100% REAIS DO BANCO DE DADOS ---
     categorias_reais = gerenciador_db.obter_todas_categorias()
-    produtos_reais = gerenciador_db.obter_todos_produtos() # Removemos a lista de teste!
+    produtos_reais = gerenciador_db.obter_todos_produtos()
     
-    # --- Lógica de Agrupamento ---
+    # --- Lógica de Agrupamento COM IDs ---
     produtos_agrupados = {}
     for categoria in categorias_reais:
-        produtos_agrupados[categoria['nome']] = []
+        produtos_agrupados[categoria['nome']] = {
+            'id': categoria['id'],  # NOVO: Incluir o ID da categoria
+            'nome': categoria['nome'],
+            'produtos': []
+        }
 
     # Agora o loop usa a lista de produtos reais do banco
     for produto in produtos_reais:
-        # produto['categoria'] agora já vem com o nome da categoria, graças ao JOIN
         categoria_do_produto = produto['categoria']
         if categoria_do_produto in produtos_agrupados:
-            produtos_agrupados[categoria_do_produto].append(produto)
+            produtos_agrupados[categoria_do_produto]['produtos'].append(produto)
     
     # Envia os dados REAIS e AGRUPADOS para o template
     return render_template('produtos.html', produtos_agrupados=produtos_agrupados, categorias=categorias_reais)
@@ -159,6 +162,35 @@ def rota_excluir_produto(id_produto):
     """
     gerenciador_db.excluir_produto(id_produto)
     return redirect(url_for('tela_produtos'))
+
+@app.route('/atualizar_ordem', methods=['POST'])
+def atualizar_ordem():
+    """
+    Recebe a nova ordem de categorias ou produtos do frontend
+    e chama a função apropriada no gerenciador_db para atualizar o banco.
+    """
+    try:
+        data = request.get_json() # Pega os dados JSON enviados pelo frontend
+        tipo_item = data.get('tipo') # 'categoria' ou 'produto'
+        ids_ordenados = data.get('ids_ordenados') # Lista de IDs na nova ordem
+
+        if tipo_item and ids_ordenados:
+            if tipo_item == 'categoria':
+                gerenciador_db.atualizar_ordem_itens('categorias', ids_ordenados)
+                print(f"DEBUG: Ordem das categorias atualizada: {ids_ordenados}")
+            elif tipo_item == 'produto':
+                gerenciador_db.atualizar_ordem_itens('produtos', ids_ordenados)
+                print(f"DEBUG: Ordem dos produtos atualizada: {ids_ordenados}")
+            else:
+                return {"status": "erro", "mensagem": "Tipo de item inválido"}, 400
+            
+            return {"status": "sucesso", "mensagem": "Ordem atualizada com sucesso!"}
+        else:
+            return {"status": "erro", "mensagem": "Dados incompletos"}, 400
+
+    except Exception as e:
+        print(f"Erro ao atualizar ordem: {e}")
+        return {"status": "erro", "mensagem": f"Erro interno: {str(e)}"}, 500
 
 @app.route('/')
 def index():

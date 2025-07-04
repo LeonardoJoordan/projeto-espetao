@@ -57,66 +57,66 @@ def tela_cozinha():
 def tela_produtos():
     """
     Esta rota representa a tela de gestão de produtos.
-    Ela busca os produtos, AGRUPA-OS POR CATEGORIA, e os envia para o template.
+    Ela busca os produtos e categorias REAIS do banco de dados e os agrupa.
     """
-    # DADOS DE TESTE (os mesmos de antes)
-    produtos_cadastrados = [
-        {'id': 1, 'nome': 'Espeto de Carne', 'categoria': 'Espetinhos', 'preco_venda': 12.00, 'custo_medio': 6.50, 'lucro': 5.50, 'estoque': 50},
-        {'id': 2, 'nome': 'Coca-Cola Lata', 'categoria': 'Bebidas', 'preco_venda': 5.00, 'custo_medio': 2.80, 'lucro': 2.20, 'estoque': 100},
-        {'id': 3, 'nome': 'Pão de Alho', 'categoria': 'Acompanhamentos', 'preco_venda': 7.00, 'custo_medio': 3.00, 'lucro': 4.00, 'estoque': 30},
-        {'id': 4, 'nome': 'Espeto de Frango', 'categoria': 'Espetinhos', 'preco_venda': 10.00, 'custo_medio': 5.00, 'lucro': 5.00, 'estoque': 40}
-    ]
-    categorias_cadastradas = [
-        {'id': 1, 'nome': 'Espetinhos'},
-        {'id': 2, 'nome': 'Bebidas'},
-        {'id': 3, 'nome': 'Acompanhamentos'}
-    ]
-
-    # --- LÓGICA DE AGRUPAMENTO ---
-    # 1. Cria um dicionário vazio para guardar os dados agrupados.
+    # --- BUSCANDO DADOS 100% REAIS DO BANCO DE DADOS ---
+    categorias_reais = gerenciador_db.obter_todas_categorias()
+    produtos_reais = gerenciador_db.obter_todos_produtos() # Removemos a lista de teste!
+    
+    # --- Lógica de Agrupamento ---
     produtos_agrupados = {}
-
-    # 2. Itera sobre a lista de categorias para inicializar as chaves do dicionário.
-    for categoria in categorias_cadastradas:
+    for categoria in categorias_reais:
         produtos_agrupados[categoria['nome']] = []
 
-    # 3. Itera sobre a lista de produtos e os coloca na categoria correta.
-    for produto in produtos_cadastrados:
+    # Agora o loop usa a lista de produtos reais do banco
+    for produto in produtos_reais:
+        # produto['categoria'] agora já vem com o nome da categoria, graças ao JOIN
         categoria_do_produto = produto['categoria']
         if categoria_do_produto in produtos_agrupados:
             produtos_agrupados[categoria_do_produto].append(produto)
     
-    # Envia os dados AGRUPADOS para o template
-    return render_template('produtos.html', produtos_agrupados=produtos_agrupados, categorias=categorias_cadastradas)
+    # Envia os dados REAIS e AGRUPADOS para o template
+    return render_template('produtos.html', produtos_agrupados=produtos_agrupados, categorias=categorias_reais)
 
 @app.route('/adicionar_categoria', methods=['POST'])
 def adicionar_categoria():
     """
-    CASCA da rota para adicionar uma nova categoria.
-    A lógica será implementada quando conectarmos ao banco de dados.
+    Rota para adicionar uma nova categoria.
+    Recebe os dados do formulário e chama a função do gerenciador_db.
     """
+    # 1. Pega o nome da categoria enviado pelo formulário
     nome_nova_categoria = request.form.get('nome_categoria')
-    print(f"DEBUG: Tentativa de adicionar categoria: {nome_nova_categoria}")
+
+    # 2. Verifica se o nome não está vazio
+    if nome_nova_categoria:
+        # 3. Chama a função "Trabalhadora" do nosso especialista em banco de dados
+        gerenciador_db.adicionar_nova_categoria(nome_nova_categoria)
     
-    # Redireciona de volta para a página de produtos
+    # 4. Redireciona o usuário de volta para a página de produtos
     return redirect(url_for('tela_produtos'))
 
 @app.route('/adicionar_produto', methods=['POST'])
 def adicionar_produto():
     """
-    CASCA da rota para adicionar um novo produto.
-    A lógica será implementada quando conectarmos ao banco de dados.
+    Rota para adicionar um novo produto.
+    Pega os dados do formulário e chama a função do gerenciador_db.
     """
-    dados_novo_produto = {
-        'nome': request.form.get('nome_produto'),
-        'categoria': request.form.get('categoria_produto'),
-        'preco': request.form.get('preco_venda'),
-        'lucro': request.form.get('lucro_unidade'),
-        'estoque': request.form.get('estoque'),
-    }
-    print(f"DEBUG: Tentativa de adicionar produto: {dados_novo_produto}")
+    try:
+        # Pega os dados do formulário e converte para os tipos corretos
+        nome = request.form.get('nome_produto')
+        categoria_id = int(request.form.get('categoria_produto'))
+        preco_venda = float(request.form.get('preco_venda'))
+        preco_compra = float(request.form.get('preco_compra'))
+        quantidade = int(request.form.get('quantidade'))
 
-    # Redireciona de volta para a página de produtos
+        # Validação simples para garantir que os dados essenciais foram enviados
+        if nome and preco_venda and preco_compra and quantidade:
+            gerenciador_db.adicionar_novo_produto(nome, preco_venda, quantidade, preco_compra, categoria_id)
+
+    except (ValueError, TypeError) as e:
+        print(f"Erro ao converter dados do formulário: {e}")
+
+    # Redireciona de volta para a página de produtos, que agora mostrará o novo item
     return redirect(url_for('tela_produtos'))
 
 @app.route('/')

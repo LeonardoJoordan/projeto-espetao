@@ -1,16 +1,67 @@
+import sqlite3
 import datetime
 
-# Cardápio com os preços dos itens
-CARDAPIO = {
-    'Espeto de Carne': 10.00,
-    'Espeto de Frango': 9.00,
-    'Coca-Cola': 5.00,
-    'Pao de Alho': 7.00
-}
+NOME_BANCO_DADOS = 'espetao.db'
 
 # Voltando ao estado original: lista de pedidos vazia.
 PEDIDOS = []
 _proximo_id = 1
+
+def adicionar_nova_categoria(nome_categoria):
+    """
+    Adiciona uma nova categoria na tabela 'categorias' do banco de dados.
+    """
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # Executa o comando SQL para inserir a nova categoria
+        # O '?' é um placeholder para evitar injeção de SQL, uma boa prática de segurança.
+        cursor.execute("INSERT INTO categorias (nome) VALUES (?)", (nome_categoria,))
+
+        conn.commit()
+        print(f"Categoria '{nome_categoria}' adicionada com sucesso.")
+        return True
+
+    except sqlite3.IntegrityError:
+        # Este erro acontece se tentarmos adicionar uma categoria que já existe (por causa do 'UNIQUE')
+        print(f"Erro: A categoria '{nome_categoria}' já existe.")
+        return False
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao adicionar a categoria: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def obter_todas_categorias():
+    """
+    Busca e retorna todas as categorias cadastradas no banco de dados.
+    """
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        # conn.row_factory = sqlite3.Row nos permitiria acessar colunas por nome
+        # mas vamos fazer manualmente para o aprendizado ser mais claro.
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT id, nome FROM categorias ORDER BY nome")
+        
+        # fetchall() busca todas as linhas do resultado da consulta
+        categorias_tuplas = cursor.fetchall()
+
+        # Converte a lista de tuplas em uma lista de dicionários
+        categorias_lista = []
+        for tupla in categorias_tuplas:
+            categorias_lista.append({'id': tupla[0], 'nome': tupla[1]})
+        
+        return categorias_lista
+
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao obter as categorias: {e}")
+        return [] # Retorna uma lista vazia em caso de erro
+    finally:
+        if conn:
+            conn.close()
 
 def criar_novo_pedido(nome_cliente, itens_pedido, metodo_pagamento):
     """
@@ -44,6 +95,90 @@ def criar_novo_pedido(nome_cliente, itens_pedido, metodo_pagamento):
 
     _proximo_id += 1
     return novo_pedido['id']
+
+def adicionar_novo_produto(nome, preco_venda, estoque_inicial, custo_inicial, categoria_id):
+    """
+    Adiciona um novo produto na tabela 'produtos'.
+    Calcula o custo total inicial do estoque.
+    """
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # Calcula o custo total do estoque inicial
+        custo_total_estoque = custo_inicial * estoque_inicial
+
+        # Comando SQL para inserir um novo produto
+        cursor.execute('''
+            INSERT INTO produtos (nome, preco_venda, estoque_atual, custo_total_do_estoque, categoria_id)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (nome, preco_venda, estoque_inicial, custo_total_estoque, categoria_id))
+
+        conn.commit()
+        print(f"Produto '{nome}' adicionado com sucesso.")
+        return True
+
+    except sqlite3.IntegrityError:
+        print(f"Erro: O produto '{nome}' já existe.")
+        return False
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao adicionar o produto: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def obter_todos_produtos():
+    """
+    Busca todos os produtos, juntando com o nome da categoria,
+    e calcula o custo médio e o lucro para cada um.
+    """
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # Comando SQL que busca os produtos e "cruza" com a tabela de categorias
+        # para pegar o nome da categoria, em vez de só o ID.
+        cursor.execute('''
+            SELECT p.id, p.nome, p.preco_venda, p.estoque_atual, p.custo_total_do_estoque, c.nome as categoria_nome
+            FROM produtos p
+            LEFT JOIN categorias c ON p.categoria_id = c.id
+            ORDER BY c.nome, p.nome
+        ''')
+        
+        produtos_tuplas = cursor.fetchall()
+
+        # Converte a lista de tuplas em uma lista de dicionários, já fazendo os cálculos
+        produtos_lista = []
+        for tupla in produtos_tuplas:
+            id_produto, nome, preco_venda, estoque, custo_total, categoria = tupla
+            
+            # Lógica para calcular o custo médio e o lucro
+            if estoque > 0:
+                custo_medio = custo_total / estoque
+                lucro = preco_venda - custo_medio
+            else:
+                custo_medio = 0
+                lucro = preco_venda # Ou 0, dependendo da regra de negócio
+
+            produtos_lista.append({
+                'id': id_produto,
+                'nome': nome,
+                'preco_venda': preco_venda,
+                'estoque': estoque,
+                'custo_medio': custo_medio,
+                'lucro': lucro,
+                'categoria': categoria
+            })
+        
+        return produtos_lista
+
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao obter os produtos: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
 
 def obter_pedidos_por_status(lista_de_status):
     """

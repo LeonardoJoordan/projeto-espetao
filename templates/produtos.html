@@ -278,6 +278,8 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('id_produto').value = produtoItem.dataset.id;
             document.getElementById('nome_produto').value = produtoItem.dataset.nome;
             // Aplicando sua correção de camelCase:
+            console.log("Valor Lido para Categoria:", produtoItem.dataset.categoriaId);
+            console.log("Valor Lido para Preço Venda:", produtoItem.dataset.precoVenda);
             document.getElementById('categoria_produto').value = produtoItem.dataset.categoriaId; 
             document.getElementById('preco_venda').value = produtoItem.dataset.precoVenda;
 

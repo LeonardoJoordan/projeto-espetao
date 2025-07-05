@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, jsonify
 import gerenciador_db
 
 app = Flask(__name__)
@@ -67,8 +67,7 @@ def tela_produtos():
     produtos_agrupados = {}
     for categoria in categorias_reais:
         produtos_agrupados[categoria['nome']] = {
-            'id': categoria['id'],  # NOVO: Incluir o ID da categoria
-            'nome': categoria['nome'],
+            'id': categoria['id'],
             'produtos': []
         }
 
@@ -191,6 +190,17 @@ def atualizar_ordem():
     except Exception as e:
         print(f"Erro ao atualizar ordem: {e}")
         return {"status": "erro", "mensagem": f"Erro interno: {str(e)}"}, 500
+
+@app.route('/api/historico_produto/<int:id_produto>')
+def api_historico_produto(id_produto):
+    """
+    Rota de API que retorna o histórico de um produto em formato JSON.
+    """
+    # Chama a nossa função "Trabalhadora" para buscar os dados
+    historico = gerenciador_db.obter_historico_produto(id_produto)
+
+    # Retorna a lista de dados no formato JSON
+    return jsonify(historico)
 
 @app.route('/')
 def index():

@@ -153,7 +153,7 @@ def obter_todos_produtos():
 
         # Adicionamos ORDER BY p.ordem
         cursor.execute('''
-            SELECT p.id, p.nome, p.preco_venda, p.estoque_atual, p.custo_total_do_estoque, c.nome as categoria_nome
+            SELECT p.id, p.nome, p.preco_venda, p.estoque_atual, p.custo_total_do_estoque, c.nome as categoria_nome, p.categoria_id
             FROM produtos p
             LEFT JOIN categorias c ON p.categoria_id = c.id
             ORDER BY c.ordem, p.ordem, p.nome 
@@ -162,7 +162,7 @@ def obter_todos_produtos():
         produtos_tuplas = cursor.fetchall()
         produtos_lista = []
         for tupla in produtos_tuplas:
-            id_produto, nome, preco_venda, estoque, custo_total, categoria = tupla
+            id_produto, nome, preco_venda, estoque, custo_total, categoria, categoria_id = tupla
             
             if estoque > 0:
                 custo_medio = custo_total / estoque
@@ -178,7 +178,8 @@ def obter_todos_produtos():
                 'estoque': estoque,
                 'custo_medio': custo_medio,
                 'lucro': lucro,
-                'categoria': categoria
+                'categoria': categoria,
+                'categoria_id': categoria_id
             })
         
         return produtos_lista
@@ -354,6 +355,45 @@ def atualizar_ordem_itens(tabela, ids_ordenados):
     except sqlite3.Error as e:
         print(f"Ocorreu um erro ao atualizar a ordem dos itens na tabela '{tabela}': {e}")
         return False
+    finally:
+        if conn:
+            conn.close()
+
+def obter_historico_produto(id_produto):
+    """
+    Busca e retorna o histórico de todas as entradas de estoque para um produto específico.
+    """
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # Seleciona todas as entradas de um produto, ordenadas pela mais recente primeiro
+        cursor.execute('''
+            SELECT data_entrada, quantidade_comprada, custo_unitario_compra 
+            FROM entradas_de_estoque 
+            WHERE id_produto = ? 
+            ORDER BY data_entrada DESC
+        ''', (id_produto,))
+        
+        historico_tuplas = cursor.fetchall()
+
+        # Converte a lista de tuplas em uma lista de dicionários
+        historico_lista = []
+        for tupla in historico_tuplas:
+            # Formata a data para um formato mais legível
+            data_formatada = datetime.datetime.fromisoformat(tupla[0]).strftime('%d/%m/%Y %H:%M')
+            
+            historico_lista.append({
+                'data': data_formatada, 
+                'quantidade': tupla[1], 
+                'custo': tupla[2]
+            })
+        
+        return historico_lista
+
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao obter o histórico do produto: {e}")
+        return []
     finally:
         if conn:
             conn.close()

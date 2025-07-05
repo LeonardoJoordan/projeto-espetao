@@ -179,9 +179,9 @@
                                         <a href="#" title="Editar / Adicionar Estoque" class="btn-editar text-yellow-400 hover:text-yellow-300 transition-colors">
                                             <i class="fas fa-pencil-alt"></i>
                                         </a>
-                                        <button title="Ver Histórico de Compras" class="text-blue-400 hover:text-blue-300 transition-colors">
+                                        <a href="#" title="Ver Histórico de Compras" class="btn-historico text-blue-400 hover:text-blue-300 transition-colors">
                                             <i class="fas fa-history"></i>
-                                        </button>                                             
+                                        </a>
                                         <a href="{{ url_for('rota_excluir_produto', id_produto=produto.id) }}" title="Excluir Produto" class="text-red-500 hover:text-red-400">
                                             <i class="fas fa-trash"></i>
                                         </a>
@@ -198,84 +198,147 @@
     </main>
     {# INÍCIO DOS NOVOS SCRIPTS PARA DRAG-AND-DROP #}
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
-    <script>
-        // Função para enviar a ordem para o backend
-        function enviarNovaOrdem(tipo, idsOrdenados) {
-            fetch('/atualizar_ordem', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ tipo: tipo, ids_ordenados: idsOrdenados }),
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === "sucesso") {
-                    console.log(`Ordem de ${tipo} atualizada no servidor.`);
-                } else {
-                    console.error(`Erro ao atualizar ordem de ${tipo}:`, data.mensagem);
-                }
-            })
-            .catch((error) => {
-                console.error('Erro de rede ao enviar ordem:', error);
-            });
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // --- TUDO AGORA ACONTECE AQUI DENTRO, APÓS O HTML CARREGAR ---
+
+    // --- LÓGICA DO MODAL (MOVIDA PARA CÁ) ---
+    const modal = document.getElementById('modal-historico');
+    const modalTitulo = document.getElementById('modal-titulo');
+    const modalCorpo = document.getElementById('modal-corpo');
+    const btnFechar = document.getElementById('modal-fechar');
+
+    // Esta função agora pode encontrar o 'modal' sem erro.
+    function fecharModal() {
+        modal.classList.add('hidden');
+    }
+
+    // Estes listeners agora são adicionados a elementos que com certeza existem.
+    btnFechar.addEventListener('click', fecharModal);
+    modal.addEventListener('click', function(event) {
+        if (event.target === modal) {
+            fecharModal();
+        }
+    });
+
+    // --- LÓGICA DO 'ARRASTAR E SOLTAR' (JÁ ESTAVA CORRETA) ---
+    function enviarNovaOrdem(tipo, idsOrdenados) {
+        fetch('/atualizar_ordem', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tipo: tipo, ids_ordenados: idsOrdenados }),
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status !== "sucesso") {
+                console.error(`Erro ao atualizar ordem de ${tipo}:`, data.mensagem);
+            }
+        })
+        .catch((error) => {
+            console.error('Erro de rede ao enviar ordem:', error);
+        });
+    }
+
+    const categoriasContainer = document.getElementById('categorias-container');
+    if (categoriasContainer) {
+        new Sortable(categoriasContainer, {
+            animation: 150,
+            ghostClass: 'sortable-ghost',
+            handle: '.categoria-handle',
+            onEnd: function(evt) {
+                const categorias = Array.from(evt.to.children);
+                const idsOrdenados = categorias.map(el => parseInt(el.dataset.categoriaId));
+                enviarNovaOrdem('categoria', idsOrdenados);
+            }
+        });
+    }
+
+    document.querySelectorAll('.produtos-container').forEach(container => {
+        new Sortable(container, {
+            animation: 150,
+            ghostClass: 'sortable-ghost',
+            onEnd: function(evt) {
+                const produtos = Array.from(evt.to.children);
+                const idsOrdenados = produtos.map(el => parseInt(el.dataset.id));
+                enviarNovaOrdem('produto', idsOrdenados);
+            }
+        });
+    });
+
+    // --- GERENCIADOR DE CLIQUES DA PÁGINA (UNIFICADO) ---
+    document.addEventListener('click', async function(event) {
+        
+        // Verificamos se o clique foi no botão de editar
+        const editButton = event.target.closest('.btn-editar');
+        if (editButton) {
+            event.preventDefault(); // Impede o '#' na URL
+            const produtoItem = editButton.closest('.produto-item');
+            
+            // Preenche o formulário com os dados do 'data-*'
+            document.getElementById('id_produto').value = produtoItem.dataset.id;
+            document.getElementById('nome_produto').value = produtoItem.dataset.nome;
+            // Aplicando sua correção de camelCase:
+            document.getElementById('categoria_produto').value = produtoItem.dataset.categoriaId; 
+            document.getElementById('preco_venda').value = produtoItem.dataset.precoVenda;
+
+            // Limpa os campos de compra
+            document.getElementById('preco_compra').value = '';
+            document.getElementById('quantidade').value = '';
+            document.getElementById('nome_produto').focus();
         }
 
-        document.addEventListener('DOMContentLoaded', function() {
-            // 1. Sortable para CATEGORIAS (salva no banco!)
-            const categoriasContainer = document.getElementById('categorias-container');
-            if (categoriasContainer) {
-                new Sortable(categoriasContainer, {
-                    animation: 150,
-                    ghostClass: 'sortable-ghost',
-                    handle: '.categoria-handle',
-                    onEnd: function(evt) {
-                        const categorias = Array.from(evt.to.children);
-                        const idsOrdenados = categorias.map(el => parseInt(el.dataset.categoriaId));
-                        console.log('Nova ordem das categorias:', idsOrdenados);
-                        enviarNovaOrdem('categoria', idsOrdenados); // AGORA SALVA NO BANCO!
-                    }
-                });
+        // Verificamos se o clique foi no botão de histórico
+        const historicoButton = event.target.closest('.btn-historico');
+        if (historicoButton) {
+            event.preventDefault();
+            const produtoItem = historicoButton.closest('.produto-item');
+            const idProduto = produtoItem.dataset.id;
+            const nomeProduto = produtoItem.dataset.nome;
+
+            modalTitulo.textContent = `Histórico de: ${nomeProduto}`;
+            modalCorpo.innerHTML = '<p>Carregando...</p>';
+            modal.classList.remove('hidden');
+
+            try {
+                const response = await fetch(`/api/historico_produto/${idProduto}`);
+                if (!response.ok) throw new Error('Resposta da rede não foi OK');
+                const historico = await response.json();
+
+                modalCorpo.innerHTML = '';
+                if (historico.length > 0) {
+                    historico.forEach(entrada => {
+                        const itemHtml = `
+                            <div class="bg-white/10 p-3 rounded-lg">
+                                <p><strong>Data:</strong> ${entrada.data}</p>
+                                <p><strong>Quantidade:</strong> ${entrada.quantidade}</p>
+                                <p><strong>Custo Unitário:</strong> R$ ${Number(entrada.custo).toFixed(2).replace('.', ',')}</p>
+                            </div>
+                        `;
+                        modalCorpo.innerHTML += itemHtml;
+                    });
+                } else {
+                    modalCorpo.innerHTML = '<p>Nenhuma entrada de estoque encontrada para este produto.</p>';
+                }
+            } catch (error) {
+                console.error('Erro ao buscar histórico:', error);
+                modalCorpo.innerHTML = '<p>Ocorreu um erro ao carregar o histórico.</p>';
             }
+        }
+    });
 
-            // 2. Sortable para PRODUTOS (já funciona)
-            document.querySelectorAll('.produtos-container').forEach(container => {
-                new Sortable(container, {
-                    animation: 150,
-                    ghostClass: 'sortable-ghost',
-                    onEnd: function(evt) {
-                        const produtos = Array.from(evt.to.children);
-                        const idsOrdenados = produtos.map(el => parseInt(el.dataset.id));
-                        console.log('Nova ordem dos produtos:', idsOrdenados);
-                        enviarNovaOrdem('produto', idsOrdenados);
-                    }
-                });
-            });
-        });
-
-        // Script de edição de produto (mantido)
-        document.addEventListener('click', function(event) {
-            const editButton = event.target.closest('.btn-editar');
-            if (editButton) {
-                event.preventDefault();
-                const produtoItem = editButton.closest('.produto-item');
-                const id = produtoItem.dataset.id;
-                const nome = produtoItem.dataset.nome;
-                const categoriaId = produtoItem.dataset.categoria_id;
-                const precoVenda = produtoItem.dataset.preco_venda;
-
-                document.getElementById('id_produto').value = id;
-                document.getElementById('nome_produto').value = nome;
-                document.getElementById('categoria_produto').value = categoriaId;
-                document.getElementById('preco_venda').value = precoVenda;
-
-                document.getElementById('preco_compra').value = '';
-                document.getElementById('quantidade').value = '';
-
-                document.getElementById('nome_produto').focus();
-            }
-        });
-    </script>
+}); // --- FIM DO BLOCO DE SEGURANÇA 'DOMContentLoaded' ---
+</script>
     {# FIM DOS NOVOS SCRIPTS PARA DRAG-AND-DROP #}
+    <div id="modal-historico" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
+        <div class="glass-container rounded-2xl p-6 w-full max-w-lg text-white">
+            <div class="flex justify-between items-center border-b border-white/20 pb-3 mb-4">
+                <h2 id="modal-titulo" class="text-2xl font-bold">Histórico de Compras</h2>
+                <button id="modal-fechar" class="text-2xl hover:text-red-500">&times;</button>
+            </div>
+    
+            <div id="modal-corpo" class="max-h-96 overflow-y-auto space-y-2">
+                </div>
+        </div>
+    </div>
 </body>
 </html>

@@ -6,32 +6,27 @@ app = Flask(__name__)
 @app.route('/cliente', methods=['GET', 'POST'])
 def tela_cliente():
     """
-    Esta rota representa a tela do cliente.
-    'GET' é para quando o cliente abre a tela.
-    'POST' é para quando o cliente envia o formulário de novo pedido.
+    Rota para a tela do cliente.
+    GET: Exibe o cardápio para o cliente.
+    POST: (Ainda não implementado) Processa um novo pedido.
     """
     if request.method == 'POST':
-        # 1. Coletar os dados do formulário (que ainda não existe)
-        nome_cliente = request.form.get('nome_cliente', 'Cliente Padrão')
-        
-        # Simulação dos itens do pedido
-        itens_pedido = [
-            {'item': 'Espeto de Carne', 'quantidade': 1},
-            {'item': 'Coca-Cola', 'quantidade': 1}
-        ]
-        metodo_pagamento = 'dinheiro'
-
-        # 2. Chamar a função do nosso gerenciador (o "contrato")
-        novo_id = gerenciador_db.criar_novo_pedido(nome_cliente, itens_pedido, metodo_pagamento)
-        
-        print(f"DEBUG: Pedido criado com ID: {novo_id}")
-
-        # 3. Redirecionar para uma página de confirmação (que ainda não existe)
-        # Por enquanto, apenas redirecionamos de volta para a mesma tela.
+        # A lógica de criar um pedido virá aqui em uma próxima etapa
         return redirect(url_for('tela_cliente'))
 
-    # Se o método for GET, apenas mostramos a página (que ainda está vazia)
-    return render_template('cliente.html')
+    # --- Lógica para exibir o cardápio ---
+    # 1. Busca os dados brutos do banco, já ordenados
+    categorias = gerenciador_db.obter_todas_categorias()
+    produtos = gerenciador_db.obter_todos_produtos()
+    
+    # 2. Agrupa os produtos por categoria para a exibição
+    produtos_agrupados = {cat['id']: [] for cat in categorias}
+    for produto in produtos:
+        if produto['categoria_id'] in produtos_agrupados:
+            produtos_agrupados[produto['categoria_id']].append(produto)
+    
+    # 3. Envia os dados para o template renderizar
+    return render_template('cliente.html', categorias=categorias, produtos_agrupados=produtos_agrupados)
 
 # --- NOVA ROTA DA COZINHA ---
 @app.route('/cozinha')

@@ -3,23 +3,166 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Novo Pedido - Espetão do Léo</title>
+    <title>Cardápio - Espetão do Léo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body { font-family: sans-serif; background-color: #f0f2f5; display: grid; place-content: center; min-height: 100vh; text-align: center; margin: 0; }
-        .container { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        h1 { color: #333; }
-        button { background-color: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-size: 16px; }
-        button:hover { background-color: #0056b3; }
+        :root {
+            --primary-orange: #F97316;
+            --primary-yellow: #FBBF24;
+            --background-dark: #18181B;
+            --surface-dark: #27272A;
+            --text-light: #F3F4F6;
+            --text-muted: #A1A1AA;
+        }
+        /* A rolagem suave agora é controlada pelo JavaScript para evitar conflito */
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: var(--background-dark);
+            color: var(--text-light);
+        }
+        h1, h2, h3, h4 { font-family: 'Poppins', sans-serif; font-weight: 700; }
+        .sidebar { position: sticky; top: 0; align-self: start; }
+        .sidebar a {
+            transition: all 0.2s ease-in-out;
+            border-left: 3px solid transparent;
+        }
+        .sidebar a.active {
+            background-color: rgba(249, 115, 22, 0.1); /* Laranja com transparência */
+            color: var(--primary-orange);
+            border-left-color: var(--primary-orange);
+            font-weight: 600;
+        }
+        .product-card {
+            transition: all 0.2s ease-in-out;
+            border: 1px solid var(--surface-dark);
+        }
+        .product-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(249, 115, 22, 0.5);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+        .add-button {
+            background-color: var(--primary-orange);
+            transition: transform 0.2s ease;
+        }
+        .add-button:hover {
+            transform: scale(1.1);
+        }
+        .categoria-secao {              /* espaço de 30 px */
+            scroll-margin-top: 30px;
+        }
     </style>
 </head>
-<body>
-    <div class="container">
-        <h1>Tela do Cliente</h1>
-        <p>Esta é uma tela provisória para criar pedidos.</p>
-        <br>
-        <form action="/cliente" method="POST">
-            <button type="submit">Criar Pedido de Teste</button>
-        </form>
+<body class="text-white">
+
+    <div class="flex max-w-7xl mx-auto">
+        <aside class="sidebar w-64 h-screen p-4">
+            <h1 class="text-2xl font-bold my-4 px-2">Espetão do Léo</h1>
+            <nav id="nav-categorias">
+                <ul class="space-y-1">
+                    {% for categoria in categorias %}
+                    <li>
+                        {# A classe 'active' é adicionada à primeira categoria por padrão #}
+                        <a href="#categoria-{{ categoria.id }}" class="block p-3 rounded-lg text-lg {% if loop.first %}active{% endif %}">
+                            {{ categoria.nome }}
+                        </a>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </nav>
+        </aside>
+
+        <main id="main-content" class="flex-1 p-8 md:p-10 overflow-y-auto" style="height: 100vh;">
+            <header class="mb-10">
+                <h2 class="text-4xl font-extrabold text-white">Cardápio</h2>
+                <p class="text-lg text-zinc-400">Escolha seus itens favoritos</p>
+            </header>
+
+            {% for categoria in categorias %}
+            <section id="categoria-{{ categoria.id }}" class="mb-12 categoria-secao">
+                <h3 class="text-3xl font-bold mb-6 text-amber-400">{{ categoria.nome }}</h3>
+                <div class="space-y-4">
+                    
+                    {% for produto in produtos_agrupados[categoria.id] %}
+                    <div class="product-card bg-zinc-800 rounded-xl p-4 flex items-center gap-4">
+                        <div class="w-24 h-24 bg-zinc-700 rounded-md flex-shrink-0 flex items-center justify-center">
+                            <i class="fas fa-camera text-3xl text-zinc-500"></i>
+                        </div>
+                        <div class="flex-grow">
+                            <h4 class="text-xl font-semibold">{{ produto.nome }}</h4>
+                            <p class="text-zinc-400 text-sm mt-1">Descrição customizável do produto para atrair o cliente.</p>
+                        </div>
+                        <div class="flex items-center gap-6">
+                            <span class="text-2xl font-semibold w-28 text-right">R$ {{ "%.2f"|format(produto.preco_venda) | replace('.', ',') }}</span>
+                            <button class="add-button rounded-full w-14 h-14 flex items-center justify-center text-white text-2xl shadow-lg">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
+                    </div>
+                    {% endfor %}
+
+                </div>
+            </section>
+            {% endfor %}
+        </main>
     </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const mainContent = document.getElementById('main-content');
+    const navLinks    = document.querySelectorAll('#nav-categorias a');
+    const sections    = document.querySelectorAll('.categoria-secao');
+    const lastSection = sections[sections.length - 1];
+
+    /* Rolagem suave ----------
+       Garantimos que o cabeçalho da seção fique encostado no topo do contêiner */
+    navLinks.forEach(link => {
+        link.addEventListener('click', e => {
+            e.preventDefault();
+            const alvo = document.querySelector(link.getAttribute('href'));
+            alvo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    });
+
+    /* Destaque da seção --------*/
+    function updateActiveLinkOnScroll() {
+        const containerTop = mainContent.getBoundingClientRect().top;
+        let currentSectionId = '';
+
+        /* A primeira seção cujo bottom ainda está abaixo do topo do contêiner
+           é a que continua, pelo menos parcialmente, visível.           */
+        for (const section of sections) {
+            const rect = section.getBoundingClientRect();
+            if (rect.bottom > containerTop + 1) {          // ainda visível
+                currentSectionId = section.id;
+                break;
+            }
+        }
+
+        /* Caso especial – fim da página (última seção curta) */
+        const isAtBottom =
+            mainContent.scrollTop + mainContent.clientHeight >= mainContent.scrollHeight - 5;
+        if (isAtBottom) {
+            currentSectionId = lastSection.id;
+        }
+
+        /* Atualiza classes */
+        navLinks.forEach(link => {
+            link.classList.toggle(
+                'active',
+                link.getAttribute('href').substring(1) === currentSectionId
+            );
+        });
+    }
+
+    /* Ouve a rolagem apenas do contêiner */
+    mainContent.addEventListener('scroll', updateActiveLinkOnScroll);
+});
+</script>
+
 </body>
 </html>

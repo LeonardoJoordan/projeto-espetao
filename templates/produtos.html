@@ -100,6 +100,15 @@
                         <label for="quantidade" class="block mb-2 font-semibold">Quantidade</label>
                         <input type="number" id="quantidade" name="quantidade" placeholder="100" class="w-full p-2 rounded-lg">
                     </div>
+                    <div id="dica-quantidade" class="hidden p-3 bg-blue-900/50 border border-blue-400 rounded-lg text-sm text-blue-200 space-y-2">
+                        <p>
+                            <i class="fas fa-info-circle mr-2"></i><strong>Você está fazendo um ajuste de estoque:</strong>
+                        </p>
+                        <ul class="list-disc list-inside pl-2">
+                            <li><strong>Para registrar uma PERDA:</strong> Mantenha o "Preço Compra" como <strong>0</strong>. O custo médio do produto irá aumentar.</li>
+                            <li><strong>Para CORRIGIR um erro de entrada:</strong> Insira o "Preço Compra" <strong>original</strong> da entrada errada. O sistema irá reverter o custo.</li>
+                        </ul>
+                    </div>
                     <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 font-bold py-3 rounded-lg transition-colors">Salvar Produto</button>
                 </form>
             </div>
@@ -203,6 +212,25 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // --- TUDO AGORA ACONTECE AQUI DENTRO, APÓS O HTML CARREGAR ---
+
+    // --- LÓGICA DA DICA DINÂMICA DE QUANTIDADE (NOVO) ---
+    const campoQuantidade = document.getElementById('quantidade');
+    const dicaContainer = document.getElementById('dica-quantidade');
+
+    if (campoQuantidade && dicaContainer) {
+        campoQuantidade.addEventListener('input', function() {
+            // Pega o valor e converte para número
+            const valor = parseFloat(campoQuantidade.value);
+
+            // Se o valor for um número e for negativo, mostra a dica
+            if (!isNaN(valor) && valor < 0) {
+                dicaContainer.classList.remove('hidden');
+            } else {
+                // Caso contrário, esconde a dica
+                dicaContainer.classList.add('hidden');
+            }
+        });
+    }
 
     // --- LÓGICA DO MODAL (MOVIDA PARA CÁ) ---
     const modal = document.getElementById('modal-historico');
@@ -363,10 +391,6 @@ formProduto.addEventListener('submit', function(event) {
             mensagemErro = '• Ao informar preço de compra, a quantidade é obrigatória';
         }
         
-        // Validação para ajuste de estoque negativo
-        if (quantidade && parseInt(quantidade) < 0 && precoCompra && parseFloat(precoCompra) !== 0) {
-            mensagemErro = '• Para ajuste negativo de estoque (perda), o preço de compra deve ser 0';
-        }
     }
     
     // Validação de valores numéricos

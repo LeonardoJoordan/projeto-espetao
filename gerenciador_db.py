@@ -265,7 +265,79 @@ def excluir_produto(id_produto):
         if conn:
             conn.close()
 
-def adicionar_estoque(id_produto, quantidade_adicionada, custo_da_nova_compra):
+def adicionar_estoque(id_produto, quantidade_adicionada, custo_unitario_movimentacao):
+    """
+    Adiciona ou remove estoque, tratando os casos de Compra, Perda e Correção,
+    e registra a entrada no histórico.
+    """
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # PASSO 1: Ler o estado atual do produto
+        cursor.execute("SELECT estoque_atual, custo_total_do_estoque FROM produtos WHERE id = ?", (id_produto,))
+        resultado = cursor.fetchone()
+
+        if not resultado:
+            print(f"Erro: Produto com ID {id_produto} não encontrado.")
+            return False
+
+        estoque_atual, custo_total_atual = resultado
+        novo_custo_total = custo_total_atual # Valor padrão
+
+        # PASSO 2: A nova árvore de decisão de três vias
+        if quantidade_adicionada > 0:
+            # CASO 1: COMPRA (Quantidade positiva)
+            print("INFO: Detectada operação de COMPRA.")
+            custo_desta_compra = quantidade_adicionada * custo_unitario_movimentacao
+            novo_custo_total = custo_total_atual + custo_desta_compra
+        
+        elif quantidade_adicionada < 0 and custo_unitario_movimentacao > 0:
+            # CASO 2: CORREÇÃO DE ERRO (Qtd negativa, Custo positivo)
+            print("INFO: Detectada operação de CORREÇÃO DE ERRO.")
+            custo_a_reverter = abs(quantidade_adicionada) * custo_unitario_movimentacao
+            novo_custo_total = custo_total_atual - custo_a_reverter
+            
+        elif quantidade_adicionada < 0 and custo_unitario_movimentacao == 0:
+            # CASO 3: PERDA (Qtd negativa, Custo zero)
+            print("INFO: Detectada operação de PERDA.")
+            # O novo_custo_total já é igual ao custo_total_atual, nada a fazer aqui.
+
+        # Calcula o novo estoque e valida para não ficar negativo
+        novo_estoque = estoque_atual + quantidade_adicionada
+        if novo_estoque < 0:
+            print(f"Erro: A operação resultaria em estoque negativo ({novo_estoque}). Operação cancelada.")
+            return False
+        # Valida para o custo não ficar negativo
+        if novo_custo_total < 0:
+            print(f"Erro: A operação resultaria em custo total negativo (R$ {novo_custo_total:.2f}). Verifique os valores. Operação cancelada.")
+            return False
+
+
+        # PASSO 3: Atualizar o produto com os novos valores
+        cursor.execute('''
+            UPDATE produtos 
+            SET estoque_atual = ?, custo_total_do_estoque = ?
+            WHERE id = ?
+        ''', (novo_estoque, novo_custo_total, id_produto))
+
+        # PASSO 4: Registrar esta movimentação no histórico
+        data_atual = datetime.datetime.now().isoformat()
+        cursor.execute('''
+            INSERT INTO entradas_de_estoque (id_produto, quantidade_comprada, custo_unitario_compra, data_entrada)
+            VALUES (?, ?, ?, ?)
+        ''', (id_produto, quantidade_adicionada, custo_unitario_movimentacao, data_atual))
+
+        conn.commit()
+        print(f"Estoque do produto ID {id_produto} atualizado com sucesso. Novo estoque: {novo_estoque}.")
+        return True
+
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao adicionar estoque: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
     """
     Adiciona novo estoque a um produto existente, recalcula o custo total
     e registra a entrada no histórico. Aceita valores negativos para ajustes.

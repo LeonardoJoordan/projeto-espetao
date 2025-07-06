@@ -163,7 +163,7 @@
                                 data-nome="{{ produto.nome }}"
                                 data-categoria-id="{{ produto.categoria_id }}"
                                 data-preco-venda="{{ produto.preco_venda }}"
-                                data-preco-compra="{{ produto.custo_medio }}">
+                                data-preco-compra="{{ produto.ultimo_preco_compra }}">
                                 <div class="flex items-center justify-between">
                                     <div class="flex items-center space-x-3">
                                         <i class="fas fa-grip-vertical text-white/50"></i>
@@ -171,8 +171,9 @@
                                             <div class="font-semibold">{{ produto.nome }}</div>
                                             <div class="text-sm text-white/70">
                                                 Venda: R$ {{ "%.2f"|format(produto.preco_venda) | replace('.', ',') }} | 
-                                                Estoque: {{ produto.estoque }} | 
-                                                Lucro: R$ {{ "%.2f"|format(produto.lucro) | replace('.', ',') }}
+                                                Custo Médio: R$ {{ "%.2f"|format(produto.custo_medio) | replace('.', ',') }} |                                                
+                                                Lucro: R$ {{ "%.2f"|format(produto.lucro) | replace('.', ',') }} | 
+                                                Estoque: {{ produto.estoque }}
                                             </div>
                                         </div>
                                     </div>
@@ -283,9 +284,9 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log("Valor Lido para Preço Venda:", produtoItem.dataset.precoVenda);
             document.getElementById('categoria_produto').value = produtoItem.dataset.categoriaId; 
             document.getElementById('preco_venda').value = produtoItem.dataset.precoVenda;
+            document.getElementById('preco_compra').value = produtoItem.dataset.precoCompra;
 
             // Limpa os campos de compra
-            document.getElementById('preco_compra').value = '';
             document.getElementById('quantidade').value = '';
             document.getElementById('nome_produto').focus();
         }

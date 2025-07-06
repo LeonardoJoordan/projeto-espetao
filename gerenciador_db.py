@@ -268,7 +268,7 @@ def excluir_produto(id_produto):
 def adicionar_estoque(id_produto, quantidade_adicionada, custo_da_nova_compra):
     """
     Adiciona novo estoque a um produto existente, recalcula o custo total
-    e registra a entrada no histórico.
+    e registra a entrada no histórico. Aceita valores negativos para ajustes.
     """
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
@@ -283,8 +283,19 @@ def adicionar_estoque(id_produto, quantidade_adicionada, custo_da_nova_compra):
 
             # PASSO 2: Calcular os novos valores em Python
             novo_estoque = estoque_atual + quantidade_adicionada
-            custo_desta_compra = quantidade_adicionada * custo_da_nova_compra
-            novo_custo_total = custo_total_atual + custo_desta_compra
+            
+            # Se a quantidade for negativa (ajuste/perda), não altera o custo total
+            if quantidade_adicionada < 0:
+                novo_custo_total = custo_total_atual
+            else:
+                # Se for positiva (compra), adiciona ao custo total
+                custo_desta_compra = quantidade_adicionada * custo_da_nova_compra
+                novo_custo_total = custo_total_atual + custo_desta_compra
+            
+            # Garantir que o estoque não fique negativo
+            if novo_estoque < 0:
+                print(f"Erro: O ajuste resultaria em estoque negativo ({novo_estoque}). Operação cancelada.")
+                return False
 
             # PASSO 3: Atualizar o produto com os novos valores
             cursor.execute('''
@@ -293,7 +304,7 @@ def adicionar_estoque(id_produto, quantidade_adicionada, custo_da_nova_compra):
                 WHERE id = ?
             ''', (novo_estoque, novo_custo_total, id_produto))
 
-            # PASSO 4: Registrar esta compra no histórico
+            # PASSO 4: Registrar esta movimentação no histórico
             data_atual = datetime.datetime.now().isoformat()
             cursor.execute('''
                 INSERT INTO entradas_de_estoque (id_produto, quantidade_comprada, custo_unitario_compra, data_entrada)
@@ -301,7 +312,11 @@ def adicionar_estoque(id_produto, quantidade_adicionada, custo_da_nova_compra):
             ''', (id_produto, quantidade_adicionada, custo_da_nova_compra, data_atual))
 
             conn.commit()
-            print(f"Estoque do produto ID {id_produto} atualizado com sucesso.")
+            
+            if quantidade_adicionada < 0:
+                print(f"Estoque do produto ID {id_produto} ajustado: removidas {abs(quantidade_adicionada)} unidades.")
+            else:
+                print(f"Estoque do produto ID {id_produto} atualizado com sucesso.")
             return True
         else:
             print(f"Erro: Produto com ID {id_produto} não encontrado.")

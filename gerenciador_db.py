@@ -146,6 +146,7 @@ def obter_todos_produtos():
     """
     Busca todos os produtos, juntando com o nome da categoria,
     e calcula o custo médio e o lucro para cada um, ordenados pela 'ordem' do produto.
+    Também busca o último preço de compra registrado.
     """
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
@@ -171,6 +172,18 @@ def obter_todos_produtos():
                 custo_medio = 0
                 lucro = preco_venda 
 
+            # Busca o último preço de compra registrado
+            cursor.execute('''
+                SELECT custo_unitario_compra 
+                FROM entradas_de_estoque 
+                WHERE id_produto = ? 
+                ORDER BY data_entrada DESC 
+                LIMIT 1
+            ''', (id_produto,))
+            
+            ultimo_preco_compra_resultado = cursor.fetchone()
+            ultimo_preco_compra = ultimo_preco_compra_resultado[0] if ultimo_preco_compra_resultado else custo_medio
+
             produtos_lista.append({
                 'id': id_produto,
                 'nome': nome,
@@ -179,7 +192,8 @@ def obter_todos_produtos():
                 'custo_medio': custo_medio,
                 'lucro': lucro,
                 'categoria': categoria,
-                'categoria_id': categoria_id
+                'categoria_id': categoria_id,
+                'ultimo_preco_compra': ultimo_preco_compra
             })
         
         return produtos_lista

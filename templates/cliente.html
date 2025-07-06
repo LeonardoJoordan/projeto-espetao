@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cardápio - Espetão do Léo</title>
+    <title>Cardápio - Spetão</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -55,64 +55,207 @@
         .categoria-secao {              /* espaço de 30 px */
             scroll-margin-top: 30px;
         }
+        /* Estilos para o Efeito de Fogo */
+        .particle {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            width: 8px;
+            height: 8px;
+            background: linear-gradient(to top, #ff5722, #ffc107);
+            border-radius: 50%;
+            opacity: 0;
+            animation: burn-up 0.7s ease-out forwards;
+            pointer-events: none; /* Garante que as partículas não interfiram com cliques */
+        }
+
+        @keyframes burn-up {
+            0% {
+                transform: translateY(0) scale(1);
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(-60px) scale(0);
+                opacity: 0;
+            }
+        }
+
+        /* -------- EFEITO DE FOGO TURBINADO -------- */
+        .fire-container{
+            pointer-events:none;
+            position:absolute;
+            inset:0;
+            overflow:visible;
+        }
+        .flame{
+            position:absolute;
+            bottom:-5px;
+            left:50%;
+            transform:translateX(-50%);
+            transform-origin:center bottom;
+            pointer-events:none;
+        }
+        .flame-particle{
+            position:absolute;
+            width:20px;
+            height:30px;
+            background:radial-gradient(ellipse at bottom,#ff6b35,#f7931e,transparent);
+            border-radius:50% 50% 50% 50%/60% 60% 40% 40%;
+            opacity:0;
+            filter:blur(1px);
+            animation:flamerise .8s ease-out forwards;
+        }
+        .flame-core{
+            width:15px;
+            height:25px;
+            background:radial-gradient(ellipse at bottom,#fff,#ffeb3b,#ff6b35);
+            animation:flamerise .6s ease-out forwards;
+        }
+        .spark{
+            position:absolute;
+            width:3px;
+            height:3px;
+            background:#ffeb3b;
+            border-radius:50%;
+            opacity:0;
+            animation:sparkfly .8s ease-out forwards;
+            box-shadow:0 0 6px #ff6b35;
+        }
+        @keyframes flamerise{
+            0%  {transform:translateY(0) scaleY(.3) translateX(-50%);opacity:0;}
+            20% {opacity:1;}
+            100%{transform:translateY(-80px) scaleY(1.2) translateX(-50%) scaleX(.3);opacity:0;}
+        }
+        @keyframes sparkfly{
+            0%  {transform:translate(0,0);opacity:1;}
+            100%{transform:translate(var(--spark-x),var(--spark-y));opacity:0;}
+        }
+        /* brilho momentâneo no botão */
+        .add-button.firing{animation:glow .3s ease-out;}
+        @keyframes glow{
+            0%,100%{box-shadow:0 0 5px rgba(255,107,53,.5);}
+            50%   {box-shadow:0 0 20px rgba(255,107,53,.8),0 0 30px rgba(255,193,7,.6);}
+        }
+        .content-blurred {
+            filter: blur(8px);
+            transform: scale(0.98);
+            pointer-events: none; /* Impede cliques no conteúdo desfocado */
+            user-select: none;    /* Impede seleção de texto no conteúdo desfocado */
+            transition: all 0.3s ease-out;
+        }
     </style>
 </head>
 <body class="text-white">
 
-    <div class="flex max-w-7xl mx-auto">
-        <aside class="sidebar w-64 h-screen p-4">
-            <h1 class="text-2xl font-bold my-4 px-2">Espetão do Léo</h1>
-            <nav id="nav-categorias">
-                <ul class="space-y-1">
-                    {% for categoria in categorias %}
-                    <li>
-                        {# A classe 'active' é adicionada à primeira categoria por padrão #}
-                        <a href="#categoria-{{ categoria.id }}" class="block p-3 rounded-lg text-lg {% if loop.first %}active{% endif %}">
-                            {{ categoria.nome }}
-                        </a>
-                    </li>
-                    {% endfor %}
-                </ul>
-            </nav>
-        </aside>
+    <!-- ===== MODAL: NOVO PEDIDO ===== -->
+    <div id="modal-novo-pedido"
+         class="fixed inset-0 flex items-center justify-center bg-black/70 z-50">
+        <div class="bg-zinc-900 rounded-lg p-6 w-80 shadow-2xl">
+            <h2 class="text-2xl font-bold text-center mb-4 text-amber-400">
+                Novo pedido
+            </h2>
 
-        <main id="main-content" class="flex-1 p-8 md:p-10 overflow-y-auto" style="height: 100vh;">
-            <header class="mb-10">
-                <h2 class="text-4xl font-extrabold text-white">Cardápio</h2>
-                <p class="text-lg text-zinc-400">Escolha seus itens favoritos</p>
-            </header>
+            <input id="nome-cliente"
+                   type="text"
+                   placeholder="Seu nome"
+                   class="w-full mb-4 p-2 rounded bg-zinc-700 placeholder-zinc-400
+                          focus:outline-none focus:ring-2 focus:ring-amber-500">
 
-            {% for categoria in categorias %}
-            <section id="categoria-{{ categoria.id }}" class="mb-12 categoria-secao">
-                <h3 class="text-3xl font-bold mb-6 text-amber-400">{{ categoria.nome }}</h3>
-                <div class="space-y-4">
-                    
-                    {% for produto in produtos_agrupados[categoria.id] %}
-                    <div class="product-card bg-zinc-800 rounded-xl p-4 flex items-center gap-4">
-                        <div class="w-24 h-24 bg-zinc-700 rounded-md flex-shrink-0 flex items-center justify-center">
-                            <i class="fas fa-camera text-3xl text-zinc-500"></i>
+            <button id="btn-iniciar-pedido"
+                    class="w-full py-2 bg-amber-500 hover:bg-amber-600
+                           rounded text-white font-semibold">
+                Iniciar
+            </button>
+        </div>
+    </div>
+
+    <div id="main-container">
+        <div class="flex max-w-7xl mx-auto">
+            <aside class="sidebar w-64 h-screen p-4">
+                <h1 class="text-2xl font-bold my-4 px-2">Spetão</h1>
+                <nav id="nav-categorias">
+                    <ul class="space-y-1">
+                        {% for categoria in categorias %}
+                        <li>
+                            {# A classe 'active' é adicionada à primeira categoria por padrão #}
+                            <a href="#categoria-{{ categoria.id }}" class="block p-3 rounded-lg text-lg {% if loop.first %}active{% endif %}">
+                                {{ categoria.nome }}
+                            </a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </nav>
+            </aside>
+
+            <main id="main-content" class="flex-1 p-8 md:p-10 overflow-y-auto" style="height: 100vh;">
+                <header class="mb-10">
+                    <h2 class="text-4xl font-extrabold text-white">Cardápio</h2>
+                    <p class="text-lg text-zinc-400">Escolha seus itens favoritos</p>
+                </header>
+
+                {% for categoria in categorias %}
+                <section id="categoria-{{ categoria.id }}" class="mb-12 categoria-secao">
+                    <h3 class="text-3xl font-bold mb-6 text-amber-400">{{ categoria.nome }}</h3>
+                    <div class="space-y-4">
+                        
+                        {% for produto in produtos_agrupados[categoria.id] %}
+                        <div class="product-card bg-zinc-800 rounded-xl p-4 flex items-center gap-4">
+                            <div class="w-24 h-24 bg-zinc-700 rounded-md flex-shrink-0 flex items-center justify-center">
+                                <i class="fas fa-camera text-3xl text-zinc-500"></i>
+                            </div>
+                            <div class="flex-grow">
+                                <h4 class="text-xl font-semibold">{{ produto.nome }}</h4>
+                                <p class="text-zinc-400 text-sm mt-1">Descrição customizável do produto para atrair o cliente.</p>
+                            </div>
+                            <div class="flex items-center gap-6">
+                                <span class="text-2xl font-semibold w-28 text-right">
+                                    R$ {{ "%.2f"|format(produto.preco_venda) | replace('.', ',') }}
+                                </span>
+                                <button class="add-button rounded-full w-14 h-14 flex items-center justify-center text-white text-2xl shadow-lg relative overflow-hidden">
+                                    <i class="fas fa-plus z-10"></i>
+                                    <div class="fire-container absolute inset-0"></div>
+                                </button>
+                            </div>
                         </div>
-                        <div class="flex-grow">
-                            <h4 class="text-xl font-semibold">{{ produto.nome }}</h4>
-                            <p class="text-zinc-400 text-sm mt-1">Descrição customizável do produto para atrair o cliente.</p>
-                        </div>
-                        <div class="flex items-center gap-6">
-                            <span class="text-2xl font-semibold w-28 text-right">R$ {{ "%.2f"|format(produto.preco_venda) | replace('.', ',') }}</span>
-                            <button class="add-button rounded-full w-14 h-14 flex items-center justify-center text-white text-2xl shadow-lg">
-                                <i class="fas fa-plus"></i>
-                            </button>
-                        </div>
+                        {% endfor %}
+
                     </div>
-                    {% endfor %}
-
-                </div>
-            </section>
-            {% endfor %}
-        </main>
+                </section>
+                {% endfor %}
+            </main>
+        </div>
     </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+
+    // --- LÓGICA DO MODAL DE NOVO PEDIDO (NOVO) ---
+    const mainContainer = document.getElementById('main-container');
+    const modalNovoPedido = document.getElementById('modal-novo-pedido');
+    const btnIniciarPedido = document.getElementById('btn-iniciar-pedido');
+    const inputNomeCliente = document.getElementById('nome-cliente');
+
+    // Garante que o container principal e o modal existem antes de continuar
+    if (mainContainer && modalNovoPedido && btnIniciarPedido) {
+        
+        // 1. Aplica o desfoque no conteúdo principal assim que a página carrega
+        mainContainer.classList.add('content-blurred');
+        
+        // Coloca o foco no campo de nome para o cliente já poder digitar
+        inputNomeCliente.focus();
+
+        // 2. Adiciona o ouvinte de clique ao botão para iniciar o pedido
+        btnIniciarPedido.addEventListener('click', function() {
+            // Aqui podemos pegar o nome do cliente, se necessário
+            const nomeCliente = inputNomeCliente.value;
+            console.log(`Pedido iniciado para: ${nomeCliente || 'Cliente Anônimo'}`);
+
+            // Esconde o modal e remove o desfoque
+            modalNovoPedido.classList.add('hidden');
+            mainContainer.classList.remove('content-blurred');
+        });
+    }
+
     const mainContent = document.getElementById('main-content');
     const navLinks    = document.querySelectorAll('#nav-categorias a');
     const sections    = document.querySelectorAll('.categoria-secao');
@@ -161,6 +304,52 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /* Ouve a rolagem apenas do contêiner */
     mainContent.addEventListener('scroll', updateActiveLinkOnScroll);
+});
+
+/* --- LÓGICA DE ANIMAÇÃO DE FOGO TURBINADA --- */
+document.addEventListener('click',(event)=>{
+    const addButton = event.target.closest('.add-button');
+    if(!addButton) return;
+
+    /* brilho do botão */
+    addButton.classList.add('firing');
+    setTimeout(()=>addButton.classList.remove('firing'),300);
+
+    const fireContainer = addButton.querySelector('.fire-container');
+    if(!fireContainer) return;
+    fireContainer.innerHTML = '';              // limpa efeitos anteriores
+
+    /* chama principal */
+    const flame = document.createElement('div');
+    flame.classList.add('flame');
+    fireContainer.appendChild(flame);
+
+    /* núcleo claro */
+    const core = document.createElement('div');
+    core.classList.add('flame-core');
+    flame.appendChild(core);
+
+    /* partículas da chama */
+    for(let i=0;i<6;i++){
+        const p = document.createElement('div');
+        p.classList.add('flame-particle');
+        p.style.left = `${(Math.random()-0.5)*40}px`;
+        p.style.animationDuration = `${Math.random()*0.4+0.6}s`;
+        flame.appendChild(p);
+    }
+
+    /* faíscas */
+    for(let i=0;i<8;i++){
+        const s = document.createElement('div');
+        s.classList.add('spark');
+        s.style.setProperty('--spark-x',`${(Math.random()-0.5)*60}px`);
+        s.style.setProperty('--spark-y',`${-Math.random()*80-20}px`);
+        s.style.animationDuration = `${Math.random()*0.3+0.5}s`;
+        flame.appendChild(s);
+    }
+
+    /* remove a chama após as animações */
+    setTimeout(()=>flame.remove(),1000);
 });
 </script>
 

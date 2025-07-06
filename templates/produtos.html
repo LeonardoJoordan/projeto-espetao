@@ -331,6 +331,75 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
 }); // --- FIM DO BLOCO DE SEGURANÇA 'DOMContentLoaded' ---
+// --- VALIDAÇÃO DO FORMULÁRIO ---
+const formProduto = document.getElementById('form-produto');
+formProduto.addEventListener('submit', function(event) {
+    // Pega os valores dos campos
+    const idProduto = document.getElementById('id_produto').value;
+    const nomeProduto = document.getElementById('nome_produto').value.trim();
+    const categoriaProduto = document.getElementById('categoria_produto').value;
+    const precoVenda = document.getElementById('preco_venda').value;
+    const precoCompra = document.getElementById('preco_compra').value;
+    const quantidade = document.getElementById('quantidade').value;
+    
+    let mensagemErro = '';
+    
+    if (!idProduto) {
+        // NOVO PRODUTO - todos os campos são obrigatórios
+        if (!nomeProduto) mensagemErro += '• Nome do produto é obrigatório\n';
+        if (!categoriaProduto) mensagemErro += '• Categoria é obrigatória\n';
+        if (!precoVenda) mensagemErro += '• Preço de venda é obrigatório\n';
+        if (!precoCompra) mensagemErro += '• Preço de compra é obrigatório\n';
+        if (!quantidade) mensagemErro += '• Quantidade é obrigatória\n';
+    } else {
+        // ATUALIZAÇÃO/ADIÇÃO DE ESTOQUE
+        if (!precoVenda && !quantidade && !precoCompra) {
+            mensagemErro = 'Para atualizar um produto, você precisa preencher:\n' +
+                          '• Novo preço de venda, OU\n' +
+                          '• Quantidade e preço de compra (para adicionar estoque)';
+        } else if (quantidade && !precoCompra) {
+            mensagemErro = '• Ao adicionar estoque, o preço de compra é obrigatório';
+        } else if (!quantidade && precoCompra) {
+            mensagemErro = '• Ao informar preço de compra, a quantidade é obrigatória';
+        }
+        
+        // Validação para ajuste de estoque negativo
+        if (quantidade && parseInt(quantidade) < 0 && precoCompra && parseFloat(precoCompra) !== 0) {
+            mensagemErro = '• Para ajuste negativo de estoque (perda), o preço de compra deve ser 0';
+        }
+    }
+    
+    // Validação de valores numéricos
+    if (precoVenda && (isNaN(precoVenda) || parseFloat(precoVenda) < 0)) {
+        mensagemErro += '• Preço de venda deve ser um número válido maior ou igual a zero\n';
+    }
+    if (precoCompra && (isNaN(precoCompra) || parseFloat(precoCompra) < 0)) {
+        mensagemErro += '• Preço de compra deve ser um número válido maior ou igual a zero\n';
+    }
+    if (quantidade && isNaN(quantidade)) {
+        mensagemErro += '• Quantidade deve ser um número válido\n';
+    }
+    
+    // Se houver erros, mostra o alerta e impede o envio
+    if (mensagemErro) {
+        event.preventDefault(); // Impede o envio do formulário
+        alert('Por favor, corrija os seguintes erros:\n\n' + mensagemErro);
+        return false;
+    }
+    
+    // Se chegou aqui, o formulário está válido e será enviado
+});
+
+// --- FUNÇÃO PARA LIMPAR FORMULÁRIO ---
+function limparFormulario() {
+    document.getElementById('id_produto').value = '';
+    document.getElementById('nome_produto').value = '';
+    document.getElementById('categoria_produto').selectedIndex = 0;
+    document.getElementById('preco_venda').value = '';
+    document.getElementById('preco_compra').value = '';
+    document.getElementById('quantidade').value = '';
+}
+
 </script>
     {# FIM DOS NOVOS SCRIPTS PARA DRAG-AND-DROP #}
     <div id="modal-historico" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">

@@ -493,10 +493,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- NOVA LÓGICA DO POPUP DE CUSTOMIZAÇÃO ---
     const modalCustomizacao = document.getElementById('modal-customizacao');
+    let eventoPopupAtivo = null; // Variável para armazenar o listener ativo
 
     // Esta função principal abre e gerencia o popup
     function abrirPopupCustomizacao(productCard) {
         if (!modalCustomizacao) return;
+
+        // IMPORTANTE: Remove o event listener anterior se existir
+        if (eventoPopupAtivo) {
+            modalCustomizacao.removeEventListener('click', eventoPopupAtivo);
+        }
 
         // Pega os dados do produto que foi clicado
         const idProduto = productCard.dataset.id;
@@ -608,8 +614,8 @@ document.addEventListener('DOMContentLoaded', () => {
             precoTotalDisplay.textContent = `R$ ${total.toFixed(2).replace('.', ',')}`;
         }
 
-        // Delegação de eventos para os cliques dentro do popup
-        modalCustomizacao.addEventListener('click', (event) => {
+        // Cria o event listener como uma função separada para poder removê-la depois
+        eventoPopupAtivo = (event) => {
             const target = event.target;
             // Botão Aumentar Quantidade
             if (target.closest('#btn-aumentar-popup')) {
@@ -671,7 +677,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 modalCustomizacao.classList.add('hidden');
                 modalCustomizacao.innerHTML = '';
             }
-        });
+        };
+
+        // Adiciona o novo event listener
+        modalCustomizacao.addEventListener('click', eventoPopupAtivo);
 
         // Inicializa o popup com 1 item
         atualizarInterfacePopup();

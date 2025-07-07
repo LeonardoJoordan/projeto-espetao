@@ -439,6 +439,44 @@
         </div>
     </div>
 
+    <div id="modal-confirmacao-pedido" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="bg-zinc-800 rounded-2xl shadow-2xl w-full max-w-2xl border border-zinc-700 flex flex-col max-h-[90vh]">
+            <header class="p-6 border-b border-zinc-700">
+                <h2 class="text-2xl font-bold text-white">Revise seu Pedido</h2>
+                <p class="text-zinc-400">Confira os itens e selecione a forma de pagamento.</p>
+            </header>
+    
+            <main id="lista-itens-confirmacao" class="p-6 flex-grow overflow-y-auto space-y-3">
+                </main>
+    
+            <section class="p-6 border-t border-zinc-700">
+                <h3 class="text-lg font-semibold mb-3">Forma de Pagamento</h3>
+                <div id="opcoes-pagamento" class="grid grid-cols-3 gap-3">
+                     <label class="ponto-option selected" data-valor="pix">
+                        <input type="radio" name="metodo_pagamento" value="pix" class="hidden" checked> PIX
+                    </label>
+                    <label class="ponto-option" data-valor="cartao">
+                        <input type="radio" name="metodo_pagamento" value="cartao" class="hidden"> Cartão
+                    </label>
+                    <label class="ponto-option" data-valor="dinheiro">
+                        <input type="radio" name="metodo_pagamento" value="dinheiro" class="hidden"> Dinheiro
+                    </label>
+                </div>
+            </section>
+    
+            <footer class="p-6 border-t border-zinc-700 bg-zinc-900/50 flex justify-between items-center">
+                <button id="btn-continuar-comprando" class="btn-acao btn-cancelar">Voltar</button>
+                <div class="flex items-center gap-4">
+                    <div class="text-right">
+                        <div class="text-sm text-zinc-400">Total</div>
+                        <div id="total-confirmacao" class="text-2xl font-bold text-green-400">R$ 0,00</div>
+                    </div>
+                    <button id="btn-confirmar-pedido" class="btn-acao btn-adicionar">Confirmar Pedido</button>
+                </div>
+            </footer>
+        </div>
+    </div>
+
 <script>
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -446,6 +484,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // PASSO 1: DEFINIÇÕES DE VARIÁVEIS E CONSTANTES
     // ==========================================================
     let pedidoAtual = [];
+    let eventoPopupSimplesAtivo = null; // Variável para o listener do popup simples
     const mainContainer = document.getElementById('main-container');
     const modalNovoPedido = document.getElementById('modal-novo-pedido');
     const btnIniciarPedido = document.getElementById('btn-iniciar-pedido');
@@ -504,12 +543,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const modalSimples = document.getElementById('modal-quantidade-simples');
         if (!modalSimples) return;
 
-        // Pega os dados do produto clicado
+        // ===== PASSO 1: DISPENSAR O GARÇOM ANTIGO =====
+        if (eventoPopupSimplesAtivo) {
+            modalSimples.removeEventListener('click', eventoPopupSimplesAtivo);
+        }
+
         const idProduto = productCard.dataset.id;
         const nomeProduto = productCard.dataset.nome;
         const precoProduto = parseFloat(productCard.dataset.preco);
 
-        // Constrói o HTML do popup simples
         modalSimples.innerHTML = `
             <div class="popup-container popup-enter bg-zinc-800 rounded-2xl shadow-2xl w-full max-w-md border border-zinc-700 flex flex-col">
                 <header class="p-6 border-b border-zinc-700">
@@ -536,10 +578,9 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
 
-        // Mostra o popup
         modalSimples.classList.remove('hidden');
+        mainContainer.classList.add('content-blurred');
 
-        // Lógica interna do popup simples
         const quantidadeDisplay = document.getElementById('quantidade-display-simples');
         const precoTotalDisplay = document.getElementById('preco-total-simples');
         let quantidade = 1;
@@ -550,7 +591,8 @@ document.addEventListener('DOMContentLoaded', () => {
             precoTotalDisplay.textContent = `R$ ${total.toFixed(2).replace('.', ',')}`;
         }
 
-        modalSimples.addEventListener('click', (event) => {
+        // ===== PASSO 2: CRIAR O NOVO GARÇOM E DAR O CRACHÁ A ELE =====
+        eventoPopupSimplesAtivo = (event) => {
             const target = event.target.closest('button');
             if (!target) return;
 
@@ -565,8 +607,9 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (target.id === 'btn-cancelar-simples') {
                 modalSimples.classList.add('hidden');
                 modalSimples.innerHTML = '';
+                mainContainer.classList.remove('content-blurred');
             } else if (target.id === 'btn-adicionar-simples') {
-                const itemExistente = pedidoAtual.find(item => item.id === idProduto);
+                const itemExistente = pedidoAtual.find(item => item.id === idProduto && !item.customizacoes);
                 if (itemExistente) {
                     itemExistente.quantidade += quantidade;
                 } else {
@@ -575,16 +618,18 @@ document.addEventListener('DOMContentLoaded', () => {
                         nome: nomeProduto,
                         preco: precoProduto,
                         quantidade: quantidade
-                        // Sem customizações para este tipo de item
                     });
                 }
                 atualizarBotaoPrincipal();
                 modalSimples.classList.add('hidden');
                 modalSimples.innerHTML = '';
+                mainContainer.classList.remove('content-blurred');
             }
-        });
+        };
 
-        // Inicializa a interface do popup simples
+        // ===== PASSO 3: COLOCAR O NOVO GARÇOM PARA TRABALHAR =====
+        modalSimples.addEventListener('click', eventoPopupSimplesAtivo);
+
         atualizarInterfaceSimples();
     }
 
@@ -718,13 +763,21 @@ document.addEventListener('DOMContentLoaded', () => {
             // Botão Aumentar Quantidade
             if (target.closest('#btn-aumentar-popup')) {
                 quantidade++;
-                atualizarInterfacePopup();
+                // Em vez de redesenhar tudo, apenas adicionamos o novo no final
+                containerLinhas.insertAdjacentHTML('beforeend', criarLinhaHtml(quantidade));
+                quantidadeDisplay.textContent = quantidade;
+                precoTotalDisplay.textContent = `R$ ${(quantidade * precoProduto).toFixed(2).replace('.', ',')}`;
             }
             // Botão Diminuir Quantidade
             if (target.closest('#btn-diminuir-popup')) {
                 if (quantidade > 1) {
                     quantidade--;
-                    atualizarInterfacePopup();
+                    // Em vez de redesenhar tudo, apenas removemos o último elemento
+                    if (containerLinhas.lastElementChild) {
+                        containerLinhas.lastElementChild.remove();
+                    }
+                    quantidadeDisplay.textContent = quantidade;
+                    precoTotalDisplay.textContent = `R$ ${(quantidade * precoProduto).toFixed(2).replace('.', ',')}`;
                 }
             }
             // Opções de Ponto da Carne
@@ -782,6 +835,77 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Inicializa o popup com 1 item
         atualizarInterfacePopup();
+    }
+
+    // ==========================================================
+    // NOVA FUNÇÃO "CONTRATO" PARA O POPUP DE CONFIRMAÇÃO
+    // ==========================================================
+    function abrirPopupConfirmacao() {
+        const modalConfirmacao = document.getElementById('modal-confirmacao-pedido');
+        if (!modalConfirmacao || pedidoAtual.length === 0) return;
+
+        const listaContainer = document.getElementById('lista-itens-confirmacao');
+        const totalDisplay = document.getElementById('total-confirmacao');
+        let valorTotal = 0;
+
+        // 1. Limpa a lista antiga e calcula o novo total
+        listaContainer.innerHTML = ''; 
+        valorTotal = pedidoAtual.reduce((acc, item) => acc + (item.preco * item.quantidade), 0);
+
+        // 2. Cria e adiciona o HTML de cada item do pedido na lista
+        pedidoAtual.forEach((item, index) => {
+            let detalhesItem = '';
+            // Se for um item customizado (espetinho), mostra os detalhes
+            if (item.customizacoes && item.customizacoes.length > 0) {
+                // 1. Cria o título principal, usando a mesma formatação dos itens simples.
+                detalhesItem = `<div class="text-base font-semibold text-white pl-8">${item.quantidade}x ${item.nome}</div>`;
+
+                // 2. Itera sobre cada customização para criar a sub-lista numerada.
+                // Note o "(custo, i)" que nos dá o índice para a numeração.
+                item.customizacoes.forEach((custo, i) => {
+                    // 1. Nosso pequeno "dicionário tradutor"
+                    const mapaPonto = {
+                        'mal': 'Carne Mal Passada',
+                        'ponto': 'Carne ao Ponto',
+                        'bem': 'Carne Bem Passada'
+                    };
+
+                    // 2. Traduz o valor 'cru' (ex: 'mal') para o texto completo (ex: 'Mal Passado')
+                    const pontoTexto = mapaPonto[custo.ponto] || custo.ponto;
+
+                    let extrasTexto = 'sem extras';
+                    if (custo.extras.length > 0) {
+                        extrasTexto = `com ${custo.extras.join(', ')}`;
+                    }
+
+                    // 3. Usa a variável 'pontoTexto' (já traduzida) na linha final
+                    detalhesItem += `<div class="text-sm text-zinc-400 pl-11">${i + 1}º - ${pontoTexto}, ${extrasTexto}.</div>`;
+                });
+            } else {
+                // LÓGICA PARA ITENS SIMPLES
+                detalhesItem = `<div class="text-base font-semibold text-white pl-8">${item.quantidade}x ${item.nome}</div>`;
+            }
+
+            const itemHtml = `
+                <div class="flex items-center justify-between">
+                    <div>${detalhesItem}</div>
+                    <div class="flex items-center gap-4">
+                        <span class="font-semibold w-20 text-right">R$ ${(item.preco * item.quantidade).toFixed(2).replace('.',',')}</span>
+                        <button class="btn-remover-item text-red-500 hover:text-red-400" data-index="${index}" title="Remover Item">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+            listaContainer.innerHTML += itemHtml;
+        });
+
+        // 3. Atualiza o valor total no rodapé do popup
+        totalDisplay.textContent = `R$ ${valorTotal.toFixed(2).replace('.', ',')}`;
+
+        // 4. Exibe o popup
+        modalConfirmacao.classList.remove('hidden');
+        mainContainer.classList.add('content-blurred');
     }
 
     // ==========================================================
@@ -880,9 +1004,83 @@ document.addEventListener('DOMContentLoaded', () => {
             if (pedidoAtual.length === 0) {
                 location.reload();
             } else {
-                console.log("--- Pedido a ser Finalizado ---");
-                console.log(pedidoAtual);
-                alert("Pedido enviado para o console! (Próxima etapa: enviar para o servidor)");
+                // Ação de Finalizar Pedido - CHAMA NOSSA NOVA FUNÇÃO
+                abrirPopupConfirmacao();
+            }
+        });
+    }
+
+    // Listener para fechar o novo popup de confirmação
+    const modalConfirmacao = document.getElementById('modal-confirmacao-pedido');
+    // Listener inteligente para o popup de confirmação
+    if (modalConfirmacao) {
+        modalConfirmacao.addEventListener('click', async (event) => {
+            const target = event.target;
+
+            // --- Ação: Voltar ou fechar o modal
+            if (target.id === 'btn-continuar-comprando' || target === modalConfirmacao) {
+                modalConfirmacao.classList.add('hidden');
+                mainContainer.classList.remove('content-blurred');
+                return; // Encerra a execução aqui
+            }
+
+            // --- Ação: Selecionar método de pagamento
+            const pontoOption = target.closest('.ponto-option');
+            if (pontoOption) {
+                pontoOption.closest('#opcoes-pagamento').querySelectorAll('.ponto-option').forEach(opt => opt.classList.remove('selected'));
+                pontoOption.classList.add('selected');
+                pontoOption.querySelector('input').checked = true;
+                return;
+            }
+
+            // --- Ação: Remover um item do pedido
+            const botaoRemover = target.closest('.btn-remover-item');
+            if (botaoRemover) {
+                const indexParaRemover = parseInt(botaoRemover.dataset.index);
+                pedidoAtual.splice(indexParaRemover, 1); // Remove o item do array
+
+                // Se o carrinho ficar vazio, fecha o popup e atualiza o botão principal
+                if(pedidoAtual.length === 0) {
+                    modalConfirmacao.classList.add('hidden');
+                    mainContainer.classList.remove('content-blurred');
+                } else {
+                    // Se ainda tiver itens, apenas redesenha o conteúdo do popup
+                    abrirPopupConfirmacao(); 
+                }
+                atualizarBotaoPrincipal(); // Atualiza o contador de itens no botão
+                return;
+            }
+
+            // --- Ação: Confirmar e Enviar o Pedido para o Servidor
+            if (target.id === 'btn-confirmar-pedido') {
+                const nomeCliente = inputNomeCliente.value || "Cliente";
+                const metodoPagamento = document.querySelector('input[name="metodo_pagamento"]:checked').value;
+
+                console.log("Enviando para o servidor:", { nome_cliente: nomeCliente, itens: pedidoAtual, metodo_pagamento: metodoPagamento });
+
+                try {
+                    const response = await fetch('/salvar_pedido', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            nome_cliente: nomeCliente,
+                            itens: pedidoAtual,
+                            metodo_pagamento: metodoPagamento
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Erro ao salvar pedido. Status: ' + response.status);
+                    }
+
+                    const result = await response.json();
+                    alert(`Pedido #${result.pedido_id} recebido com sucesso!`);
+                    location.reload(); // Recarrega a página para um novo pedido
+
+                } catch (error) {
+                    console.error("Falha ao enviar o pedido:", error);
+                    alert("Não foi possível registrar o pedido. Tente novamente.");
+                }
             }
         });
     }

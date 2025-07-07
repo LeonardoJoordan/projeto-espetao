@@ -59,6 +59,7 @@ def inicializar_banco():
                 metodo_pagamento TEXT,
                 valor_total REAL,
                 timestamp_criacao TEXT NOT NULL,
+                timestamp_pagamento TEXT,
                 itens_json TEXT 
             )
         ''')

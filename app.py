@@ -31,20 +31,26 @@ def tela_cliente():
 # --- NOVA ROTA DA COZINHA ---
 @app.route('/cozinha')
 def tela_cozinha():
-    """
-    Esta rota representa a tela da cozinha.
-    Ela busca os pedidos que precisam de atenção e os envia para o template.
-    """
-    # 1. Definir quais status a cozinha quer ver
-    status_de_interesse = ['recebido']
+    # 1. Busca a lista única e ordenada de todos os pedidos ativos
+    todos_pedidos_ativos = gerenciador_db.obter_pedidos_ativos()
 
-    # 2. Chamar a função do nosso gerenciador (o "contrato")
-    pedidos_para_cozinha = gerenciador_db.obter_pedidos_por_status(status_de_interesse)
-    
-    print(f"DEBUG: Pedidos encontrados para a cozinha: {pedidos_para_cozinha}")
+    # 2. Prepara as duas listas vazias para as "linhas" da cozinha
+    pedidos_backlog = []      # Linha 1: Aguardando Pagamento e Aguardando Produção
+    pedidos_em_producao = []  # Linha 2: Em Produção
 
-    # 3. Enviar a lista de pedidos para o template 'cozinha.html' renderizar
-    return render_template('cozinha.html', pedidos=pedidos_para_cozinha)
+    # 3. Itera sobre a lista ordenada e distribui cada pedido para a sua respectiva "linha"
+    for pedido in todos_pedidos_ativos:
+        if pedido['status'] in ['aguardando_pagamento', 'aguardando_producao']:
+            pedidos_backlog.append(pedido)
+        elif pedido['status'] == 'em_producao':
+            pedidos_em_producao.append(pedido)
+
+    # 4. Envia as duas listas separadas para o template da cozinha
+    return render_template(
+        'cozinha.html', 
+        pedidos_backlog=pedidos_backlog, 
+        pedidos_em_producao=pedidos_em_producao
+    )
 
 # Em app.py
 
@@ -228,6 +234,18 @@ def salvar_pedido():
         "mensagem": "Pedido recebido, em preparação!",
         "pedido_id": id_do_pedido_salvo
     })
+
+@app.route('/pedido/confirmar_pagamento/<int:pedido_id>', methods=['POST'])
+def rota_confirmar_pagamento(pedido_id):
+    """
+    Rota que o JavaScript da cozinha chama para confirmar o pagamento de um pedido.
+    """
+    sucesso = gerenciador_db.confirmar_pagamento_pedido(pedido_id)
+
+    if sucesso:
+        return jsonify({"status": "sucesso", "mensagem": f"Pagamento do pedido {pedido_id} confirmado."})
+    else:
+        return jsonify({"status": "erro", "mensagem": "Não foi possível confirmar o pagamento."}), 500
 
 @app.route('/')
 def index():

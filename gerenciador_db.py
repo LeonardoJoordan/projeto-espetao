@@ -208,41 +208,50 @@ def obter_todos_produtos():
         if conn:
             conn.close()
 
-def obter_pedidos_por_status(lista_de_status):
+def obter_pedidos_ativos():
     """
-    Busca no banco de dados todos os pedidos que correspondem a qualquer um
-    dos status na lista fornecida.
+    Busca no banco de dados todos os pedidos ativos, ordenando por
+    prioridade de status e, em seguida, por data.
     """
+    # Lista de todos os status que consideramos "ativos" na tela da cozinha
+    lista_status_ativos = ['aguardando_pagamento', 'aguardando_producao', 'em_producao']
     pedidos_encontrados = []
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
-        # Row factory para retornar dicionários em vez de tuplas, facilita o acesso
         conn.row_factory = sqlite3.Row 
         cursor = conn.cursor()
 
-        # Cria os placeholders (?) para a cláusula IN de forma dinâmica
-        placeholders = ','.join(['?'] * len(lista_de_status))
+        placeholders = ','.join(['?'] * len(lista_status_ativos))
 
-        # Executa a consulta SQL real
-        query = f"SELECT * FROM pedidos WHERE status IN ({placeholders}) ORDER BY timestamp_criacao ASC"
-        cursor.execute(query, lista_de_status)
+        # A nova consulta com a lógica de ordenação complexa
+        query = f"""
+            SELECT * FROM pedidos 
+            WHERE status IN ({placeholders}) 
+            ORDER BY 
+                CASE status
+                    WHEN 'aguardando_pagamento' THEN 1 -- Prioridade 1
+                    WHEN 'aguardando_producao'  THEN 2 -- Prioridade 2
+                    WHEN 'em_producao'          THEN 3 -- Prioridade 3
+                END,
+                CASE status
+                    WHEN 'aguardando_producao' THEN timestamp_pagamento -- Fila do pagamento
+                    ELSE timestamp_criacao                           -- Fila de chegada
+                END ASC
+        """
+        cursor.execute(query, lista_status_ativos)
 
         resultados = cursor.fetchall()
 
         for row in resultados:
-            # Converte a linha do banco (que é um objeto especial) para um dicionário
             pedido = dict(row)
-
-            # Ponto-chave: Converte a string JSON de itens de volta para uma lista Python
             pedido['itens'] = json.loads(pedido['itens_json'])
-
             pedidos_encontrados.append(pedido)
 
         return pedidos_encontrados
 
     except sqlite3.Error as e:
-        print(f"Ocorreu um erro ao obter os pedidos: {e}")
+        print(f"Ocorreu um erro ao obter os pedidos ativos: {e}")
         return [] 
     finally:
         if conn:
@@ -533,24 +542,25 @@ def obter_historico_produto(id_produto):
 def salvar_novo_pedido(dados_do_pedido):
     """
     Salva um novo pedido com status 'aguardando_pagamento' e reserva o estoque.
+    A coluna timestamp_pagamento fica nula nesta etapa.
     """
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # --- Missão 1: Salvar o Pedido com o novo status ---
-
+        # --- Missão 1: Salvar o Pedido ---
         itens_como_json = json.dumps(dados_do_pedido['itens'])
         timestamp_atual = datetime.datetime.now().isoformat()
         valor_total = sum(item['preco'] * item['quantidade'] for item in dados_do_pedido['itens'])
 
+        # Note que não inserimos 'timestamp_pagamento', ele será nulo por padrão.
         cursor.execute('''
             INSERT INTO pedidos (nome_cliente, status, metodo_pagamento, valor_total, timestamp_criacao, itens_json)
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (
             dados_do_pedido['nome_cliente'],
-            'aguardando_pagamento', # <-- MUDANÇA 1: Novo status inicial
+            'aguardando_pagamento', # Status inicial correto
             dados_do_pedido['metodo_pagamento'],
             valor_total,
             timestamp_atual,
@@ -560,7 +570,6 @@ def salvar_novo_pedido(dados_do_pedido):
         id_do_pedido_salvo = cursor.lastrowid
 
         # --- Missão 2: Mover o estoque de 'atual' para 'reservado' ---
-
         for item in dados_do_pedido['itens']:
             cursor.execute('''
                 UPDATE produtos
@@ -569,7 +578,7 @@ def salvar_novo_pedido(dados_do_pedido):
                 WHERE id = ?
             ''', (
                 item['quantidade'], 
-                item['quantidade'], # <-- MUDANÇA 2: A mesma quantidade que sai de um, entra no outro
+                item['quantidade'],
                 item['id']
             ))
 
@@ -583,6 +592,45 @@ def salvar_novo_pedido(dados_do_pedido):
         if conn:
             conn.rollback()
         return None
+    finally:
+        if conn:
+            conn.close()
+
+# Em gerenciador_db.py
+
+def confirmar_pagamento_pedido(id_do_pedido):
+    """
+    Altera o status de um pedido para 'aguardando_producao' e registra
+    o horário do pagamento.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        timestamp_atual = datetime.datetime.now().isoformat()
+
+        cursor.execute("""
+            UPDATE pedidos
+            SET status = ?, timestamp_pagamento = ?
+            WHERE id = ? AND status = ?
+        """, ('aguardando_producao', timestamp_atual, id_do_pedido, 'aguardando_pagamento'))
+
+        # cursor.rowcount nos diz quantas linhas foram afetadas.
+        # Se for 0, o pedido não foi encontrado ou já tinha outro status.
+        if cursor.rowcount == 0:
+            print(f"AVISO: Nenhuma linha alterada para o pedido #{id_do_pedido}. Status pode não ser 'aguardando_pagamento'.")
+            return False
+
+        conn.commit()
+        print(f"SUCESSO: Pagamento do pedido #{id_do_pedido} confirmado.")
+        return True
+
+    except sqlite3.Error as e:
+        print(f"ERRO ao confirmar pagamento do pedido #{id_do_pedido}: {e}")
+        if conn:
+            conn.rollback()
+        return False
     finally:
         if conn:
             conn.close()

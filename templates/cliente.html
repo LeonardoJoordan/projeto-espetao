@@ -357,6 +357,14 @@
             </button>
         </div>
     </div>
+
+    <!-- ===== NOVO: MODAL DE QUANTIDADE SIMPLES ===== -->
+    <div id="modal-quantidade-simples" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    
+        <!-- O conteúdo deste popup será inserido dinamicamente pelo JavaScript -->
+
+    </div>
+
     <!-- ===== NOVO: MODAL DE CUSTOMIZAÇÃO DE ITEM ===== -->
     <div id="modal-customizacao" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
         
@@ -403,7 +411,8 @@
                         <div class="product-card bg-zinc-800 rounded-xl p-4 flex items-center gap-4"
                             data-id="{{ produto.id }}" 
                             data-nome="{{ produto.nome }}" 
-                            data-preco="{{ produto.preco_venda }}">
+                            data-preco="{{ produto.preco_venda }}"
+                            data-categoria-nome="{{ categoria.nome }}">
                             <div class="w-24 h-24 bg-zinc-700 rounded-md flex-shrink-0 flex items-center justify-center">
                                 <i class="fas fa-camera text-3xl text-zinc-500"></i>
                             </div>
@@ -490,7 +499,96 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================================
     // PASSO 2: DEFINIÇÃO DE FUNÇÕES AUXILIARES (CONTINUAÇÃO)
     // ==========================================================
+    // --- NOVA FUNÇÃO PARA O POPUP DE QUANTIDADE SIMPLES ---
+    function abrirPopupSimples(productCard) {
+        const modalSimples = document.getElementById('modal-quantidade-simples');
+        if (!modalSimples) return;
 
+        // Pega os dados do produto clicado
+        const idProduto = productCard.dataset.id;
+        const nomeProduto = productCard.dataset.nome;
+        const precoProduto = parseFloat(productCard.dataset.preco);
+
+        // Constrói o HTML do popup simples
+        modalSimples.innerHTML = `
+            <div class="popup-container popup-enter bg-zinc-800 rounded-2xl shadow-2xl w-full max-w-md border border-zinc-700 flex flex-col">
+                <header class="p-6 border-b border-zinc-700">
+                    <h2 class="text-2xl font-bold text-white">${nomeProduto}</h2>
+                    <p class="text-zinc-400">Selecione a quantidade desejada.</p>
+                </header>
+                <main class="p-6 flex-grow flex flex-col items-center justify-center">
+                    <div class="quantidade-control">
+                        <button id="btn-diminuir-simples" class="quantidade-btn"><i class="fas fa-minus"></i></button>
+                        <div id="quantidade-display-simples" class="quantidade-display">1</div>
+                        <button id="btn-aumentar-simples" class="quantidade-btn"><i class="fas fa-plus"></i></button>
+                    </div>
+                </main>
+                <footer class="p-6 border-t border-zinc-700 bg-zinc-900/50 flex justify-between items-center">
+                    <button id="btn-cancelar-simples" class="btn-acao btn-cancelar">Cancelar</button>
+                    <div class="flex items-center gap-4">
+                        <div class="text-right">
+                            <div class="text-sm text-zinc-400">Total</div>
+                            <div id="preco-total-simples" class="text-2xl font-bold text-green-400">R$ 0,00</div>
+                        </div>
+                        <button id="btn-adicionar-simples" class="btn-acao btn-adicionar">Adicionar</button>
+                    </div>
+                </footer>
+            </div>
+        `;
+
+        // Mostra o popup
+        modalSimples.classList.remove('hidden');
+
+        // Lógica interna do popup simples
+        const quantidadeDisplay = document.getElementById('quantidade-display-simples');
+        const precoTotalDisplay = document.getElementById('preco-total-simples');
+        let quantidade = 1;
+
+        function atualizarInterfaceSimples() {
+            quantidadeDisplay.textContent = quantidade;
+            const total = quantidade * precoProduto;
+            precoTotalDisplay.textContent = `R$ ${total.toFixed(2).replace('.', ',')}`;
+        }
+
+        modalSimples.addEventListener('click', (event) => {
+            const target = event.target.closest('button');
+            if (!target) return;
+
+            if (target.id === 'btn-aumentar-simples') {
+                quantidade++;
+                atualizarInterfaceSimples();
+            } else if (target.id === 'btn-diminuir-simples') {
+                if (quantidade > 1) {
+                    quantidade--;
+                    atualizarInterfaceSimples();
+                }
+            } else if (target.id === 'btn-cancelar-simples') {
+                modalSimples.classList.add('hidden');
+                modalSimples.innerHTML = '';
+            } else if (target.id === 'btn-adicionar-simples') {
+                const itemExistente = pedidoAtual.find(item => item.id === idProduto);
+                if (itemExistente) {
+                    itemExistente.quantidade += quantidade;
+                } else {
+                    pedidoAtual.push({
+                        id: idProduto,
+                        nome: nomeProduto,
+                        preco: precoProduto,
+                        quantidade: quantidade
+                        // Sem customizações para este tipo de item
+                    });
+                }
+                atualizarBotaoPrincipal();
+                modalSimples.classList.add('hidden');
+                modalSimples.innerHTML = '';
+            }
+        });
+
+        // Inicializa a interface do popup simples
+        atualizarInterfaceSimples();
+    }
+
+    
     // --- NOVA LÓGICA DO POPUP DE CUSTOMIZAÇÃO ---
     const modalCustomizacao = document.getElementById('modal-customizacao');
     let eventoPopupAtivo = null; // Variável para armazenar o listener ativo
@@ -761,10 +859,18 @@ document.addEventListener('DOMContentLoaded', () => {
             setTimeout(() => flame.remove(), 1000);
         }
 
-        // NOVA LÓGICA: Abrir e preparar o popup de customização
+        // NOVA LÓGICA CONDICIONAL: Decide qual popup abrir
         const productCard = addButton.closest('.product-card');
         if (productCard && productCard.dataset.id) {
-            abrirPopupCustomizacao(productCard); // Chama uma nova função para cuidar do popup
+            const categoriaNome = productCard.dataset.categoriaNome;
+
+            if (categoriaNome === 'Espetinhos') {
+                // Se for da categoria "Espetinhos", abre o popup complexo
+                abrirPopupCustomizacao(productCard);
+            } else {
+                // Para todas as outras categorias, abre o popup simples
+                abrirPopupSimples(productCard);
+            }
         }
     });
 

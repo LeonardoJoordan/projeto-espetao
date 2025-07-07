@@ -159,6 +159,7 @@ def obter_todos_produtos():
             SELECT p.id, p.nome, p.preco_venda, p.estoque_atual, p.custo_total_do_estoque, c.nome as categoria_nome, p.categoria_id
             FROM produtos p
             LEFT JOIN categorias c ON p.categoria_id = c.id
+            WHERE p.estoque_atual > 0
             ORDER BY c.ordem, p.ordem, p.nome 
         ''')
         

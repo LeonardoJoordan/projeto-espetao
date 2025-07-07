@@ -412,7 +412,8 @@
                             data-id="{{ produto.id }}" 
                             data-nome="{{ produto.nome }}" 
                             data-preco="{{ produto.preco_venda }}"
-                            data-categoria-nome="{{ categoria.nome }}">
+                            data-categoria-nome="{{ categoria.nome }}"
+                            data-estoque="{{ produto.estoque }}">
                             <div class="w-24 h-24 bg-zinc-700 rounded-md flex-shrink-0 flex items-center justify-center">
                                 <i class="fas fa-camera text-3xl text-zinc-500"></i>
                             </div>
@@ -597,9 +598,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!target) return;
 
             if (target.id === 'btn-aumentar-simples') {
+            const estoqueDisponivel = parseInt(productCard.dataset.estoque);
+            if (quantidade < estoqueDisponivel) {
                 quantidade++;
                 atualizarInterfaceSimples();
-            } else if (target.id === 'btn-diminuir-simples') {
+            } else {
+                alert(`Desculpe, temos apenas ${estoqueDisponivel} unidades deste item em estoque.`);
+            }
+        } else if (target.id === 'btn-diminuir-simples') {
                 if (quantidade > 1) {
                     quantidade--;
                     atualizarInterfaceSimples();
@@ -762,11 +768,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const target = event.target;
             // Botão Aumentar Quantidade
             if (target.closest('#btn-aumentar-popup')) {
-                quantidade++;
-                // Em vez de redesenhar tudo, apenas adicionamos o novo no final
-                containerLinhas.insertAdjacentHTML('beforeend', criarLinhaHtml(quantidade));
-                quantidadeDisplay.textContent = quantidade;
-                precoTotalDisplay.textContent = `R$ ${(quantidade * precoProduto).toFixed(2).replace('.', ',')}`;
+                const estoqueDisponivel = parseInt(productCard.dataset.estoque);
+                if (quantidade < estoqueDisponivel) {
+                    quantidade++;
+                    containerLinhas.insertAdjacentHTML('beforeend', criarLinhaHtml(quantidade));
+                    quantidadeDisplay.textContent = quantidade;
+                    precoTotalDisplay.textContent = `R$ ${(quantidade * precoProduto).toFixed(2).replace('.', ',')}`;
+                } else {
+                    alert(`Desculpe, temos apenas ${estoqueDisponivel} espetinhos deste tipo em estoque.`);
+                }
             }
             // Botão Diminuir Quantidade
             if (target.closest('#btn-diminuir-popup')) {

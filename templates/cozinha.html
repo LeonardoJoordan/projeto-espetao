@@ -62,14 +62,14 @@
         <p class="text-center text-white/80 mt-2">Gerencie os pedidos em tempo real</p>
     </header>
 
-    <main class="max-w-7xl mx-auto px-4 space-y-12">
+    <main>
 
-        <div>
-            <h2 class="text-2xl font-bold text-white mb-4 border-b-2 border-yellow-400 pb-2">
+        <div id="secao-backlog" class="min-h-screen flex flex-col p-8">
+            <h2 class="text-2xl font-bold text-white mb-4 border-b-2 border-yellow-400 pb-2 flex-shrink-0">
                 <i class="fas fa-hourglass-half mr-2 text-yellow-400"></i>
                 Fila de Preparo (Backlog)
             </h2>
-            <div id="linha-backlog" class="flex flex-wrap justify-start items-start gap-8">
+            <div id="linha-backlog" class="flex flex-wrap justify-center md:justify-start items-start gap-8 flex-grow overflow-y-auto py-4">
                 {% for pedido in pedidos_backlog %}
                     {# O CÓDIGO CORRIGIDO COM IDs E CLASSES PARA O JAVASCRIPT #}
                     {% set cor_fundo = 'from-yellow-400 via-amber-400 to-orange-400' if pedido.status == 'aguardando_pagamento' else 'from-green-400 via-emerald-400 to-teal-400' %}
@@ -125,12 +125,12 @@
             </div>
         </div>
     
-        <div>
-            <h2 class="text-2xl font-bold text-white mb-4 border-b-2 border-blue-400 pb-2">
+        <div id="secao-producao" class="min-h-screen flex flex-col p-8 bg-black/10">
+            <h2 class="text-2xl font-bold text-white mb-4 border-b-2 border-blue-400 pb-2 flex-shrink-0">
                 <i class="fas fa-fire-alt mr-2 text-blue-400"></i>
                 Em Produção (Na Grelha)
             </h2>
-            <div id="linha-producao" class="flex flex-wrap justify-start items-start gap-8">
+            <div id="linha-producao" class="flex flex-wrap justify-center md:justify-start items-start gap-8 flex-grow overflow-y-auto py-4">
                 {% for pedido in pedidos_em_producao %}
                     <div id="pedido-{{ pedido.id }}" class="card-pedido w-80 rounded-2xl card-shadow flex flex-col overflow-hidden transform transition-all duration-300 hover:scale-105 hover:-translate-y-2 card-entrada relative" data-id="{{ pedido.id }}">
 

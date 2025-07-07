@@ -197,6 +197,38 @@ def api_historico_produto(id_produto):
     # Retorna a lista de dados no formato JSON
     return jsonify(historico)
 
+@app.route('/salvar_pedido', methods=['POST'])
+def salvar_pedido():
+    """
+    Esta é a rota "Porteiro". Ela recebe os dados do pedido do frontend,
+    confirma o recebimento e (futuramente) os envia para o gerenciador_db.
+    """
+    # 1. Pega os dados JSON enviados pelo JavaScript
+    dados_do_pedido = request.get_json()
+
+    # 2. (Temporário) Imprime os dados no terminal para depuração
+    # Isso nos permite ver no console do Flask se os dados chegaram corretamente.
+    print("--- NOVO PEDIDO RECEBIDO ---")
+    print(dados_do_pedido)
+    print("-----------------------------")
+
+    # 3. Chama a função "trabalhadora" para salvar o pedido no banco de dados
+    id_do_pedido_salvo = gerenciador_db.salvar_novo_pedido(dados_do_pedido)
+
+    # 4. Verifica se a operação foi bem-sucedida antes de responder
+    if id_do_pedido_salvo is None:
+        # Se deu erro, retorna uma resposta de erro para o frontend
+        return jsonify({
+            "status": "erro",
+            "mensagem": "Ocorreu um erro ao processar o pedido no servidor."
+        }), 500 # 500 é o código para "Erro Interno do Servidor"
+
+    return jsonify({
+        "status": "sucesso",
+        "mensagem": "Pedido recebido, em preparação!",
+        "pedido_id": id_do_pedido_salvo
+    })
+
 @app.route('/')
 def index():
     # Redireciona a rota principal para a tela do cliente por padrão

@@ -1,5 +1,7 @@
 import sqlite3
 import datetime
+import json # Adicione esta importação no topo do seu arquivo, junto com as outras
+import datetime # Adicione esta importação também
 
 NOME_BANCO_DADOS = 'espetao.db'
 
@@ -496,5 +498,66 @@ def obter_historico_produto(id_produto):
         print(f"Ocorreu um erro ao obter o histórico do produto: {e}")
         return []
     finally:
+        if conn:
+            conn.close()
+
+def salvar_novo_pedido(dados_do_pedido):
+    """
+    Salva um novo pedido no banco de dados e atualiza o estoque dos produtos.
+    Esta é uma operação transacional: ou tudo funciona, ou nada é salvo.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # --- Missão 1: Salvar o Pedido ---
+
+        # Converte a lista de itens python para uma string no formato JSON
+        itens_como_json = json.dumps(dados_do_pedido['itens'])
+        timestamp_atual = datetime.datetime.now().isoformat()
+
+        # Recalcula o valor total no backend para garantir a segurança e precisão dos dados
+        valor_total = sum(item['preco'] * item['quantidade'] for item in dados_do_pedido['itens'])
+
+        cursor.execute('''
+            INSERT INTO pedidos (nome_cliente, status, metodo_pagamento, valor_total, timestamp_criacao, itens_json)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (
+            dados_do_pedido['nome_cliente'],
+            'recebido', # Status inicial padrão para novos pedidos
+            dados_do_pedido['metodo_pagamento'],
+            valor_total,
+            timestamp_atual,
+            itens_como_json
+        ))
+
+        # Pega o ID do pedido que acabamos de inserir
+        id_do_pedido_salvo = cursor.lastrowid
+
+        # --- Missão 2: Atualizar o Estoque ---
+
+        # Itera sobre cada item do pedido para dar baixa no estoque
+        for item in dados_do_pedido['itens']:
+            cursor.execute('''
+                UPDATE produtos
+                SET estoque_atual = estoque_atual - ?
+                WHERE id = ?
+            ''', (item['quantidade'], item['id']))
+
+        # Se tudo correu bem, salva todas as alterações no banco de dados
+        conn.commit()
+
+        print(f"SUCESSO: Pedido #{id_do_pedido_salvo} salvo e estoque atualizado.")
+        return id_do_pedido_salvo
+
+    except sqlite3.Error as e:
+        print(f"ERRO ao salvar o pedido: {e}")
+        # Se deu algum erro, desfaz todas as alterações feitas nesta transação
+        if conn:
+            conn.rollback()
+        return None
+    finally:
+        # Garante que a conexão com o banco de dados seja sempre fechada
         if conn:
             conn.close()

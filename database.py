@@ -28,6 +28,7 @@ def inicializar_banco():
                 nome TEXT NOT NULL UNIQUE,
                 preco_venda REAL NOT NULL,
                 estoque_atual INTEGER NOT NULL,
+                estoque_reservado INTEGER NOT NULL DEFAULT 0,
                 custo_total_do_estoque REAL NOT NULL,
                 categoria_id INTEGER,
                 ordem INTEGER DEFAULT 0, -- NOVO CAMPO: Ordem para arrastar e soltar

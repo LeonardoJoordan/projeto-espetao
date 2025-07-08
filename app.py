@@ -247,6 +247,18 @@ def rota_confirmar_pagamento(pedido_id):
     else:
         return jsonify({"status": "erro", "mensagem": "Não foi possível confirmar o pagamento."}), 500
 
+@app.route('/api/pedidos_ativos')
+def api_pedidos_ativos():
+    """
+    Fornece a lista de todos os pedidos ativos em formato JSON.
+    Esta API é consumida pela nova tela da cozinha para renderização dinâmica.
+    """
+    # 1. Chama nosso especialista em banco de dados, que já sabe como buscar e ordenar os pedidos.
+    pedidos_ativos = gerenciador_db.obter_pedidos_ativos()
+
+    # 2. Usa a função 'jsonify' do Flask para converter nossa lista Python em uma resposta JSON.
+    return jsonify(pedidos_ativos)
+
 @app.route('/')
 def index():
     # Redireciona a rota principal para a tela do cliente por padrão

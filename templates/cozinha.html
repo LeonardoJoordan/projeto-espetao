@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cozinha - Gerenciador de Pedidos</title>
+    <title>Cozinha - Gerenciador de Pedidos Dinâmico</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,228 +13,275 @@
         body {
             font-family: 'Inter', sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
         }
-        @keyframes slideInUp {
-            from { opacity: 0; transform: translateY(30px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .card-entrada { animation: slideInUp 0.5s ease-out forwards; }
-        .scroll-custom::-webkit-scrollbar { width: 8px; }
-        .scroll-custom::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.1); border-radius: 10px; }
-        .scroll-custom::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.4); border-radius: 10px; }
-        .scroll-custom::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.6); }
-        
-        /* Efeito de brilho nos botões */
-        .btn-shine {
-            position: relative;
-            overflow: hidden;
-        }
-        .btn-shine::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
-            transition: left 0.5s;
-        }
-        .btn-shine:hover::before {
-            left: 100%;
-        }
-        
+        .scroll-custom::-webkit-scrollbar { height: 8px; width: 8px; }
+        .scroll-custom::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 10px; }
+        .scroll-custom::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.4); border-radius: 10px; }
         .glass-header {
             background: rgba(255, 255, 255, 0.1);
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.2);
         }
-        .card-shadow { box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15); }
+        .card-shadow { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15); }
+        #modal-container { transition: opacity 0.3s ease; }
+        .modal-content { transition: transform 0.3s ease; }
+        @keyframes cardEnter {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .card-pedido { animation: cardEnter 0.4s ease-out forwards; }
     </style>
 </head>
-<body class="p-4 sm:p-6 md:p-8">
+<body class="h-screen flex flex-col text-white overflow-hidden">
 
-    <header class="mb-12 glass-header rounded-2xl p-6 max-w-4xl mx-auto">
+    <header class="flex-shrink-0 p-4 glass-header">
         <div class="flex items-center justify-center">
-            <i class="fas fa-utensils text-white text-3xl mr-4"></i>
-            <h1 class="text-4xl font-bold text-white text-center">Painel da Cozinha</h1>
+            <i class="fas fa-utensils text-2xl mr-3"></i>
+            <h1 class="text-3xl font-bold text-center">Painel da Cozinha</h1>
         </div>
-        <p class="text-center text-white/80 mt-2">Gerencie os pedidos em tempo real</p>
     </header>
 
-    <main>
-
-        <div id="secao-backlog" class="min-h-screen flex flex-col p-8">
-            <h2 class="text-2xl font-bold text-white mb-4 border-b-2 border-yellow-400 pb-2 flex-shrink-0">
-                <i class="fas fa-hourglass-half mr-2 text-yellow-400"></i>
-                Fila de Preparo (Backlog)
-            </h2>
-            <div id="linha-backlog" class="flex flex-wrap justify-center md:justify-start items-start gap-8 flex-grow overflow-y-auto py-4">
-                {% for pedido in pedidos_backlog %}
-                    {# O CÓDIGO CORRIGIDO COM IDs E CLASSES PARA O JAVASCRIPT #}
-                    {% set cor_fundo = 'from-yellow-400 via-amber-400 to-orange-400' if pedido.status == 'aguardando_pagamento' else 'from-green-400 via-emerald-400 to-teal-400' %}
-                    
-                    {# 1. Adicionamos a classe 'card-pedido' e o data-attribute 'data-id' #}
-                    <div id="pedido-{{ pedido.id }}" class="card-pedido w-80 rounded-2xl card-shadow flex flex-col overflow-hidden transform transition-all duration-300 hover:scale-105 hover:-translate-y-2 card-entrada relative" data-id="{{ pedido.id }}">
-
-                        {# Define a cor do card com base no status #}
-                        {% set cor_fundo = 'from-yellow-400 via-amber-400 to-orange-400' if pedido.status == 'aguardando_pagamento' else 'from-green-400 via-emerald-400 to-teal-400' %}
-                        <div class="card-fundo absolute inset-0 bg-gradient-to-br {{ cor_fundo }}"></div>
-                    
-                        <div class="relative z-10 flex flex-col h-full justify-between">
-                            {% if pedido.status == 'aguardando_pagamento' %}
-                            <button class="btn-confirmar-pagamento w-full bg-green-500 hover:bg-green-600 text-white font-bold py-4 text-lg btn-shine flex items-center justify-center gap-2">
-                                <i class="fas fa-check-circle"></i> Confirmar Pagamento
-                            </button>
-                            {% elif pedido.status == 'aguardando_producao' %}
-                            <button class="btn-iniciar-preparo w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-4 text-lg btn-shine flex items-center justify-center gap-2">
-                                <i class="fas fa-fire"></i> Iniciar Preparo
-                            </button>
-                            {% endif %}
-                    
-                            <div class="p-6 flex-grow flex flex-col min-h-0">
-                                <div class="flex items-center justify-center mb-4 flex-shrink-0">
-                                    <span class="status-text bg-white/30 backdrop-blur px-4 py-2 rounded-full text-sm font-semibold flex items-center gap-2">
-                                        <i class="fas fa-info-circle"></i>
-                                        {{ pedido.status.replace('_', ' ') | title }}
-                                    </span>
-                                </div>
-                                <h2 class="text-3xl font-bold text-white mb-6 text-center drop-shadow-lg flex-shrink-0">{{ pedido.nome_cliente }}</h2>
-                                <ul class="space-y-3 text-white overflow-y-auto scroll-custom pr-2 flex-grow">
-                                    {% for item in pedido.itens %}
-                                    <li class="text-lg flex items-center bg-white/20 backdrop-blur rounded-lg p-2">
-                                        <i class="fas fa-drumstick-bite mr-3 text-white/80"></i>
-                                        {{ item.quantidade }}x {{ item.item }}
-                                    </li>
-                                    {% endfor %}
-                                </ul>
-                                <div class="mt-auto pt-4 flex-shrink-0">
-                                    <div class="text-center text-white rounded-lg p-3">
-                                        <p class="text-sm opacity-80">Valor Total</p>
-                                        <p class="text-2xl font-bold">R$ {{ "%.2f"|format(pedido.valor_total) | replace('.', ',') }}</p>
-                                    </div>
-                                </div>
-                            </div>
-                    
-                            <button class="btn-cancelar-pedido w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 text-base btn-shine flex items-center justify-center gap-2">
-                                <i class="fas fa-times-circle"></i> Cancelar Pedido
-                            </button>
-                        </div>
-                    </div>
-                {% endfor %}
+    <main id="main-content" class="flex-grow flex flex-col min-h-0">
+        </main>
+    
+    <div id="templates" class="hidden">
+        <div id="secao-backlog-template">
+            <div class="flex-1 flex flex-col p-4 min-h-0">
+                <h2 class="text-xl font-bold mb-3 border-b-2 border-yellow-400 pb-2 flex-shrink-0">
+                    <i class="fas fa-hourglass-half mr-2 text-yellow-400"></i>
+                    Fila de Preparo (Backlog)
+                </h2>
+                <div class="linha-pedidos flex-grow flex flex-nowrap items-center gap-6 overflow-x-auto pb-4 scroll-custom"></div>
             </div>
         </div>
-    
-        <div id="secao-producao" class="min-h-screen flex flex-col p-8 bg-black/10">
-            <h2 class="text-2xl font-bold text-white mb-4 border-b-2 border-blue-400 pb-2 flex-shrink-0">
-                <i class="fas fa-fire-alt mr-2 text-blue-400"></i>
-                Em Produção (Na Grelha)
-            </h2>
-            <div id="linha-producao" class="flex flex-wrap justify-center md:justify-start items-start gap-8 flex-grow overflow-y-auto py-4">
-                {% for pedido in pedidos_em_producao %}
-                    <div id="pedido-{{ pedido.id }}" class="card-pedido w-80 rounded-2xl card-shadow flex flex-col overflow-hidden transform transition-all duration-300 hover:scale-105 hover:-translate-y-2 card-entrada relative" data-id="{{ pedido.id }}">
 
-                        <div class="card-fundo absolute inset-0 bg-gradient-to-br from-blue-400 via-indigo-500 to-purple-600"></div>
-                    
-                        <div class="relative z-10 flex flex-col h-full justify-between">
-                            <button class="btn-entregar-pedido w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-4 text-lg btn-shine flex items-center justify-center gap-2">
-                                <i class="fas fa-check-double"></i> Pedido Entregue
-                            </button>
-                    
-                            <div class="p-6 flex-grow flex flex-col min-h-0">
-                                <div class="flex items-center justify-center mb-4 flex-shrink-0">
-                                    <span class="status-text bg-white/30 backdrop-blur px-4 py-2 rounded-full text-sm font-semibold flex items-center gap-2">
-                                        <i class="fas fa-info-circle"></i>
-                                        {{ pedido.status.replace('_', ' ') | title }}
-                                    </span>
-                                </div>
-                                <h2 class="text-3xl font-bold text-white mb-6 text-center drop-shadow-lg flex-shrink-0">{{ pedido.nome_cliente }}</h2>
-                                <ul class="space-y-3 text-white overflow-y-auto scroll-custom pr-2 flex-grow">
-                                    {% for item in pedido.itens %}
-                                    <li class="text-lg flex items-center bg-white/20 backdrop-blur rounded-lg p-2">
-                                        <i class="fas fa-drumstick-bite mr-3 text-white/80"></i>
-                                        {{ item.quantidade }}x {{ item.item }}
-                                    </li>
-                                    {% endfor %}
-                                </ul>
-                                <div class="mt-auto pt-4 flex-shrink-0">
-                                    <div class="text-center text-white rounded-lg p-3">
-                                        <p class="text-sm opacity-80">Valor Total</p>
-                                        <p class="text-2xl font-bold">R$ {{ "%.2f"|format(pedido.valor_total) | replace('.', ',') }}</p>
-                                    </div>
-                                </div>
-                            </div>
-                    
-                            <button class="btn-cancelar-pedido w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 text-base btn-shine flex items-center justify-center gap-2">
-                                <i class="fas fa-times-circle"></i> Cancelar Pedido
-                            </button>
-                        </div>
-                    </div>
-                {% endfor %}
+        <div id="secao-producao-template">
+             <div class="flex-1 flex flex-col p-4 min-h-0 bg-black/10 rounded-t-2xl">
+                <h2 class="text-xl font-bold text-white mb-3 border-b-2 border-blue-400 pb-2 flex-shrink-0">
+                    <i class="fas fa-fire-alt mr-2 text-blue-400"></i>
+                    Em Produção (Na Grelha)
+                </h2>
+                <div class="linha-pedidos flex-grow flex flex-nowrap items-center gap-6 overflow-x-auto pb-4 scroll-custom"></div>
             </div>
         </div>
-    </main>
-    <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // Usamos um único listener no container principal para gerenciar todos os cliques
-        const containerCozinha = document.querySelector('body');
+
+        <div id="card-template">
+            <div class="card-pedido w-72 h-full flex-shrink-0 rounded-2xl card-shadow flex flex-col overflow-hidden transform transition-all duration-300 relative" data-id="">
+                </div>
+        </div>
+    </div>
+
+    <div id="modal-container" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden opacity-0">
+        <div id="modal-content" class="w-full max-w-md transform scale-95">
+             </div>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // VARIÁVEL GLOBAL PARA GUARDAR OS DADOS VINDOS DA API
+    let todosOsPedidos = [];
+
+    const mainContainer = document.getElementById('main-content');
+    const templates = document.getElementById('templates');
+    const modalContainer = document.getElementById('modal-container');
+    const modalContent = document.getElementById('modal-content');
+
+    // --- FUNÇÃO PARA CONSTRUIR O CONTEÚDO DOS CARDS ---
+    function buildCardContent(pedido, isCompact) {
+        const statusMap = {
+            aguardando_pagamento: { color: 'from-yellow-400 via-amber-400 to-orange-400', icon: 'fa-check-circle', btnText: 'Confirmar Pagamento', btnClass: 'btn-confirmar-pagamento', btnColor: 'bg-green-500 hover:bg-green-600' },
+            aguardando_producao: { color: 'from-green-400 via-emerald-400 to-teal-400', icon: 'fa-fire', btnText: 'Iniciar Preparo', btnClass: 'btn-iniciar-preparo', btnColor: 'bg-blue-500 hover:bg-blue-600' },
+            em_producao: { color: 'from-blue-400 via-indigo-500 to-purple-600', icon: 'fa-check-double', btnText: 'Pedido Entregue', btnClass: 'btn-entregar-pedido', btnColor: 'bg-yellow-500 hover:bg-yellow-600' }
+        };
+        const config = statusMap[pedido.status];
+
+        const itemsList = pedido.itens.map(item => `
+            <li class="text-base flex items-start bg-white/20 p-2 rounded-lg">
+                <i class="fas fa-drumstick-bite mr-2 opacity-80 pt-1"></i>
+                <span class="flex-1">${item.quantidade}x ${item.item}</span>
+            </li>`).join('');
+
+        if (isCompact) {
+            return `
+                <div class="absolute inset-0 bg-gradient-to-br ${config.color} opacity-80"></div>
+                <div class="relative z-10 flex flex-col h-full justify-center items-center p-4 text-center cursor-pointer">
+                    <h2 class="text-2xl font-bold drop-shadow-lg">${pedido.nome_cliente}</h2>
+                    <p class="mt-2 bg-white/30 px-3 py-1 rounded-full text-sm">${pedido.itens.reduce((acc, item) => acc + item.quantidade, 0)} itens</p>
+                </div>`;
+        }
+
+        return `
+            <div class="card-fundo absolute inset-0 bg-gradient-to-br ${config.color}"></div>
+            <div class="relative z-10 flex flex-col h-full justify-between">
+                <button class="${config.btnClass} w-full ${config.btnColor} text-white font-bold py-3 text-base flex items-center justify-center gap-2">
+                    <i class="fas ${config.icon}"></i> ${config.btnText}
+                </button>
+                <div class="p-4 flex-grow flex flex-col min-h-0">
+                    <h2 class="text-2xl font-bold mb-3 text-center drop-shadow-lg flex-shrink-0">${pedido.nome_cliente}</h2>
+                    <ul class="space-y-2 text-white overflow-y-auto scroll-custom pr-2 flex-grow">${itemsList}</ul>
+                    <div class="mt-auto pt-2 flex-shrink-0">
+                        <div class="text-center rounded-lg p-2">
+                            <p class="text-sm opacity-80">Valor Total</p>
+                            <p class="text-xl font-bold">R$ ${parseFloat(pedido.valor_total).toFixed(2).replace('.', ',')}</p>
+                        </div>
+                    </div>
+                </div>
+                <button class="btn-cancelar-pedido w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 text-sm flex items-center justify-center gap-2">
+                    <i class="fas fa-times-circle"></i> Cancelar
+                </button>
+            </div>`;
+    }
+
+    // --- FUNÇÃO PRINCIPAL PARA ATUALIZAR O LAYOUT ---
+    function updateLayout() {
+        mainContainer.innerHTML = '';
+        
+        const backlogPedidos = todosOsPedidos.filter(p => p.status === 'aguardando_pagamento' || p.status === 'aguardando_producao');
+        const productionPedidos = todosOsPedidos.filter(p => p.status === 'em_producao');
+
+        const showBacklog = backlogPedidos.length > 0;
+        const showProduction = productionPedidos.length > 0;
+        const isSplitView = showBacklog && showProduction;
+
+        if (showBacklog) {
+            const sectionNode = templates.querySelector('#secao-backlog-template > div').cloneNode(true);
+            const cardContainer = sectionNode.querySelector('.linha-pedidos');
+            backlogPedidos.forEach(pedido => {
+                const card = templates.querySelector('#card-template > div').cloneNode(true);
+                card.dataset.id = pedido.id;
+                card.innerHTML = buildCardContent(pedido, isSplitView);
+                if(isSplitView) card.classList.replace('h-96', 'h-48');
+                cardContainer.appendChild(card);
+            });
+            mainContainer.appendChild(sectionNode);
+        }
+
+        if (showProduction) {
+            const sectionNode = templates.querySelector('#secao-producao-template > div').cloneNode(true);
+            const cardContainer = sectionNode.querySelector('.linha-pedidos');
+            productionPedidos.forEach(pedido => {
+                const card = templates.querySelector('#card-template > div').cloneNode(true);
+                card.dataset.id = pedido.id;
+                card.innerHTML = buildCardContent(pedido, isSplitView);
+                 if(isSplitView) card.classList.replace('h-96', 'h-48');
+                cardContainer.appendChild(card);
+            });
+            mainContainer.appendChild(sectionNode);
+        }
+    }
+
+    // --- FUNÇÕES DE CONTROLE DO MODAL ---
+    function showModal(pedidoId) {
+        const pedido = todosOsPedidos.find(p => p.id == pedidoId);
+        if (!pedido) return;
+
+        const card = templates.querySelector('#card-template > div').cloneNode(true);
+        card.dataset.id = pedido.id;
+        card.innerHTML = buildCardContent(pedido, false);
+        
+        const closeButton = document.createElement('button');
+        closeButton.innerHTML = '<i class="fas fa-times"></i>';
+        closeButton.className = 'btn-close-modal absolute top-2 right-2 w-8 h-8 bg-black/30 rounded-full text-white hover:bg-black/50 transition-colors';
+        card.querySelector('.relative.z-10').appendChild(closeButton);
+
+        modalContent.innerHTML = '';
+        modalContent.appendChild(card);
+        
+        modalContainer.classList.remove('hidden');
+        setTimeout(() => {
+            modalContainer.classList.remove('opacity-0');
+            modalContent.classList.remove('scale-95');
+        }, 10);
+    }
+
+    function hideModal() {
+        modalContainer.classList.add('opacity-0');
+        modalContent.classList.add('scale-95');
+        setTimeout(() => {
+            modalContainer.classList.add('hidden');
+        }, 300);
+    }
     
-        containerCozinha.addEventListener('click', async function(event) {
-            // Procura pelo botão de confirmar pagamento mais próximo de onde o clique ocorreu
-            const botaoConfirmar = event.target.closest('.btn-confirmar-pagamento');
-    
-            if (botaoConfirmar) {
-                // Se encontrou o botão, pega o card pai e o ID do pedido
-                const cardPedido = botaoConfirmar.closest('.card-pedido');
-                const pedidoId = cardPedido.dataset.id;
-    
-                try {
-                    // Chama a nossa futura rota no backend
-                    const response = await fetch(`/pedido/confirmar_pagamento/${pedidoId}`, {
-                        method: 'POST'
-                    });
-    
-                    if (!response.ok) {
-                        throw new Error('Falha ao confirmar o pagamento no servidor.');
-                    }
-    
-                    const resultado = await response.json();
-    
-                    if (resultado.status === 'sucesso') {
-                        // Se o backend confirmar o sucesso, manipulamos o card dinamicamente
-                        console.log(`Pagamento do pedido ${pedidoId} confirmado.`);
-    
-                        // 1. Mudar a cor
-                        const fundo = cardPedido.querySelector('.card-fundo');
-                        fundo.className = 'card-fundo absolute inset-0 bg-gradient-to-br from-green-400 via-emerald-400 to-teal-400';
-    
-                        // 2. Mudar o texto do status
-                        cardPedido.querySelector('.status-text').innerHTML = '<i class="fas fa-info-circle"></i> Aguardando Produção';
-    
-                        // 3. Mudar o botão
-                        const novoBotaoHTML = `
-                            <button class="btn-iniciar-preparo w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-4 text-lg btn-shine flex items-center justify-center gap-2">
-                                <i class="fas fa-fire"></i> Iniciar Preparo
-                            </button>
-                        `;
-                        botaoConfirmar.outerHTML = novoBotaoHTML;
-    
-                        // 4. Mover para o final da fila de backlog
-                        const linhaBacklog = document.getElementById('linha-backlog');
-                        linhaBacklog.appendChild(cardPedido);
-    
-                    } else {
-                        throw new Error(resultado.mensagem || 'Erro desconhecido do servidor.');
-                    }
-    
-                } catch (error) {
-                    console.error("Erro ao processar a confirmação de pagamento:", error);
-                    alert("Não foi possível confirmar o pagamento. Verifique o console.");
-                }
+    // --- FUNÇÃO PARA ATUALIZAR O STATUS DE UM PEDIDO VIA API ---
+    async function atualizarStatusPedido(pedidoId, novoStatus, rotaApi) {
+        // Implementação futura para persistir a mudança no backend
+        console.log(`(Simulação) Chamando API: ${rotaApi} para o pedido ${pedidoId}`);
+        // Aqui entraria a chamada fetch real para o backend
+        // Ex: await fetch(rotaApi, { method: 'POST' });
+
+        // Por enquanto, apenas atualizamos o estado local
+        const pedido = todosOsPedidos.find(p => p.id == pedidoId);
+        if(pedido) {
+            pedido.status = novoStatus;
+            updateLayout();
+        }
+    }
+
+    // --- GERENCIADOR DE EVENTOS PRINCIPAL ---
+    document.body.addEventListener('click', async function(event) {
+        const card = event.target.closest('.card-pedido');
+        const pedidoId = card?.dataset.id;
+
+        if (event.target.closest('.btn-close-modal') || event.target === modalContainer) {
+            hideModal();
+            return;
+        }
+
+        const isSplitView = mainContainer.children.length > 1;
+        if (card && isSplitView && !event.target.closest('button')) {
+            showModal(pedidoId);
+            return;
+        }
+        
+        if (!pedidoId) return;
+
+        if (event.target.closest('.btn-confirmar-pagamento')) {
+            // AQUI ESTÁ A LÓGICA DE CONFIRMAR PAGAMENTO QUE JÁ TEMOS
+            const response = await fetch(`/pedido/confirmar_pagamento/${pedidoId}`, { method: 'POST' });
+            if(response.ok) {
+                 const pedido = todosOsPedidos.find(p => p.id == pedidoId);
+                 if(pedido) pedido.status = 'aguardando_producao';
+                 hideModal();
+                 setTimeout(updateLayout, 100);
+            } else {
+                alert("Falha ao confirmar pagamento!");
             }
-        });
+        } else if (event.target.closest('.btn-iniciar-preparo')) {
+            await atualizarStatusPedido(pedidoId, 'em_producao', `/pedido/iniciar_preparo/${pedidoId}`);
+            hideModal();
+        } else if (event.target.closest('.btn-entregar-pedido')) {
+            // Lógica para finalizar (remover da lista)
+            const index = todosOsPedidos.findIndex(p => p.id == pedidoId);
+            if (index > -1) todosOsPedidos.splice(index, 1);
+            hideModal();
+            setTimeout(updateLayout, 100); 
+        } else if (event.target.closest('.btn-cancelar-pedido')) {
+             // Lógica para cancelar (remover da lista)
+            const index = todosOsPedidos.findIndex(p => p.id == pedidoId);
+            if (index > -1) todosOsPedidos.splice(index, 1);
+            hideModal();
+            setTimeout(updateLayout, 100);
+        }
     });
-    </script>
 
+    // --- FUNÇÃO INICIAL PARA CARREGAR OS DADOS DA NOSSA API ---
+    async function carregarEAtualizarLayout() {
+        try {
+            mainContainer.innerHTML = '<p class="text-center text-lg p-10">Carregando pedidos...</p>';
+            const response = await fetch('/api/pedidos_ativos');
+            if (!response.ok) throw new Error('Falha na resposta da rede.');
+            
+            todosOsPedidos = await response.json();
+            updateLayout(); // Desenha a tela SÓ DEPOIS que os dados chegam
+        } catch (error) {
+            console.error("Erro ao buscar pedidos:", error);
+            mainContainer.innerHTML = `<p class="text-center text-red-400 p-10">Falha ao carregar os pedidos do servidor. Verifique se o backend está rodando.</p>`;
+        }
+    }
+
+    // --- EXECUÇÃO INICIAL ---
+    carregarEAtualizarLayout();
+});
+</script>
 </body>
 </html>

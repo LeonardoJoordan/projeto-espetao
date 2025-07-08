@@ -634,3 +634,131 @@ def confirmar_pagamento_pedido(id_do_pedido):
     finally:
         if conn:
             conn.close()
+
+def iniciar_preparo_pedido(id_do_pedido):
+    """
+    Muda o status de um pedido para 'em_producao'.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # Atualiza o status do pedido de 'aguardando_producao' para 'em_producao'
+        cursor.execute(
+            "UPDATE pedidos SET status = ? WHERE id = ? AND status = ?",
+            ('em_producao', id_do_pedido, 'aguardando_producao')
+        )
+
+        # Verifica se alguma linha foi realmente alterada
+        if cursor.rowcount == 0:
+            print(f"AVISO: Pedido #{id_do_pedido} não encontrado ou não estava aguardando produção.")
+            return False
+
+        conn.commit()
+        print(f"SUCESSO: Pedido #{id_do_pedido} movido para 'em produção'.")
+        return True
+
+    except sqlite3.Error as e:
+        print(f"ERRO ao iniciar preparo do pedido #{id_do_pedido}: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def entregar_pedido(id_do_pedido):
+    """
+    Finaliza um pedido, dando baixa no estoque reservado antes de
+    remover o pedido da lista de ativos.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # Passo 1: Ler os itens do pedido que será entregue.
+        cursor.execute("SELECT itens_json FROM pedidos WHERE id = ?", (id_do_pedido,))
+        resultado = cursor.fetchone()
+
+        if not resultado:
+            print(f"AVISO: Tentativa de entregar pedido #{id_do_pedido} que não existe.")
+            return False
+
+        itens_do_pedido = json.loads(resultado[0])
+
+        # Passo 2: Para cada item, dá baixa definitiva no estoque que estava reservado.
+        for item in itens_do_pedido:
+            cursor.execute("""
+                UPDATE produtos
+                SET estoque_reservado = estoque_reservado - ?
+                WHERE id = ?
+            """, (item['quantidade'], item['id']))
+
+        # Passo 3: Apagar o pedido da fila de ativos.
+        cursor.execute("DELETE FROM pedidos WHERE id = ?", (id_do_pedido,))
+
+        # Passo 4: Confirmar toda a transação.
+        conn.commit()
+        print(f"SUCESSO: Pedido #{id_do_pedido} entregue e estoque baixado.")
+        return True
+
+    except sqlite3.Error as e:
+        print(f"ERRO ao entregar o pedido #{id_do_pedido}: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+
+def cancelar_pedido(id_do_pedido):
+    """
+    Cancela um pedido, lendo seus itens para devolver o estoque reservado
+    ao estoque atual antes de apagar o pedido.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # Passo 1: Ler os itens do pedido que será cancelado, antes de apagá-lo.
+        cursor.execute("SELECT itens_json FROM pedidos WHERE id = ?", (id_do_pedido,))
+        resultado = cursor.fetchone()
+
+        # Se o pedido não for encontrado, não há o que fazer.
+        if not resultado:
+            print(f"AVISO: Tentativa de cancelar pedido #{id_do_pedido} que não existe.")
+            return False
+
+        # Converte o texto JSON dos itens em uma lista Python
+        itens_do_pedido = json.loads(resultado[0])
+
+        # Passo 2: Para cada item no pedido, devolve a quantidade reservada para o estoque atual.
+        for item in itens_do_pedido:
+            cursor.execute("""
+                UPDATE produtos
+                SET estoque_reservado = estoque_reservado - ?,
+                    estoque_atual = estoque_atual + ?
+                WHERE id = ?
+            """, (item['quantidade'], item['quantidade'], item['id']))
+
+        # Passo 3: Agora que o estoque foi devolvido, apaga o pedido da fila de ativos.
+        cursor.execute("DELETE FROM pedidos WHERE id = ?", (id_do_pedido,))
+
+        # Passo 4: Confirma que todas as operações (updates e delete) foram bem-sucedidas.
+        conn.commit()
+        print(f"SUCESSO: Pedido #{id_do_pedido} cancelado e estoque devolvido.")
+        return True
+
+    except sqlite3.Error as e:
+        print(f"ERRO ao cancelar o pedido #{id_do_pedido}: {e}")
+        # Se qualquer passo falhar, desfaz todas as operações para manter a integridade.
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()

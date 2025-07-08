@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cozinha - Gerenciador de Pedidos Dinâmico</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -78,6 +79,22 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // --- NOVA LÓGICA DE WEBSOCKET ---
+
+    // 1. Conecta-se ao nosso servidor Socket.IO assim que a página carrega.
+    const socket = io();
+
+    // 2. Define o que fazer quando o evento 'novo_pedido' for recebido do servidor.
+    socket.on('novo_pedido', function(data) {
+        // Apenas um log no console para vermos o evento chegando.
+        console.log('Evento "novo_pedido" recebido!', data);
+
+        // 3. A ação é simples: chamamos nossa função principal para buscar os dados
+        //    mais recentes da API e redesenhar a tela inteira.
+        carregarEAtualizarLayout();
+    });
+
+    // --- FIM DA NOVA LÓGICA DE WEBSOCKET ---
     // VARIÁVEL GLOBAL PARA GUARDAR OS DADOS VINDOS DA API
     let todosOsPedidos = [];
 
@@ -88,6 +105,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- FUNÇÃO PARA CONSTRUIR O CONTEÚDO DOS CARDS ---
     function buildCardContent(pedido, isCompact) {
+        // Mapeia o método de pagamento para um ícone (exemplo)
+        const pagamentosIcone = {
+            'pix': 'fa-pix',
+            'cartao': 'fa-credit-card',
+            'dinheiro': 'fa-money-bill-wave'
+        };
         const statusMap = {
             aguardando_pagamento: { color: 'from-yellow-400 via-amber-400 to-orange-400', icon: 'fa-check-circle', btnText: 'Confirmar Pagamento', btnClass: 'btn-confirmar-pagamento', btnColor: 'bg-green-500 hover:bg-green-600' },
             aguardando_producao: { color: 'from-green-400 via-emerald-400 to-teal-400', icon: 'fa-fire', btnText: 'Iniciar Preparo', btnClass: 'btn-iniciar-preparo', btnColor: 'bg-blue-500 hover:bg-blue-600' },
@@ -102,12 +125,33 @@ document.addEventListener('DOMContentLoaded', function() {
             </li>`).join('');
 
         if (isCompact) {
-            return `
-                <div class="absolute inset-0 bg-gradient-to-br ${config.color} opacity-80"></div>
-                <div class="relative z-10 flex flex-col h-full justify-center items-center p-4 text-center cursor-pointer">
-                    <h2 class="text-2xl font-bold drop-shadow-lg">${pedido.nome_cliente}</h2>
-                    <p class="mt-2 bg-white/30 px-3 py-1 rounded-full text-sm">${pedido.itens.reduce((acc, item) => acc + item.quantidade, 0)} itens</p>
-                </div>`;
+            // NOVO: Se o pedido está no backlog, mostramos valor e pagamento.
+            if (pedido.status === 'aguardando_pagamento' || pedido.status === 'aguardando_producao') {
+                const valorFormatado = parseFloat(pedido.valor_total).toFixed(2).replace('.', ',');
+                
+                
+                // Usa 'fas fa-question-circle' como padrão se o método não for encontrado
+                const iconeClasse = pagamentosIcone[pedido.metodo_pagamento] || 'fas fa-question-circle';
+
+                return `
+                    <div class="absolute inset-0 bg-gradient-to-br ${config.color} opacity-80"></div>
+                    <div class="relative z-10 flex flex-col h-full justify-center items-center p-4 text-center cursor-pointer">
+                        <h2 class="text-2xl font-bold drop-shadow-lg">${pedido.nome_cliente}</h2>
+                        <div class="mt-2 space-y-1 text-sm">
+                            <p class="bg-white/30 px-3 py-1 rounded-full font-semibold">R$ ${valorFormatado}</p>
+                            <p class="bg-white/30 px-3 py-1 rounded-full capitalize"><i class="fab ${iconeClasse} mr-1.5"></i> ${pedido.metodo_pagamento}</p>
+                        </div>
+                    </div>`;
+            } 
+            // Para os outros status (em_producao), mantemos o design antigo com a contagem de itens.
+            else {
+                return `
+                    <div class="absolute inset-0 bg-gradient-to-br ${config.color} opacity-80"></div>
+                    <div class="relative z-10 flex flex-col h-full justify-center items-center p-4 text-center cursor-pointer">
+                        <h2 class="text-2xl font-bold drop-shadow-lg">${pedido.nome_cliente}</h2>
+                        <p class="mt-2 bg-white/30 px-3 py-1 rounded-full text-sm">${pedido.itens.reduce((acc, item) => acc + item.quantidade, 0)} itens</p>
+                    </div>`;
+            }
         }
 
         return `
@@ -120,9 +164,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     <h2 class="text-2xl font-bold mb-3 text-center drop-shadow-lg flex-shrink-0">${pedido.nome_cliente}</h2>
                     <ul class="space-y-2 text-white overflow-y-auto scroll-custom pr-2 flex-grow">${itemsList}</ul>
                     <div class="mt-auto pt-2 flex-shrink-0">
-                        <div class="text-center rounded-lg p-2">
+                        <div class="text-center rounded-lg p-2 bg-black/20">
                             <p class="text-sm opacity-80">Valor Total</p>
                             <p class="text-xl font-bold">R$ ${parseFloat(pedido.valor_total).toFixed(2).replace('.', ',')}</p>
+                            <p class="text-sm capitalize mt-1 opacity-90">
+                                <i class="fab ${pagamentosIcone[pedido.metodo_pagamento] || 'fas fa-question-circle'} mr-1.5"></i>
+                                ${pedido.metodo_pagamento}
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -148,6 +196,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const cardContainer = sectionNode.querySelector('.linha-pedidos');
             backlogPedidos.forEach(pedido => {
                 const card = templates.querySelector('#card-template > div').cloneNode(true);
+                card.classList.add('h-full');
                 card.dataset.id = pedido.id;
                 card.innerHTML = buildCardContent(pedido, isSplitView);
                 if(isSplitView) card.classList.replace('h-96', 'h-48');
@@ -161,6 +210,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const cardContainer = sectionNode.querySelector('.linha-pedidos');
             productionPedidos.forEach(pedido => {
                 const card = templates.querySelector('#card-template > div').cloneNode(true);
+                card.classList.add('h-full');
                 card.dataset.id = pedido.id;
                 card.innerHTML = buildCardContent(pedido, isSplitView);
                  if(isSplitView) card.classList.replace('h-96', 'h-48');
@@ -176,13 +226,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!pedido) return;
 
         const card = templates.querySelector('#card-template > div').cloneNode(true);
+        card.classList.add('h-full');
         card.dataset.id = pedido.id;
         card.innerHTML = buildCardContent(pedido, false);
         
-        const closeButton = document.createElement('button');
-        closeButton.innerHTML = '<i class="fas fa-times"></i>';
-        closeButton.className = 'btn-close-modal absolute top-2 right-2 w-8 h-8 bg-black/30 rounded-full text-white hover:bg-black/50 transition-colors';
-        card.querySelector('.relative.z-10').appendChild(closeButton);
 
         modalContent.innerHTML = '';
         modalContent.appendChild(card);
@@ -222,10 +269,6 @@ document.addEventListener('DOMContentLoaded', function() {
         const card = event.target.closest('.card-pedido');
         const pedidoId = card?.dataset.id;
 
-        if (event.target.closest('.btn-close-modal') || event.target === modalContainer) {
-            hideModal();
-            return;
-        }
 
         const isSplitView = mainContainer.children.length > 1;
         if (card && isSplitView && !event.target.closest('button')) {
@@ -247,20 +290,87 @@ document.addEventListener('DOMContentLoaded', function() {
                 alert("Falha ao confirmar pagamento!");
             }
         } else if (event.target.closest('.btn-iniciar-preparo')) {
-            await atualizarStatusPedido(pedidoId, 'em_producao', `/pedido/iniciar_preparo/${pedidoId}`);
+            // 1. Captura uma referência exata do botão que foi pressionado
+            const botaoClicado = event.target.closest('.btn-iniciar-preparo');
+            
+            // 2. Desabilita o botão IMEDIATAMENTE para evitar cliques duplos
+            botaoClicado.disabled = true;
+            botaoClicado.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Processando...';
+
+
+            try {
+                const response = await fetch(`/pedido/iniciar_preparo/${pedidoId}`, {
+                    method: 'POST'
+                });
+
+                if (!response.ok) {
+                    throw new Error('Falha ao iniciar preparo no servidor.');
+                }
+                
+                // Em caso de sucesso, não precisamos reabilitar. 
+                // A atualização via WebSocket vai redesenhar o card, e o botão antigo deixará de existir.
+                
+            } catch (error) {
+                console.error("Erro ao iniciar preparo:", error);
+                alert("Não foi possível iniciar o preparo do pedido. Tente novamente.");
+                
+                // 3. Reabilita o botão e restaura o texto APENAS se a comunicação falhar
+                botaoClicado.disabled = false;
+                botaoClicado.innerHTML = '<i class="fas fa-fire"></i> Iniciar Preparo';
+            }
+            
+            // O modal é fechado independentemente do resultado
             hideModal();
         } else if (event.target.closest('.btn-entregar-pedido')) {
-            // Lógica para finalizar (remover da lista)
-            const index = todosOsPedidos.findIndex(p => p.id == pedidoId);
-            if (index > -1) todosOsPedidos.splice(index, 1);
+            // 1. Captura o botão clicado
+            const botaoClicado = event.target.closest('.btn-entregar-pedido');
+
+            // 2. Desabilita e atualiza o visual para dar feedback ao usuário
+            botaoClicado.disabled = true;
+            botaoClicado.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Entregando...';
+
+            try {
+                const response = await fetch(`/pedido/entregar/${pedidoId}`, { method: 'POST' });
+                if (!response.ok) throw new Error('Falha ao entregar pedido.');
+                
+                // Sucesso! O evento do WebSocket cuidará da atualização da tela.
+
+            } catch (error) {
+                console.error("Erro ao entregar pedido:", error);
+                alert("Não foi possível entregar o pedido.");
+                
+                // 3. Reabilita o botão e restaura o texto APENAS em caso de erro
+                botaoClicado.disabled = false;
+                botaoClicado.innerHTML = '<i class="fas fa-check-double"></i> Pedido Entregue';
+            }
             hideModal();
-            setTimeout(updateLayout, 100); 
         } else if (event.target.closest('.btn-cancelar-pedido')) {
-             // Lógica para cancelar (remover da lista)
-            const index = todosOsPedidos.findIndex(p => p.id == pedidoId);
-            if (index > -1) todosOsPedidos.splice(index, 1);
-            hideModal();
-            setTimeout(updateLayout, 100);
+            const botaoClicado = event.target.closest('.btn-cancelar-pedido');
+            const nomeCliente = card.querySelector('h2').textContent;
+
+            // A lógica de desabilitar fica DENTRO do 'if', após a confirmação do usuário
+            if (confirm(`Tem certeza que deseja cancelar o pedido de ${nomeCliente}?`)) {
+                
+                botaoClicado.disabled = true;
+                botaoClicado.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Cancelando...';
+
+                try {
+                    const response = await fetch(`/pedido/cancelar/${pedidoId}`, { method: 'POST' });
+                    if (!response.ok) throw new Error('Falha ao cancelar pedido.');
+                    
+                    // Sucesso! O WebSocket cuida do resto.
+
+                } catch (error) {
+                    console.error("Erro ao cancelar pedido:", error);
+                    alert("Não foi possível cancelar o pedido.");
+                    
+                    botaoClicado.disabled = false;
+                    botaoClicado.innerHTML = '<i class="fas fa-times-circle"></i> Cancelar Pedido';
+                }
+                
+                // O modal só fecha se a ação for confirmada e processada.
+                hideModal();
+            }
         }
     });
 

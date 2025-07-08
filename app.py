@@ -1,7 +1,9 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 import gerenciador_db
+from flask_socketio import SocketIO
 
 app = Flask(__name__)
+socketio = SocketIO(app)
 
 @app.route('/cliente', methods=['GET', 'POST'])
 def tela_cliente():
@@ -229,11 +231,51 @@ def salvar_pedido():
             "mensagem": "Ocorreu um erro ao processar o pedido no servidor."
         }), 500 # 500 é o código para "Erro Interno do Servidor"
 
+    socketio.emit('novo_pedido', {'msg': 'Um novo pedido chegou!'})
+
     return jsonify({
         "status": "sucesso",
         "mensagem": "Pedido recebido, em preparação!",
-        "pedido_id": id_do_pedido_salvo
+        "pedido_id": id_do_pedido_salvo,
+        
     })
+
+@app.route('/pedido/iniciar_preparo/<int:id_do_pedido>', methods=['POST'])
+def rota_iniciar_preparo(id_do_pedido):
+    """
+    Rota para mudar o status do pedido para 'em_producao'.
+    """
+    sucesso = gerenciador_db.iniciar_preparo_pedido(id_do_pedido)
+    if sucesso:
+        # Emite o evento para notificar todos os clientes (inclusive a cozinha) que o estado mudou
+        socketio.emit('novo_pedido', {'msg': f'Pedido {id_do_pedido} começou a ser preparado!'})
+        return jsonify({"status": "sucesso", "mensagem": "Pedido iniciado com sucesso."})
+    else:
+        return jsonify({"status": "erro", "mensagem": "Pedido não pôde ser iniciado."}), 400
+
+@app.route('/pedido/entregar/<int:id_do_pedido>', methods=['POST'])
+def rota_entregar_pedido(id_do_pedido):
+    """
+    Rota para marcar um pedido como entregue (remove da lista ativa).
+    """
+    sucesso = gerenciador_db.entregar_pedido(id_do_pedido)
+    if sucesso:
+        socketio.emit('novo_pedido', {'msg': f'Pedido {id_do_pedido} foi entregue!'})
+        return jsonify({"status": "sucesso"})
+    else:
+        return jsonify({"status": "erro"}), 400
+
+@app.route('/pedido/cancelar/<int:id_do_pedido>', methods=['POST'])
+def rota_cancelar_pedido(id_do_pedido):
+    """
+    Rota para cancelar um pedido (remove da lista ativa).
+    """
+    sucesso = gerenciador_db.cancelar_pedido(id_do_pedido)
+    if sucesso:
+        socketio.emit('novo_pedido', {'msg': f'Pedido {id_do_pedido} foi cancelado!'})
+        return jsonify({"status": "sucesso"})
+    else:
+        return jsonify({"status": "erro"}), 400
 
 @app.route('/pedido/confirmar_pagamento/<int:pedido_id>', methods=['POST'])
 def rota_confirmar_pagamento(pedido_id):
@@ -266,7 +308,7 @@ def index():
 
 if __name__ == '__main__':
     # O 'debug=True' faz o servidor reiniciar automaticamente quando salvamos o arquivo.
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    socketio.run(app, debug=True, host='0.0.0.0', port=5001)
 
 
 

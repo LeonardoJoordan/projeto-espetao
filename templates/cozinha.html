@@ -118,11 +118,36 @@ document.addEventListener('DOMContentLoaded', function() {
         };
         const config = statusMap[pedido.status];
 
-        const itemsList = pedido.itens.map(item => `
-            <li class="text-base flex items-start bg-white/20 p-2 rounded-lg">
-                <i class="fas fa-drumstick-bite mr-2 opacity-80 pt-1"></i>
-                <span class="flex-1">${item.quantidade}x ${item.item}</span>
-            </li>`).join('');
+        const itemsList = pedido.itens.map(item => {
+            // 1. Correção principal: Usa 'item.nome' em vez de 'item.item'
+            let itemHtml = `
+                <li class="text-base flex flex-col bg-white/20 p-2 rounded-lg">
+                    <div class="flex items-center font-bold">
+                        <i class="fas fa-drumstick-bite mr-2 opacity-80"></i>
+                        <span>${item.quantidade}x ${item.nome}</span>
+                    </div>
+            `;
+
+            // 2. Nova Lógica: Verifica e exibe as customizações do pedido
+            if (item.customizacoes && item.customizacoes.length > 0) {
+                const mapaPonto = { 'mal': 'Mal Passado', 'ponto': 'Ao Ponto', 'bem': 'Bem Passado' };
+
+                const detalhesHtml = item.customizacoes.map(custo => {
+                    const pontoTexto = mapaPonto[custo.ponto] || custo.ponto;
+                    let extrasTexto = 'sem extras';
+                    if (custo.extras && custo.extras.length > 0) {
+                        extrasTexto = `com ${custo.extras.join(', ')}`;
+                    }
+                    // Exibe a customização de cada unidade do espetinho
+                    return `<div class="text-sm pl-6 opacity-90">${custo.item}º - ${pontoTexto}, ${extrasTexto}</div>`;
+                }).join('');
+
+                itemHtml += `<div class="w-full mt-1">${detalhesHtml}</div>`;
+            }
+
+            itemHtml += `</li>`;
+            return itemHtml;
+        }).join('');
 
         if (isCompact) {
             // NOVO: Se o pedido está no backlog, mostramos valor e pagamento.

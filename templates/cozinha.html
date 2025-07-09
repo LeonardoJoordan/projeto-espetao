@@ -43,7 +43,7 @@
     </header>
 
     <main id="main-content" class="flex-grow flex flex-col min-h-0">
-        </main>
+    </main>
     
     <div id="templates" class="hidden">
         <div id="secao-backlog-template">
@@ -68,34 +68,26 @@
 
         <div id="card-template">
             <div class="card-pedido w-72 h-full flex-shrink-0 rounded-2xl card-shadow flex flex-col overflow-hidden transform transition-all duration-300 relative" data-id="">
-                </div>
+            </div>
         </div>
     </div>
 
     <div id="modal-container" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden opacity-0">
         <div id="modal-content" class="w-full max-w-md transform scale-95">
-             </div>
+        </div>
     </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // --- NOVA LÓGICA DE WEBSOCKET ---
-
-    // 1. Conecta-se ao nosso servidor Socket.IO assim que a página carrega.
+    // --- WEBSOCKET CONNECTION ---
     const socket = io();
 
-    // 2. Define o que fazer quando o evento 'novo_pedido' for recebido do servidor.
     socket.on('novo_pedido', function(data) {
-        // Apenas um log no console para vermos o evento chegando.
         console.log('Evento "novo_pedido" recebido!', data);
-
-        // 3. A ação é simples: chamamos nossa função principal para buscar os dados
-        //    mais recentes da API e redesenhar a tela inteira.
         carregarEAtualizarLayout();
     });
 
-    // --- FIM DA NOVA LÓGICA DE WEBSOCKET ---
-    // VARIÁVEL GLOBAL PARA GUARDAR OS DADOS VINDOS DA API
+    // --- VARIÁVEIS GLOBAIS ---
     let todosOsPedidos = [];
 
     const mainContainer = document.getElementById('main-content');
@@ -103,23 +95,53 @@ document.addEventListener('DOMContentLoaded', function() {
     const modalContainer = document.getElementById('modal-container');
     const modalContent = document.getElementById('modal-content');
 
+    // --- CONFIGURAÇÕES DE MAPEAMENTO ---
+    const pagamentosIcone = {
+        'pix': 'fa-pix',
+        'cartao': 'fa-credit-card',
+        'dinheiro': 'fa-money-bill-wave'
+    };
+
+    const statusMap = {
+        aguardando_pagamento: { 
+            color: 'from-yellow-400 via-amber-400 to-orange-400', 
+            icon: 'fa-check-circle', 
+            btnText: 'Confirmar Pagamento', 
+            btnClass: 'btn-confirmar-pagamento', 
+            btnColor: 'bg-green-500 hover:bg-green-600' 
+        },
+        aguardando_producao: { 
+            color: 'from-green-400 via-emerald-400 to-teal-400', 
+            icon: 'fa-fire', 
+            btnText: 'Iniciar Preparo', 
+            btnClass: 'btn-iniciar-preparo', 
+            btnColor: 'bg-blue-500 hover:bg-blue-600' 
+        },
+        em_producao: { 
+            color: 'from-blue-400 via-indigo-500 to-purple-600', 
+            icon: 'fa-bullhorn', 
+            btnText: 'Chamar Cliente', 
+            btnClass: 'btn-chamar-cliente', 
+            btnColor: 'bg-cyan-500 hover:bg-cyan-600' 
+        },
+        aguardando_retirada: { 
+            color: 'from-pink-500 via-red-500 to-yellow-500', 
+            icon: 'fa-check-double', 
+            btnText: 'Confirmar Entrega', 
+            btnClass: 'btn-entregar-pedido', 
+            btnColor: 'bg-orange-500 hover:bg-orange-600' 
+        }
+    };
+
     // --- FUNÇÃO PARA CONSTRUIR O CONTEÚDO DOS CARDS ---
     function buildCardContent(pedido, isCompact) {
-        // Mapeia o método de pagamento para um ícone (exemplo)
-        const pagamentosIcone = {
-            'pix': 'fa-pix',
-            'cartao': 'fa-credit-card',
-            'dinheiro': 'fa-money-bill-wave'
-        };
-        const statusMap = {
-            aguardando_pagamento: { color: 'from-yellow-400 via-amber-400 to-orange-400', icon: 'fa-check-circle', btnText: 'Confirmar Pagamento', btnClass: 'btn-confirmar-pagamento', btnColor: 'bg-green-500 hover:bg-green-600' },
-            aguardando_producao: { color: 'from-green-400 via-emerald-400 to-teal-400', icon: 'fa-fire', btnText: 'Iniciar Preparo', btnClass: 'btn-iniciar-preparo', btnColor: 'bg-blue-500 hover:bg-blue-600' },
-            em_producao: { color: 'from-blue-400 via-indigo-500 to-purple-600', icon: 'fa-check-double', btnText: 'Pedido Entregue', btnClass: 'btn-entregar-pedido', btnColor: 'bg-yellow-500 hover:bg-yellow-600' }
-        };
         const config = statusMap[pedido.status];
+        if (!config) {
+            console.error('Status desconhecido:', pedido.status);
+            return '<div class="p-4 text-red-500">Status inválido</div>';
+        }
 
         const itemsList = pedido.itens.map(item => {
-            // 1. Correção principal: Usa 'item.nome' em vez de 'item.item'
             let itemHtml = `
                 <li class="text-base flex flex-col bg-white/20 p-2 rounded-lg">
                     <div class="flex items-center font-bold">
@@ -128,20 +150,16 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
             `;
 
-            // 2. Nova Lógica: Verifica e exibe as customizações do pedido
             if (item.customizacoes && item.customizacoes.length > 0) {
                 const mapaPonto = { 'mal': 'Mal Passado', 'ponto': 'Ao Ponto', 'bem': 'Bem Passado' };
-
                 const detalhesHtml = item.customizacoes.map(custo => {
                     const pontoTexto = mapaPonto[custo.ponto] || custo.ponto;
                     let extrasTexto = 'sem extras';
                     if (custo.extras && custo.extras.length > 0) {
                         extrasTexto = `com ${custo.extras.join(', ')}`;
                     }
-                    // Exibe a customização de cada unidade do espetinho
                     return `<div class="text-sm pl-6 opacity-90">${custo.item}º - ${pontoTexto}, ${extrasTexto}</div>`;
                 }).join('');
-
                 itemHtml += `<div class="w-full mt-1">${detalhesHtml}</div>`;
             }
 
@@ -150,26 +168,19 @@ document.addEventListener('DOMContentLoaded', function() {
         }).join('');
 
         if (isCompact) {
-            // NOVO: Se o pedido está no backlog, mostramos valor e pagamento.
             if (pedido.status === 'aguardando_pagamento' || pedido.status === 'aguardando_producao') {
                 const valorFormatado = parseFloat(pedido.valor_total).toFixed(2).replace('.', ',');
-                
-                
-                // Usa 'fas fa-question-circle' como padrão se o método não for encontrado
                 const iconeClasse = pagamentosIcone[pedido.metodo_pagamento] || 'fas fa-question-circle';
-
                 return `
                     <div class="absolute inset-0 bg-gradient-to-br ${config.color} opacity-80"></div>
                     <div class="relative z-10 flex flex-col h-full justify-center items-center p-4 text-center cursor-pointer">
                         <h2 class="text-2xl font-bold drop-shadow-lg">${pedido.nome_cliente}</h2>
                         <div class="mt-2 space-y-1 text-sm">
                             <p class="bg-white/30 px-3 py-1 rounded-full font-semibold">R$ ${valorFormatado}</p>
-                            <p class="bg-white/30 px-3 py-1 rounded-full capitalize"><i class="fab ${iconeClasse} mr-1.5"></i> ${pedido.metodo_pagamento}</p>
+                            <p class="bg-white/30 px-3 py-1 rounded-full capitalize"><i class="fas ${iconeClasse} mr-1.5"></i> ${pedido.metodo_pagamento}</p>
                         </div>
                     </div>`;
-            } 
-            // Para os outros status (em_producao), mantemos o design antigo com a contagem de itens.
-            else {
+            } else {
                 return `
                     <div class="absolute inset-0 bg-gradient-to-br ${config.color} opacity-80"></div>
                     <div class="relative z-10 flex flex-col h-full justify-center items-center p-4 text-center cursor-pointer">
@@ -193,7 +204,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <p class="text-sm opacity-80">Valor Total</p>
                             <p class="text-xl font-bold">R$ ${parseFloat(pedido.valor_total).toFixed(2).replace('.', ',')}</p>
                             <p class="text-sm capitalize mt-1 opacity-90">
-                                <i class="fab ${pagamentosIcone[pedido.metodo_pagamento] || 'fas fa-question-circle'} mr-1.5"></i>
+                                <i class="fas ${pagamentosIcone[pedido.metodo_pagamento] || 'fas fa-question-circle'} mr-1.5"></i>
                                 ${pedido.metodo_pagamento}
                             </p>
                         </div>
@@ -210,7 +221,7 @@ document.addEventListener('DOMContentLoaded', function() {
         mainContainer.innerHTML = '';
         
         const backlogPedidos = todosOsPedidos.filter(p => p.status === 'aguardando_pagamento' || p.status === 'aguardando_producao');
-        const productionPedidos = todosOsPedidos.filter(p => p.status === 'em_producao');
+        const productionPedidos = todosOsPedidos.filter(p => p.status === 'em_producao' || p.status === 'aguardando_retirada');
 
         const showBacklog = backlogPedidos.length > 0;
         const showProduction = productionPedidos.length > 0;
@@ -238,7 +249,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 card.classList.add('h-full');
                 card.dataset.id = pedido.id;
                 card.innerHTML = buildCardContent(pedido, isSplitView);
-                 if(isSplitView) card.classList.replace('h-96', 'h-48');
+                if(isSplitView) card.classList.replace('h-96', 'h-48');
                 cardContainer.appendChild(card);
             });
             mainContainer.appendChild(sectionNode);
@@ -255,7 +266,6 @@ document.addEventListener('DOMContentLoaded', function() {
         card.dataset.id = pedido.id;
         card.innerHTML = buildCardContent(pedido, false);
         
-
         modalContent.innerHTML = '';
         modalContent.appendChild(card);
         
@@ -273,133 +283,117 @@ document.addEventListener('DOMContentLoaded', function() {
             modalContainer.classList.add('hidden');
         }, 300);
     }
-    
-    // --- FUNÇÃO PARA ATUALIZAR O STATUS DE UM PEDIDO VIA API ---
-    async function atualizarStatusPedido(pedidoId, novoStatus, rotaApi) {
-        // Implementação futura para persistir a mudança no backend
-        console.log(`(Simulação) Chamando API: ${rotaApi} para o pedido ${pedidoId}`);
-        // Aqui entraria a chamada fetch real para o backend
-        // Ex: await fetch(rotaApi, { method: 'POST' });
-
-        // Por enquanto, apenas atualizamos o estado local
-        const pedido = todosOsPedidos.find(p => p.id == pedidoId);
-        if(pedido) {
-            pedido.status = novoStatus;
-            updateLayout();
-        }
-    }
 
     // --- GERENCIADOR DE EVENTOS PRINCIPAL ---
     document.body.addEventListener('click', async function(event) {
-        const card = event.target.closest('.card-pedido');
-        const pedidoId = card?.dataset.id;
+        // Fechar modal ao clicar fora
+        if (event.target === modalContainer) {
+            hideModal();
+            return;
+        }
 
+        const card = event.target.closest('.card-pedido');
+        if (!card) return;
+        
+        const pedidoId = card.dataset.id;
+        if (!pedidoId) return;
 
         const isSplitView = mainContainer.children.length > 1;
-        if (card && isSplitView && !event.target.closest('button')) {
+        if (isSplitView && !event.target.closest('button')) {
             showModal(pedidoId);
             return;
         }
-        
-        if (!pedidoId) return;
 
-        if (event.target.closest('.btn-confirmar-pagamento')) {
-            // AQUI ESTÁ A LÓGICA DE CONFIRMAR PAGAMENTO QUE JÁ TEMOS
-            const response = await fetch(`/pedido/confirmar_pagamento/${pedidoId}`, { method: 'POST' });
-            if(response.ok) {
-                 const pedido = todosOsPedidos.find(p => p.id == pedidoId);
-                 if(pedido) pedido.status = 'aguardando_producao';
-                 hideModal();
-                 setTimeout(updateLayout, 100);
-            } else {
-                alert("Falha ao confirmar pagamento!");
+        // Função auxiliar para processar botões
+        const processarBotao = (botao, textoProcessando) => {
+            if (botao) {
+                botao.disabled = true;
+                botao.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> ${textoProcessando}`;
             }
-        } else if (event.target.closest('.btn-iniciar-preparo')) {
-            // 1. Captura uma referência exata do botão que foi pressionado
-            const botaoClicado = event.target.closest('.btn-iniciar-preparo');
-            
-            // 2. Desabilita o botão IMEDIATAMENTE para evitar cliques duplos
-            botaoClicado.disabled = true;
-            botaoClicado.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Processando...';
+        };
 
-
-            try {
-                const response = await fetch(`/pedido/iniciar_preparo/${pedidoId}`, {
-                    method: 'POST'
-                });
-
-                if (!response.ok) {
-                    throw new Error('Falha ao iniciar preparo no servidor.');
-                }
-                
-                // Em caso de sucesso, não precisamos reabilitar. 
-                // A atualização via WebSocket vai redesenhar o card, e o botão antigo deixará de existir.
-                
-            } catch (error) {
-                console.error("Erro ao iniciar preparo:", error);
-                alert("Não foi possível iniciar o preparo do pedido. Tente novamente.");
-                
-                // 3. Reabilita o botão e restaura o texto APENAS se a comunicação falhar
-                botaoClicado.disabled = false;
-                botaoClicado.innerHTML = '<i class="fas fa-fire"></i> Iniciar Preparo';
+        const reabilitarBotao = (botao, icone, textoOriginal) => {
+            if (botao) {
+                botao.disabled = false;
+                botao.innerHTML = `<i class="fas ${icone}"></i> ${textoOriginal}`;
             }
-            
-            // O modal é fechado independentemente do resultado
-            hideModal();
-        } else if (event.target.closest('.btn-entregar-pedido')) {
-            // 1. Captura o botão clicado
-            const botaoClicado = event.target.closest('.btn-entregar-pedido');
+        };
 
-            // 2. Desabilita e atualiza o visual para dar feedback ao usuário
-            botaoClicado.disabled = true;
-            botaoClicado.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Entregando...';
+        // Identificar qual botão foi clicado
+        const btnConfirmarPagamento = event.target.closest('.btn-confirmar-pagamento');
+        const btnIniciarPreparo = event.target.closest('.btn-iniciar-preparo');
+        const btnChamarCliente = event.target.closest('.btn-chamar-cliente');
+        const btnEntregarPedido = event.target.closest('.btn-entregar-pedido');
+        const btnCancelarPedido = event.target.closest('.btn-cancelar-pedido');
 
-            try {
-                const response = await fetch(`/pedido/entregar/${pedidoId}`, { method: 'POST' });
-                if (!response.ok) throw new Error('Falha ao entregar pedido.');
-                
-                // Sucesso! O evento do WebSocket cuidará da atualização da tela.
-
-            } catch (error) {
-                console.error("Erro ao entregar pedido:", error);
-                alert("Não foi possível entregar o pedido.");
-                
-                // 3. Reabilita o botão e restaura o texto APENAS em caso de erro
-                botaoClicado.disabled = false;
-                botaoClicado.innerHTML = '<i class="fas fa-check-double"></i> Pedido Entregue';
-            }
-            hideModal();
-        } else if (event.target.closest('.btn-cancelar-pedido')) {
-            const botaoClicado = event.target.closest('.btn-cancelar-pedido');
-            const nomeCliente = card.querySelector('h2').textContent;
-
-            // A lógica de desabilitar fica DENTRO do 'if', após a confirmação do usuário
-            if (confirm(`Tem certeza que deseja cancelar o pedido de ${nomeCliente}?`)) {
-                
-                botaoClicado.disabled = true;
-                botaoClicado.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Cancelando...';
-
-                try {
-                    const response = await fetch(`/pedido/cancelar/${pedidoId}`, { method: 'POST' });
-                    if (!response.ok) throw new Error('Falha ao cancelar pedido.');
-                    
-                    // Sucesso! O WebSocket cuida do resto.
-
-                } catch (error) {
-                    console.error("Erro ao cancelar pedido:", error);
-                    alert("Não foi possível cancelar o pedido.");
-                    
-                    botaoClicado.disabled = false;
-                    botaoClicado.innerHTML = '<i class="fas fa-times-circle"></i> Cancelar Pedido';
-                }
-                
-                // O modal só fecha se a ação for confirmada e processada.
+        try {
+            const onSucesso = () => {
                 hideModal();
+                carregarEAtualizarLayout(); 
+            };
+            if (btnConfirmarPagamento) {
+                processarBotao(btnConfirmarPagamento, 'Confirmando...');
+                const response = await fetch(`/pedido/confirmar_pagamento/${pedidoId}`, { method: 'POST' });
+                if (!response.ok) {
+                    throw new Error('Falha ao confirmar pagamento');
+                }
+                onSucesso();
+                hideModal();
+            
+            } else if (btnIniciarPreparo) {
+                processarBotao(btnIniciarPreparo, 'Iniciando...');
+                const response = await fetch(`/pedido/iniciar_preparo/${pedidoId}`, { method: 'POST' });
+                if (!response.ok) {
+                    throw new Error('Falha ao iniciar preparo');
+                }
+                onSucesso();
+                hideModal();
+
+            } else if (btnChamarCliente) {
+                processarBotao(btnChamarCliente, 'Chamando...');
+                const response = await fetch(`/pedido/chamar/${pedidoId}`, { method: 'POST' });
+                if (!response.ok) {
+                    throw new Error('Falha ao chamar cliente');
+                }
+                onSucesso();
+                hideModal();
+
+            } else if (btnEntregarPedido) {
+                processarBotao(btnEntregarPedido, 'Entregando...');
+                const response = await fetch(`/pedido/entregar/${pedidoId}`, { method: 'POST' });
+                if (!response.ok) {
+                    throw new Error('Falha ao entregar pedido');
+                }
+                onSucesso();
+                hideModal();
+
+            } else if (btnCancelarPedido) {
+                const nomeCliente = card.querySelector('h2')?.textContent || 'este pedido';
+                if (confirm(`Tem certeza que deseja cancelar ${nomeCliente}?`)) {
+                    processarBotao(btnCancelarPedido, 'Cancelando...');
+                    const response = await fetch(`/pedido/cancelar/${pedidoId}`, { method: 'POST' });
+                    if (!response.ok) {
+                        throw new Error('Falha ao cancelar pedido');
+                    }
+                    onSucesso();
+                    hideModal();
+                }
             }
+            
+        } catch (error) {
+            console.error("Erro na operação:", error);
+            alert(`Erro: ${error.message}. Tente novamente.`);
+            
+            // Reabilitar o botão específico que foi clicado
+            if (btnConfirmarPagamento) reabilitarBotao(btnConfirmarPagamento, 'fa-check-circle', 'Confirmar Pagamento');
+            if (btnIniciarPreparo) reabilitarBotao(btnIniciarPreparo, 'fa-fire', 'Iniciar Preparo');
+            if (btnChamarCliente) reabilitarBotao(btnChamarCliente, 'fa-bullhorn', 'Chamar Cliente');
+            if (btnEntregarPedido) reabilitarBotao(btnEntregarPedido, 'fa-check-double', 'Confirmar Entrega');
+            if (btnCancelarPedido) reabilitarBotao(btnCancelarPedido, 'fa-times-circle', 'Cancelar');
         }
     });
 
-    // --- FUNÇÃO INICIAL PARA CARREGAR OS DADOS DA NOSSA API ---
+    // --- FUNÇÃO INICIAL PARA CARREGAR OS DADOS DA API ---
     async function carregarEAtualizarLayout() {
         try {
             mainContainer.innerHTML = '<p class="text-center text-lg p-10">Carregando pedidos...</p>';
@@ -407,7 +401,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!response.ok) throw new Error('Falha na resposta da rede.');
             
             todosOsPedidos = await response.json();
-            updateLayout(); // Desenha a tela SÓ DEPOIS que os dados chegam
+            updateLayout();
         } catch (error) {
             console.error("Erro ao buscar pedidos:", error);
             mainContainer.innerHTML = `<p class="text-center text-red-400 p-10">Falha ao carregar os pedidos do servidor. Verifique se o backend está rodando.</p>`;

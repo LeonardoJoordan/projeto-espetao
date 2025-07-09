@@ -214,7 +214,7 @@ def obter_pedidos_ativos():
     prioridade de status e, em seguida, por data.
     """
     # Lista de todos os status que consideramos "ativos" na tela da cozinha
-    lista_status_ativos = ['aguardando_pagamento', 'aguardando_producao', 'em_producao']
+    lista_status_ativos = ['aguardando_pagamento', 'aguardando_producao', 'em_producao', 'aguardando_retirada']
     pedidos_encontrados = []
     conn = None
     try:
@@ -233,6 +233,7 @@ def obter_pedidos_ativos():
                     WHEN 'aguardando_pagamento' THEN 1 -- Prioridade 1
                     WHEN 'aguardando_producao'  THEN 2 -- Prioridade 2
                     WHEN 'em_producao'          THEN 3 -- Prioridade 3
+                    WHEN 'aguardando_retirada'  THEN 4 -- Prioridade 4
                 END,
                 CASE status
                     WHEN 'aguardando_producao' THEN timestamp_pagamento -- Fila do pagamento
@@ -756,6 +757,38 @@ def cancelar_pedido(id_do_pedido):
     except sqlite3.Error as e:
         print(f"ERRO ao cancelar o pedido #{id_do_pedido}: {e}")
         # Se qualquer passo falhar, desfaz todas as operações para manter a integridade.
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def chamar_cliente_pedido(id_do_pedido):
+    """
+    Muda o status do pedido para 'aguardando_retirada', indicando que está pronto.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # Altera o status de 'em_producao' para o novo status 'aguardando_retirada'
+        cursor.execute(
+            "UPDATE pedidos SET status = ? WHERE id = ? AND status = ?",
+            ('aguardando_retirada', id_do_pedido, 'em_producao')
+        )
+
+        if cursor.rowcount == 0:
+            print(f"AVISO: Pedido #{id_do_pedido} não encontrado ou não estava 'em produção'.")
+            return False
+
+        conn.commit()
+        print(f"SUCESSO: Pedido #{id_do_pedido} movido para 'aguardando retirada'.")
+        return True
+
+    except sqlite3.Error as e:
+        print(f"ERRO ao chamar cliente para o pedido #{id_do_pedido}: {e}")
         if conn:
             conn.rollback()
         return False

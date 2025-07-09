@@ -301,6 +301,19 @@ def api_pedidos_ativos():
     # 2. Usa a função 'jsonify' do Flask para converter nossa lista Python em uma resposta JSON.
     return jsonify(pedidos_ativos)
 
+@app.route('/pedido/chamar/<int:id_do_pedido>', methods=['POST'])
+def rota_chamar_cliente(id_do_pedido):
+    """
+    Rota para mudar o status do pedido para 'aguardando_retirada'.
+    """
+    sucesso = gerenciador_db.chamar_cliente_pedido(id_do_pedido)
+    if sucesso:
+        # Emite o evento para notificar cozinha e monitor que o pedido está pronto
+        socketio.emit('novo_pedido', {'msg': f'Pedido {id_do_pedido} está pronto para retirada!'})
+        return jsonify({"status": "sucesso", "mensagem": "Cliente chamado com sucesso."})
+    else:
+        return jsonify({"status": "erro", "mensagem": "Pedido não pôde ser atualizado."}), 400
+
 @app.route('/')
 def index():
     # Redireciona a rota principal para a tela do cliente por padrão

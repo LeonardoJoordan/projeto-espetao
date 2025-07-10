@@ -208,6 +208,66 @@ def obter_todos_produtos():
         if conn:
             conn.close()
 
+def obter_todos_produtos_para_gestao():
+    """
+    Busca TODOS os produtos para a tela de gestão, incluindo os sem estoque.
+    """
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # A consulta é idêntica à original, mas sem o filtro "WHERE"
+        cursor.execute('''
+            SELECT p.id, p.nome, p.preco_venda, p.estoque_atual, p.custo_total_do_estoque, c.nome as categoria_nome, p.categoria_id
+            FROM produtos p
+            LEFT JOIN categorias c ON p.categoria_id = c.id
+            ORDER BY c.ordem, p.ordem, p.nome 
+        ''')
+        
+        produtos_tuplas = cursor.fetchall()
+        produtos_lista = []
+        for tupla in produtos_tuplas:
+            id_produto, nome, preco_venda, estoque, custo_total, categoria, categoria_id = tupla
+            
+            if estoque > 0:
+                custo_medio = custo_total / estoque
+                lucro = preco_venda - custo_medio
+            else:
+                custo_medio = 0
+                lucro = preco_venda 
+
+            cursor.execute('''
+                SELECT custo_unitario_compra 
+                FROM entradas_de_estoque 
+                WHERE id_produto = ? 
+                ORDER BY data_entrada DESC 
+                LIMIT 1
+            ''', (id_produto,))
+            
+            ultimo_preco_compra_resultado = cursor.fetchone()
+            ultimo_preco_compra = ultimo_preco_compra_resultado[0] if ultimo_preco_compra_resultado else custo_medio
+
+            produtos_lista.append({
+                'id': id_produto,
+                'nome': nome,
+                'preco_venda': preco_venda,
+                'estoque': estoque,
+                'custo_medio': custo_medio,
+                'lucro': lucro,
+                'categoria': categoria,
+                'categoria_id': categoria_id,
+                'ultimo_preco_compra': ultimo_preco_compra
+            })
+        
+        return produtos_lista
+
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao obter os produtos para gestão: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
 def obter_pedidos_ativos():
     """
     Busca no banco de dados todos os pedidos ativos, ordenando por
@@ -671,15 +731,15 @@ def iniciar_preparo_pedido(id_do_pedido):
 
 def entregar_pedido(id_do_pedido):
     """
-    Finaliza um pedido, dando baixa no estoque reservado antes de
-    remover o pedido da lista de ativos.
+    Finaliza um pedido. Para cada item vendido, calcula o custo médio no momento
+    da venda, atualiza o custo total do estoque e dá baixa no estoque reservado.
     """
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # Passo 1: Ler os itens do pedido que será entregue.
+        # Primeiro, precisamos saber quais itens estão no pedido.
         cursor.execute("SELECT itens_json FROM pedidos WHERE id = ?", (id_do_pedido,))
         resultado = cursor.fetchone()
 
@@ -689,31 +749,61 @@ def entregar_pedido(id_do_pedido):
 
         itens_do_pedido = json.loads(resultado[0])
 
-        # Passo 2: Para cada item, dá baixa definitiva no estoque que estava reservado.
+        # Agora, para cada item do pedido, faremos a baixa de forma inteligente.
         for item in itens_do_pedido:
+            id_produto = item['id']
+            quantidade_vendida = item['quantidade']
+
+            # PASSO 1: Ler o estado atual do produto (custo e estoque totais).
+            # O estoque total de um item é a soma do que está na prateleira (atual)
+            # com o que está separado para outros pedidos (reservado).
+            cursor.execute("""
+                SELECT estoque_atual, estoque_reservado, custo_total_do_estoque
+                FROM produtos WHERE id = ?
+            """, (id_produto,))
+            
+            res_produto = cursor.fetchone()
+            if not res_produto:
+                continue # Pula para o próximo item se o produto não for encontrado
+
+            estoque_atual, estoque_reservado, custo_total_atual = res_produto
+            estoque_total_antes_da_venda = estoque_atual + estoque_reservado
+
+            # PASSO 2: Calcular o custo médio por unidade ANTES da venda.
+            # Evita divisão por zero se o estoque estiver inconsistente.
+            custo_medio_unitario = 0
+            if estoque_total_antes_da_venda > 0:
+                custo_medio_unitario = custo_total_atual / estoque_total_antes_da_venda
+
+            # PASSO 3: Calcular o custo exato dos itens que estamos vendendo.
+            custo_dos_itens_vendidos = quantidade_vendida * custo_medio_unitario
+            
+            # PASSO 4: Atualizar a tabela de produtos com os novos valores.
+            # Damos baixa no estoque reservado E no custo total do estoque.
             cursor.execute("""
                 UPDATE produtos
-                SET estoque_reservado = estoque_reservado - ?
+                SET estoque_reservado = estoque_reservado - ?,
+                    custo_total_do_estoque = custo_total_do_estoque - ?
                 WHERE id = ?
-            """, (item['quantidade'], item['id']))
+            """, (quantidade_vendida, custo_dos_itens_vendidos, id_produto))
 
-        # Passo 3: Apagar o pedido da fila de ativos.
+        # Após atualizar todos os produtos, removemos o pedido da fila de ativos.
         cursor.execute("DELETE FROM pedidos WHERE id = ?", (id_do_pedido,))
 
-        # Passo 4: Confirmar toda a transação.
+        # Se tudo correu bem, salvamos as alterações.
         conn.commit()
-        print(f"SUCESSO: Pedido #{id_do_pedido} entregue e estoque baixado.")
+        print(f"SUCESSO: Pedido #{id_do_pedido} entregue e estoque e custos baixados.")
         return True
 
     except sqlite3.Error as e:
         print(f"ERRO ao entregar o pedido #{id_do_pedido}: {e}")
+        # Se qualquer passo falhar, desfazemos tudo para não corromper os dados.
         if conn:
             conn.rollback()
         return False
     finally:
         if conn:
             conn.close()
-
 
 def cancelar_pedido(id_do_pedido):
     """

@@ -64,7 +64,8 @@ def tela_produtos():
     """
     # --- BUSCANDO DADOS 100% REAIS DO BANCO DE DADOS ---
     categorias_reais = gerenciador_db.obter_todas_categorias()
-    produtos_reais = gerenciador_db.obter_todos_produtos()
+    # A ÚNICA MUDANÇA ESTÁ AQUI:
+    produtos_reais = gerenciador_db.obter_todos_produtos_para_gestao() 
     
     # --- Lógica de Agrupamento COM IDs ---
     produtos_agrupados = {}
@@ -76,9 +77,9 @@ def tela_produtos():
 
     # Agora o loop usa a lista de produtos reais do banco
     for produto in produtos_reais:
-        categoria_do_produto = produto['categoria']
-        if categoria_do_produto in produtos_agrupados:
-            produtos_agrupados[categoria_do_produto]['produtos'].append(produto)
+        # Verificação para evitar erro se um produto não tiver categoria associada
+        if produto['categoria'] and produto['categoria'] in produtos_agrupados:
+            produtos_agrupados[produto['categoria']]['produtos'].append(produto)
     
     # Envia os dados REAIS e AGRUPADOS para o template
     return render_template('produtos.html', produtos_agrupados=produtos_agrupados, categorias=categorias_reais)
@@ -313,6 +314,11 @@ def rota_chamar_cliente(id_do_pedido):
         return jsonify({"status": "sucesso", "mensagem": "Cliente chamado com sucesso."})
     else:
         return jsonify({"status": "erro", "mensagem": "Pedido não pôde ser atualizado."}), 400
+
+@app.route('/monitor')
+def tela_monitor():
+    """ Rota para exibir o monitor de pedidos para os clientes. """
+    return render_template('monitor.html')
 
 @app.route('/')
 def index():

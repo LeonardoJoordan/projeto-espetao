@@ -76,7 +76,7 @@
             animation: slideInUp 0.6s ease-out;
         }
         .card-pedido.pronto.piscando {
-            animation: popInAndPulse 3s ease-in-out infinite;
+            animation: popInAndPulse 4s ease-in-out infinite;
         }
         .nome-cliente {
             font-size: 5rem;
@@ -220,10 +220,10 @@ document.addEventListener('DOMContentLoaded', function() {
         listaPronto.innerHTML = prontosParaRetirada.map(p => criarCardHtml(p, 'pronto')).join('');
         
         // Adiciona a classe 'piscando' ao primeiro item da lista de prontos
-        const primeiroPronto = listaPronto.querySelector('.card-pedido');
-        if (primeiroPronto) {
-            primeiroPronto.classList.add('piscando');
-        }
+        const todosOsProntos = listaPronto.querySelectorAll('.card-pedido');
+        todosOsProntos.forEach(card => {
+            card.classList.add('piscando');
+        });
     }
 
     // --- FUNÇÕES DE ANIMAÇÃO ---

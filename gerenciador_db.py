@@ -1,7 +1,7 @@
 import sqlite3
 import datetime
 import json # Adicione esta importação no topo do seu arquivo, junto com as outras
-import datetime # Adicione esta importação também
+from datetime import timedelta # Adicione esta importação também
 
 NOME_BANCO_DADOS = 'espetao.db'
 
@@ -859,8 +859,11 @@ def obter_dados_relatorio(data_inicio, data_fim):
             if p['metodo_pagamento'] in vendas_por_pagamento:
                 vendas_por_pagamento[p['metodo_pagamento']] += p['valor_total']
             
-            data_hora = datetime.datetime.fromisoformat(p['timestamp_finalizacao']).strftime('%d/%m %H:%M')
-            historico_pedidos_tabela.append(dict(p, horario=data_hora))
+            # Correção do timestamp para usar o do banco
+            data_hora_obj = datetime.datetime.fromisoformat(p['timestamp_finalizacao'])
+            data_hora_formatada = data_hora_obj.strftime('%d/%m %H:%M')
+            historico_pedidos_tabela.append(dict(p, horario=data_hora_formatada))
+
 
             for item in json.loads(p['itens_json']):
                 pid = item['id']
@@ -871,6 +874,15 @@ def obter_dados_relatorio(data_inicio, data_fim):
                 itens_vendidos_agregado[pid]['receita'] += item['preco'] * item['quantidade']
 
         itens_mais_vendidos = sorted(list(itens_vendidos_agregado.values()), key=lambda x: x['quantidade'], reverse=True)[:10]
+
+        # --- NOVA LÓGICA PARA DECIDIR O MODO DE AGREGAÇÃO ---
+        dt_inicio = datetime.datetime.fromisoformat(data_inicio)
+        dt_fim = datetime.datetime.fromisoformat(data_fim)
+        # Se o intervalo for menor que 48h, agrupa por hora. Senão, por dia.
+        modo_agregacao = 'hora' if (dt_fim - dt_inicio) < timedelta(days=2) else 'dia'
+        
+        vendas_por_periodo = _agregar_vendas_por_periodo(pedidos_finalizados, modo_agregacao)
+
 
         # Monta o dicionário de resposta
         return {
@@ -887,8 +899,8 @@ def obter_dados_relatorio(data_inicio, data_fim):
                 "data": list(vendas_por_pagamento.values()),
             },
             "itensMaisVendidos": itens_mais_vendidos,
-            "historicoPedidos": [dict(p) for p in historico_pedidos_tabela]
-            # Futuramente adicionaremos os dados do gráfico de vendas por período
+            "historicoPedidos": [dict(p) for p in historico_pedidos_tabela],
+            "vendasPorPeriodo": vendas_por_periodo # <-- DADOS DO GRÁFICO PRINCIPAL
         }
 
     except sqlite3.Error as e:
@@ -896,3 +908,34 @@ def obter_dados_relatorio(data_inicio, data_fim):
         return None
     finally:
         if conn: conn.close()
+
+def _agregar_vendas_por_periodo(pedidos, modo):
+    """
+    Agrega os dados de vendas por dia ou por hora a partir de uma lista de pedidos.
+    """
+    vendas_agregadas = {} # Dicionário para agrupar os valores
+
+    for pedido in pedidos:
+        # Converte o texto do timestamp para um objeto datetime
+        timestamp_obj = datetime.datetime.fromisoformat(pedido['timestamp_finalizacao'])
+
+        # Cria a "chave" de agrupamento (ou a hora ou o dia)
+        if modo == 'hora':
+            chave = timestamp_obj.strftime('%H:00') # Formato "HH:00", ex: "19:00"
+        else: # modo == 'dia'
+            chave = timestamp_obj.strftime('%d/%m') # Formato "DD/MM", ex: "10/07"
+
+        # Pega o valor já acumulado para esta chave (ou 0 se for a primeira vez)
+        valor_atual = vendas_agregadas.get(chave, 0)
+        
+        # Soma o valor do pedido atual e atualiza o dicionário
+        vendas_agregadas[chave] = valor_atual + pedido['valor_total']
+
+    # Ordena as chaves para garantir que o gráfico fique em ordem cronológica
+    chaves_ordenadas = sorted(vendas_agregadas.keys())
+
+    # Cria as listas finais de labels e dados a partir do dicionário ordenado
+    labels_finais = chaves_ordenadas
+    dados_finais = [vendas_agregadas[chave] for chave in chaves_ordenadas]
+
+    return {"labels": labels_finais, "data": dados_finais}

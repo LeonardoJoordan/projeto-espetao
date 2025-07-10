@@ -58,8 +58,10 @@ def inicializar_banco():
                 status TEXT NOT NULL,
                 metodo_pagamento TEXT,
                 valor_total REAL,
+                custo_total_pedido REAL,
                 timestamp_criacao TEXT NOT NULL,
                 timestamp_pagamento TEXT,
+                timestamp_finalizacao TEXT,
                 itens_json TEXT 
             )
         ''')

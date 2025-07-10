@@ -315,6 +315,33 @@ def rota_chamar_cliente(id_do_pedido):
     else:
         return jsonify({"status": "erro", "mensagem": "Pedido não pôde ser atualizado."}), 400
 
+@app.route('/fechamento')
+def tela_fechamento():
+    """ Rota para exibir a página de fechamento de caixa e relatórios. """
+    return render_template('fechamento.html')
+
+@app.route('/api/relatorio')
+def api_relatorio():
+    """
+    Endpoint da API para buscar os dados consolidados para o relatório.
+    Recebe as datas como parâmetros na URL. Ex: /api/relatorio?inicio=...&fim=...
+    """
+    # Pega as datas da URL
+    data_inicio_str = request.args.get('inicio')
+    data_fim_str = request.args.get('fim')
+    
+    # Se não forem fornecidas, retorna um erro
+    if not data_inicio_str or not data_fim_str:
+        return jsonify({"erro": "As datas de início e fim são obrigatórias"}), 400
+
+    # Chama nosso especialista para buscar os dados
+    dados = gerenciador_db.obter_dados_relatorio(data_inicio_str, data_fim_str)
+    
+    if dados:
+        return jsonify(dados)
+    else:
+        return jsonify({"erro": "Não foi possível gerar o relatório"}), 500
+
 @app.route('/monitor')
 def tela_monitor():
     """ Rota para exibir o monitor de pedidos para os clientes. """

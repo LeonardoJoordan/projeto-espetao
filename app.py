@@ -347,6 +347,20 @@ def tela_monitor():
     """ Rota para exibir o monitor de pedidos para os clientes. """
     return render_template('monitor.html')
 
+@app.route('/pedido/entregar_direto/<int:id_do_pedido>', methods=['POST'])
+def rota_entregar_direto(id_do_pedido):
+    """
+    Rota para finalizar um pedido de fluxo simples que pula a produção.
+    """
+    # A função entregar_pedido já faz tudo que precisamos:
+    # baixa o estoque e marca o pedido como 'finalizado'.
+    sucesso = gerenciador_db.entregar_pedido(id_do_pedido)
+    if sucesso:
+        socketio.emit('novo_pedido', {'msg': f'Pedido {id_do_pedido} (simples) foi entregue!'})
+        return jsonify({"status": "sucesso"})
+    else:
+        return jsonify({"status": "erro"}), 400
+
 @app.route('/')
 def index():
     # Redireciona a rota principal para a tela do cliente por padrão

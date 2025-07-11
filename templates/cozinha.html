@@ -141,7 +141,32 @@ document.addEventListener('DOMContentLoaded', function() {
             return '<div class="p-4 text-red-500">Status inválido</div>';
         }
 
-        const itemsList = pedido.itens.map(item => {
+        // Lógica para decidir qual botão de ação principal mostrar
+        let acaoPrincipalHtml = '';
+        if (pedido.status === 'aguardando_producao') {
+            // AQUI ESTÁ A NOVA LÓGICA
+            if (pedido.fluxo_simples === 1) {
+                // Se o fluxo é simples, mostramos o botão de entrega direta
+                acaoPrincipalHtml = `
+                    <button class="btn-entregar-direto w-full bg-teal-500 hover:bg-teal-600 text-white font-bold py-3 text-base flex items-center justify-center gap-2">
+                        <i class="fas fa-rocket"></i> Entregar Direto
+                    </button>`;
+            } else {
+                // Se não, mantemos o botão padrão de iniciar preparo
+                acaoPrincipalHtml = `
+                    <button class="${config.btnClass} w-full ${config.btnColor} text-white font-bold py-3 text-base flex items-center justify-center gap-2">
+                        <i class="fas ${config.icon}"></i> ${config.btnText}
+                    </button>`;
+            }
+        } else {
+            // Para todos os outros status, o botão continua o mesmo
+            acaoPrincipalHtml = `
+                <button class="${config.btnClass} w-full ${config.btnColor} text-white font-bold py-3 text-base flex items-center justify-center gap-2">
+                    <i class="fas ${config.icon}"></i> ${config.btnText}
+                </button>`;
+        }
+
+        const itemsListHtml = pedido.itens.map(item => {
             let itemHtml = `
                 <li class="text-base flex flex-col bg-white/20 p-2 rounded-lg">
                     <div class="flex items-center font-bold">
@@ -298,6 +323,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const pedidoId = card.dataset.id;
         if (!pedidoId) return;
 
+
+
         const isSplitView = mainContainer.children.length > 1;
         if (isSplitView && !event.target.closest('button')) {
             showModal(pedidoId);
@@ -325,6 +352,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const btnChamarCliente = event.target.closest('.btn-chamar-cliente');
         const btnEntregarPedido = event.target.closest('.btn-entregar-pedido');
         const btnCancelarPedido = event.target.closest('.btn-cancelar-pedido');
+        const btnEntregarDireto = event.target.closest('.btn-entregar-direto');
 
         try {
             const onSucesso = () => {
@@ -366,6 +394,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 onSucesso();
                 hideModal();
+
+            } else if (btnEntregarDireto) {
+                processarBotao(btnEntregarDireto, 'Entregando...');
+                const response = await fetch(`/pedido/entregar_direto/${pedidoId}`, { method: 'POST' });
+                if (!response.ok) {
+                    throw new Error('Falha ao entregar pedido direto');
+                }
+                onSucesso();
+                hideModal();
+            }
 
             } else if (btnCancelarPedido) {
                 const nomeCliente = card.querySelector('h2')?.textContent || 'este pedido';

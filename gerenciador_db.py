@@ -548,6 +548,23 @@ def salvar_novo_pedido(dados_do_pedido):
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
+        # --- NOVA LÓGICA DE VERIFICAÇÃO ---
+        fluxo_e_simples = True # Começamos assumindo que o pedido é simples
+        ids_dos_produtos = [item['id'] for item in dados_do_pedido['itens']]
+        
+        # Criamos os placeholders (?) para a consulta SQL
+        placeholders = ','.join('?' for id in ids_dos_produtos)
+        
+        # Buscamos a propriedade 'requer_preparo' de TODOS os produtos do pedido de uma só vez
+        cursor.execute(f"SELECT requer_preparo FROM produtos WHERE id IN ({placeholders})", ids_dos_produtos)
+        resultados_preparo = cursor.fetchall()
+
+        # Verificamos se ALGUM dos produtos retornados requer preparo
+        for resultado in resultados_preparo:
+            if resultado[0] == 1: # Se requer_preparo for 1 (verdadeiro)
+                fluxo_e_simples = False # O pedido não é mais simples
+                break # Já sabemos que é complexo, podemos parar a verificação
+
         # --- LÓGICA DE ENRIQUECIMENTO: Buscar custo e adicionar ao item ---
         itens_enriquecidos = []
         for item in dados_do_pedido['itens']:
@@ -587,15 +604,16 @@ def salvar_novo_pedido(dados_do_pedido):
         valor_total = sum(item['preco'] * item['quantidade'] for item in dados_do_pedido['itens'])
 
         cursor.execute('''
-            INSERT INTO pedidos (nome_cliente, status, metodo_pagamento, valor_total, timestamp_criacao, itens_json)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO pedidos (nome_cliente, status, metodo_pagamento, valor_total, timestamp_criacao, itens_json, fluxo_simples)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (
             dados_do_pedido['nome_cliente'],
             'aguardando_pagamento',
             dados_do_pedido['metodo_pagamento'],
             valor_total,
             timestamp_atual,
-            itens_como_json
+            itens_como_json,
+            1 if fluxo_e_simples else 0 # Salva 1 se for simples, 0 se for complexo
         ))
 
         id_do_pedido_salvo = cursor.lastrowid

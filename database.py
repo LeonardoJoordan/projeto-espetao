@@ -31,7 +31,8 @@ def inicializar_banco():
                 estoque_reservado INTEGER NOT NULL DEFAULT 0,
                 custo_total_do_estoque REAL NOT NULL,
                 categoria_id INTEGER,
-                ordem INTEGER DEFAULT 0, -- NOVO CAMPO: Ordem para arrastar e soltar
+                ordem INTEGER DEFAULT 0,
+                requer_preparo INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY (categoria_id) REFERENCES categorias (id)
             )
         ''')
@@ -62,7 +63,8 @@ def inicializar_banco():
                 timestamp_criacao TEXT NOT NULL,
                 timestamp_pagamento TEXT,
                 timestamp_finalizacao TEXT,
-                itens_json TEXT 
+                itens_json TEXT, 
+                fluxo_simples INTEGER NOT NULL DEFAULT 0 -- 1 se for simples, 0 se for complexo
             )
         ''')
         print("Tabela 'pedidos' verificada/criada.")

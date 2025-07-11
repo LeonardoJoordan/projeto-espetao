@@ -292,8 +292,8 @@ def obter_pedidos_ativos():
                 CASE status
                     WHEN 'aguardando_pagamento' THEN 1 -- Prioridade 1
                     WHEN 'aguardando_producao'  THEN 2 -- Prioridade 2
-                    WHEN 'em_producao'          THEN 3 -- Prioridade 3
-                    WHEN 'aguardando_retirada'  THEN 4 -- Prioridade 4
+                    WHEN 'aguardando_retirada'  THEN 3 -- Prioridade 3
+                    WHEN 'em_producao'          THEN 4 -- Prioridade 4
                 END,
                 CASE status
                     WHEN 'aguardando_producao' THEN timestamp_pagamento -- Fila do pagamento

@@ -837,7 +837,7 @@ def obter_dados_relatorio(data_inicio, data_fim):
         cursor.execute("""
             SELECT quantidade_comprada, custo_unitario_compra
             FROM entradas_de_estoque
-            WHERE quantidade_comprada < 0 AND data_entrada BETWEEN ? AND ?
+            WHERE quantidade_comprada < 0 AND custo_unitario_compra = 0 AND data_entrada BETWEEN ? AND ?
         """,(data_inicio, data_fim))
         perdas_e_ajustes = cursor.fetchall()
 
@@ -848,7 +848,21 @@ def obter_dados_relatorio(data_inicio, data_fim):
         ticket_medio = faturamento_bruto / pedidos_realizados if pedidos_realizados > 0 else 0
         total_itens_vendidos = sum(sum(item['quantidade'] for item in json.loads(p['itens_json'])) for p in pedidos_finalizados)
         media_itens_pedido = total_itens_vendidos / pedidos_realizados if pedidos_realizados > 0 else 0
-        valor_perdas = sum(abs(pa['quantidade_comprada']) * pa['custo_unitario_compra'] for pa in perdas_e_ajustes)
+        valor_perdas = 0
+        for pa in perdas_e_ajustes:
+            # Como é perda (custo_unitario = 0), buscamos o custo médio do produto na data
+            cursor.execute("""
+                SELECT p.custo_total_do_estoque, p.estoque_atual, p.estoque_reservado
+                FROM produtos p
+                JOIN entradas_de_estoque e ON p.id = e.id_produto
+                WHERE e.quantidade_comprada = ? AND e.custo_unitario_compra = ? AND e.data_entrada BETWEEN ? AND ?
+                LIMIT 1
+            """, (pa['quantidade_comprada'], pa['custo_unitario_compra'], data_inicio, data_fim))
+            
+            produto_info = cursor.fetchone()
+            if produto_info and (produto_info[1] + produto_info[2]) > 0:
+                custo_medio = produto_info[0] / (produto_info[1] + produto_info[2])
+                valor_perdas += abs(pa['quantidade_comprada']) * custo_medio
         
         # --- DADOS PARA GRÁFICOS E TABELAS ---
         vendas_por_pagamento = {'pix': 0, 'cartao': 0, 'dinheiro': 0}

@@ -266,7 +266,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         <span class="text-sm font-bold bg-blue-500/50 px-2 py-1 rounded-full">${item.quantidade} un</span>
                     </div>
                     <div class="text-xs text-white/70">
-                        <span>Receita: ${formatCurrency(item.receita)}</span>
+                        <span>Receita: ${formatCurrency(item.receita)}</span> | 
+                        <span class="font-semibold text-green-400">Lucro: ${formatCurrency(item.lucro)}</span>
                     </div>
                 </div>`;
             container.innerHTML += itemHtml;

@@ -540,26 +540,58 @@ def obter_historico_produto(id_produto):
 
 def salvar_novo_pedido(dados_do_pedido):
     """
-    Salva um novo pedido com status 'aguardando_pagamento' e reserva o estoque.
-    A coluna timestamp_pagamento fica nula nesta etapa.
+    Salva um novo pedido, buscando o custo médio de cada item no momento da venda
+    e armazenando essa informação no JSON do pedido.
     """
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # --- Missão 1: Salvar o Pedido ---
-        itens_como_json = json.dumps(dados_do_pedido['itens'])
+        # --- LÓGICA DE ENRIQUECIMENTO: Buscar custo e adicionar ao item ---
+        itens_enriquecidos = []
+        for item in dados_do_pedido['itens']:
+            # Busca o estado atual do produto para calcular o custo médio
+            cursor.execute("SELECT custo_total_do_estoque, estoque_atual FROM produtos WHERE id = ?", (item['id'],))
+            resultado = cursor.fetchone()
+            
+            custo_a_registrar = 0
+            if resultado:
+                custo_total_estoque, estoque_atual = resultado
+                
+                if estoque_atual > 0:
+                    # CASO 1: Estoque positivo, usa a média ponderada.
+                    custo_a_registrar = custo_total_estoque / estoque_atual
+                else:
+                    # CASO 2: Estoque zerado, busca o custo da última compra.
+                    cursor.execute("""
+                        SELECT custo_unitario_compra 
+                        FROM entradas_de_estoque 
+                        WHERE id_produto = ? AND quantidade_comprada > 0
+                        ORDER BY data_entrada DESC 
+                        LIMIT 1
+                    """, (item['id'],))
+                    ultimo_custo_resultado = cursor.fetchone()
+                    
+                    if ultimo_custo_resultado:
+                        custo_a_registrar = ultimo_custo_resultado[0]
+
+            # Adiciona o custo capturado ao dicionário do item
+            item_com_custo = item.copy()
+            item_com_custo['custo_unitario'] = custo_a_registrar
+            itens_enriquecidos.append(item_com_custo)
+        
+        # --- Missão 1: Salvar o Pedido com os dados de custo já inclusos ---
+        itens_como_json = json.dumps(itens_enriquecidos)
         timestamp_atual = datetime.datetime.now().isoformat()
         valor_total = sum(item['preco'] * item['quantidade'] for item in dados_do_pedido['itens'])
 
-        # Note que não inserimos 'timestamp_pagamento', ele será nulo por padrão.
         cursor.execute('''
             INSERT INTO pedidos (nome_cliente, status, metodo_pagamento, valor_total, timestamp_criacao, itens_json)
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (
             dados_do_pedido['nome_cliente'],
-            'aguardando_pagamento', # Status inicial correto
+            'aguardando_pagamento',
             dados_do_pedido['metodo_pagamento'],
             valor_total,
             timestamp_atual,
@@ -576,14 +608,14 @@ def salvar_novo_pedido(dados_do_pedido):
                     estoque_reservado = estoque_reservado + ?
                 WHERE id = ?
             ''', (
-                item['quantidade'], 
+                item['quantidade'],
                 item['quantidade'],
                 item['id']
             ))
 
         conn.commit()
 
-        print(f"SUCESSO: Pedido #{id_do_pedido_salvo} criado e estoque RESERVADO.")
+        print(f"SUCESSO: Pedido #{id_do_pedido_salvo} criado com CUSTO REGISTRADO e estoque RESERVADO.")
         return id_do_pedido_salvo
 
     except sqlite3.Error as e:
@@ -594,8 +626,6 @@ def salvar_novo_pedido(dados_do_pedido):
     finally:
         if conn:
             conn.close()
-
-# Em gerenciador_db.py
 
 def confirmar_pagamento_pedido(id_do_pedido):
     """
@@ -827,7 +857,7 @@ def obter_dados_relatorio(data_inicio, data_fim):
 
         # --- DADOS GERAIS DE PEDIDOS FINALIZADOS ---
         cursor.execute("""
-            SELECT valor_total, custo_total_pedido, metodo_pagamento, itens_json, timestamp_finalizacao
+            SELECT id, nome_cliente, valor_total, custo_total_pedido, metodo_pagamento, itens_json, timestamp_finalizacao
             FROM pedidos
             WHERE status = 'finalizado' AND timestamp_finalizacao BETWEEN ? AND ?
         """, (data_inicio, data_fim))
@@ -872,20 +902,32 @@ def obter_dados_relatorio(data_inicio, data_fim):
         for p in pedidos_finalizados:
             if p['metodo_pagamento'] in vendas_por_pagamento:
                 vendas_por_pagamento[p['metodo_pagamento']] += p['valor_total']
-            
-            # Correção do timestamp para usar o do banco
+
             data_hora_obj = datetime.datetime.fromisoformat(p['timestamp_finalizacao'])
             data_hora_formatada = data_hora_obj.strftime('%d/%m %H:%M')
             historico_pedidos_tabela.append(dict(p, horario=data_hora_formatada))
+
+            # Calcula a proporção de custo para este pedido específico
+            ratio_custo = (p['custo_total_pedido'] or 0) / p['valor_total'] if p['valor_total'] > 0 else 0
 
 
             for item in json.loads(p['itens_json']):
                 pid = item['id']
                 if pid not in itens_vendidos_agregado:
-                    itens_vendidos_agregado[pid] = {'nome': item['nome'], 'quantidade': 0, 'receita': 0}
+                    # Inicializa o dicionário com o campo 'lucro'
+                    itens_vendidos_agregado[pid] = {'nome': item['nome'], 'quantidade': 0, 'receita': 0, 'lucro': 0}
+
+                # Usa o custo_unitario que foi 'fotografado' no momento da venda
+                # O .get() garante que o código não quebre em pedidos antigos que não tinham esse dado
+                custo_unitario = item.get('custo_unitario', 0)
                 
+                receita_do_item = item['preco'] * item['quantidade']
+                lucro_do_item = (item['preco'] - custo_unitario) * item['quantidade']
+
+                # Acumula os totais para o item agregado
                 itens_vendidos_agregado[pid]['quantidade'] += item['quantidade']
-                itens_vendidos_agregado[pid]['receita'] += item['preco'] * item['quantidade']
+                itens_vendidos_agregado[pid]['receita'] += receita_do_item
+                itens_vendidos_agregado[pid]['lucro'] += lucro_do_item
 
         itens_mais_vendidos = sorted(list(itens_vendidos_agregado.values()), key=lambda x: x['quantidade'], reverse=True)[:10]
 

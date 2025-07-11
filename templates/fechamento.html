@@ -393,7 +393,33 @@ document.addEventListener('DOMContentLoaded', function() {
         const ctxPagamentos = document.getElementById('grafico-pagamentos').getContext('2d');
         if(graficoPagamentos) graficoPagamentos.destroy();
         if (pagamentosData && pagamentosData.data.some(d => d > 0)) {
-            graficoPagamentos = new Chart(ctxPagamentos, { /* ... configuração do gráfico de pizza ... */ });
+            graficoPagamentos = new Chart(ctxPagamentos, {
+                type: 'doughnut',
+                data: {
+                    labels: pagamentosData.labels,
+                    datasets: [{
+                        data: pagamentosData.data,
+                        backgroundColor: ['#60A5FA', '#A78BFA', '#FBBF24'], // Azul, Roxo, Amarelo
+                        borderColor: 'rgba(255,255,255,0.1)',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { 
+                            position: 'bottom', 
+                            labels: { 
+                                color: 'white', 
+                                boxWidth: 15, 
+                                padding: 20,
+                                font: { size: 14 }
+                            } 
+                        }
+                    }
+                }
+            });
         }
     }
 

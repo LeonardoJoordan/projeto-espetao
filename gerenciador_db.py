@@ -932,13 +932,12 @@ def obter_dados_relatorio(data_inicio, data_fim):
         itens_mais_vendidos = sorted(list(itens_vendidos_agregado.values()), key=lambda x: x['quantidade'], reverse=True)[:10]
 
         # --- NOVA LÓGICA PARA DECIDIR O MODO DE AGREGAÇÃO ---
-        dt_inicio = datetime.datetime.fromisoformat(data_inicio)
-        dt_fim = datetime.datetime.fromisoformat(data_fim)
-        # Se o intervalo for menor que 48h, agrupa por hora. Senão, por dia.
-        modo_agregacao = 'hora' if (dt_fim - dt_inicio) < timedelta(days=2) else 'dia'
+        dt_inicio = datetime.datetime.fromisoformat(data_inicio.replace('Z', '+00:00'))
+        dt_fim = datetime.datetime.fromisoformat(data_fim.replace('Z', '+00:00'))
+        
+        modo_agregacao = '15min' if (dt_fim - dt_inicio) < timedelta(days=2) else 'dia'
         
         vendas_por_periodo = _agregar_vendas_por_periodo(pedidos_finalizados, modo_agregacao)
-
 
         # Monta o dicionário de resposta
         return {
@@ -975,17 +974,21 @@ def _agregar_vendas_por_periodo(pedidos, modo):
         # Converte o texto do timestamp para um objeto datetime
         timestamp_obj = datetime.datetime.fromisoformat(pedido['timestamp_finalizacao'])
 
-        # Cria a "chave" de agrupamento (ou a hora ou o dia)
-        if modo == 'hora':
-            chave = timestamp_obj.strftime('%H:00') # Formato "HH:00", ex: "19:00"
+        if modo == '15min':
+            # Arredonda o minuto para o intervalo de 15 mais próximo (0, 15, 30, 45)
+            minuto_arredondado = (timestamp_obj.minute // 15) * 15
+            chave = f"{timestamp_obj.hour:02d}:{minuto_arredondado:02d}"
         else: # modo == 'dia'
-            chave = timestamp_obj.strftime('%d/%m') # Formato "DD/MM", ex: "10/07"
+            chave = timestamp_obj.strftime('%d/%m')
 
         # Pega o valor já acumulado para esta chave (ou 0 se for a primeira vez)
         valor_atual = vendas_agregadas.get(chave, 0)
         
         # Soma o valor do pedido atual e atualiza o dicionário
         vendas_agregadas[chave] = valor_atual + pedido['valor_total']
+    
+    if not vendas_agregadas:
+        return {"labels": [], "data": []}
 
     # Ordena as chaves para garantir que o gráfico fique em ordem cronológica
     chaves_ordenadas = sorted(vendas_agregadas.keys())

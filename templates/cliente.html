@@ -925,20 +925,44 @@ document.addEventListener('DOMContentLoaded', () => {
     // Listener para o modal inicial
     if (mainContainer && modalNovoPedido && btnIniciarPedido) {
         mainContainer.classList.add('content-blurred');
-        
-        // Foca no input após um pequeno delay para garantir que o modal esteja visível
+
         setTimeout(() => {
             if (inputNomeCliente) {
                 inputNomeCliente.focus();
             }
         }, 100);
-        
+
         btnIniciarPedido.addEventListener('click', function() {
-            const nomeCliente = inputNomeCliente ? inputNomeCliente.value : '';
+            const nomeCliente = inputNomeCliente ? inputNomeCliente.value.trim() : '';
+
+            // --- NOVA LÓGICA DE TELA CHEIA ---
+            if (nomeCliente === '#telacheia') {
+                // Se já estiver em tela cheia...
+                if (document.fullscreenElement) {
+                    // ...vamos verificar se a "ponte" com o Android existe.
+                    if (window.Android && typeof window.Android.sairDoApp === 'function') {
+                        // Se existir, chamamos a função nativa para sair.
+                        window.Android.sairDoApp();
+                    } else {
+                        // Se não (rodando num navegador comum), apenas saia da tela cheia.
+                        document.exitFullscreen();
+                    }
+                } else {
+                    // Caso contrário, pedimos para entrar em tela cheia
+                    document.documentElement.requestFullscreen().catch(err => {
+                        alert(`Erro ao tentar entrar em tela cheia: ${err.message}`);
+                    });
+                }
+                // Limpa o campo e não faz mais nada
+                inputNomeCliente.value = '';
+                return; 
+            }
+            
+            // --- FLUXO NORMAL DE PEDIDO ---
             console.log(`Pedido iniciado para: ${nomeCliente || 'Cliente Anônimo'}`);
             modalNovoPedido.classList.add('hidden');
             mainContainer.classList.remove('content-blurred');
-            atualizarBotaoPrincipal(); // Chama para setar o botão após fechar o modal
+            atualizarBotaoPrincipal();
         });
     }
 

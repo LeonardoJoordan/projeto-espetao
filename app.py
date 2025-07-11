@@ -64,7 +64,8 @@ def tela_produtos():
     """
     # --- BUSCANDO DADOS 100% REAIS DO BANCO DE DADOS ---
     categorias_reais = gerenciador_db.obter_todas_categorias()
-    produtos_reais = gerenciador_db.obter_todos_produtos()
+    # A ÚNICA MUDANÇA ESTÁ AQUI:
+    produtos_reais = gerenciador_db.obter_todos_produtos_para_gestao() 
     
     # --- Lógica de Agrupamento COM IDs ---
     produtos_agrupados = {}
@@ -76,9 +77,9 @@ def tela_produtos():
 
     # Agora o loop usa a lista de produtos reais do banco
     for produto in produtos_reais:
-        categoria_do_produto = produto['categoria']
-        if categoria_do_produto in produtos_agrupados:
-            produtos_agrupados[categoria_do_produto]['produtos'].append(produto)
+        # Verificação para evitar erro se um produto não tiver categoria associada
+        if produto['categoria'] and produto['categoria'] in produtos_agrupados:
+            produtos_agrupados[produto['categoria']]['produtos'].append(produto)
     
     # Envia os dados REAIS e AGRUPADOS para o template
     return render_template('produtos.html', produtos_agrupados=produtos_agrupados, categorias=categorias_reais)
@@ -300,6 +301,51 @@ def api_pedidos_ativos():
 
     # 2. Usa a função 'jsonify' do Flask para converter nossa lista Python em uma resposta JSON.
     return jsonify(pedidos_ativos)
+
+@app.route('/pedido/chamar/<int:id_do_pedido>', methods=['POST'])
+def rota_chamar_cliente(id_do_pedido):
+    """
+    Rota para mudar o status do pedido para 'aguardando_retirada'.
+    """
+    sucesso = gerenciador_db.chamar_cliente_pedido(id_do_pedido)
+    if sucesso:
+        # Emite o evento para notificar cozinha e monitor que o pedido está pronto
+        socketio.emit('novo_pedido', {'msg': f'Pedido {id_do_pedido} está pronto para retirada!'})
+        return jsonify({"status": "sucesso", "mensagem": "Cliente chamado com sucesso."})
+    else:
+        return jsonify({"status": "erro", "mensagem": "Pedido não pôde ser atualizado."}), 400
+
+@app.route('/fechamento')
+def tela_fechamento():
+    """ Rota para exibir a página de fechamento de caixa e relatórios. """
+    return render_template('fechamento.html')
+
+@app.route('/api/relatorio')
+def api_relatorio():
+    """
+    Endpoint da API para buscar os dados consolidados para o relatório.
+    Recebe as datas como parâmetros na URL. Ex: /api/relatorio?inicio=...&fim=...
+    """
+    # Pega as datas da URL
+    data_inicio_str = request.args.get('inicio')
+    data_fim_str = request.args.get('fim')
+    
+    # Se não forem fornecidas, retorna um erro
+    if not data_inicio_str or not data_fim_str:
+        return jsonify({"erro": "As datas de início e fim são obrigatórias"}), 400
+
+    # Chama nosso especialista para buscar os dados
+    dados = gerenciador_db.obter_dados_relatorio(data_inicio_str, data_fim_str)
+    
+    if dados:
+        return jsonify(dados)
+    else:
+        return jsonify({"erro": "Não foi possível gerar o relatório"}), 500
+
+@app.route('/monitor')
+def tela_monitor():
+    """ Rota para exibir o monitor de pedidos para os clientes. """
+    return render_template('monitor.html')
 
 @app.route('/')
 def index():

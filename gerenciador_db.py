@@ -1,7 +1,7 @@
 import sqlite3
 import datetime
 import json # Adicione esta importação no topo do seu arquivo, junto com as outras
-import datetime # Adicione esta importação também
+from datetime import timedelta # Adicione esta importação também
 
 NOME_BANCO_DADOS = 'espetao.db'
 
@@ -208,13 +208,73 @@ def obter_todos_produtos():
         if conn:
             conn.close()
 
+def obter_todos_produtos_para_gestao():
+    """
+    Busca TODOS os produtos para a tela de gestão, incluindo os sem estoque.
+    """
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # A consulta é idêntica à original, mas sem o filtro "WHERE"
+        cursor.execute('''
+            SELECT p.id, p.nome, p.preco_venda, p.estoque_atual, p.custo_total_do_estoque, c.nome as categoria_nome, p.categoria_id
+            FROM produtos p
+            LEFT JOIN categorias c ON p.categoria_id = c.id
+            ORDER BY c.ordem, p.ordem, p.nome 
+        ''')
+        
+        produtos_tuplas = cursor.fetchall()
+        produtos_lista = []
+        for tupla in produtos_tuplas:
+            id_produto, nome, preco_venda, estoque, custo_total, categoria, categoria_id = tupla
+            
+            if estoque > 0:
+                custo_medio = custo_total / estoque
+                lucro = preco_venda - custo_medio
+            else:
+                custo_medio = 0
+                lucro = preco_venda 
+
+            cursor.execute('''
+                SELECT custo_unitario_compra 
+                FROM entradas_de_estoque 
+                WHERE id_produto = ? 
+                ORDER BY data_entrada DESC 
+                LIMIT 1
+            ''', (id_produto,))
+            
+            ultimo_preco_compra_resultado = cursor.fetchone()
+            ultimo_preco_compra = ultimo_preco_compra_resultado[0] if ultimo_preco_compra_resultado else custo_medio
+
+            produtos_lista.append({
+                'id': id_produto,
+                'nome': nome,
+                'preco_venda': preco_venda,
+                'estoque': estoque,
+                'custo_medio': custo_medio,
+                'lucro': lucro,
+                'categoria': categoria,
+                'categoria_id': categoria_id,
+                'ultimo_preco_compra': ultimo_preco_compra
+            })
+        
+        return produtos_lista
+
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao obter os produtos para gestão: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
 def obter_pedidos_ativos():
     """
     Busca no banco de dados todos os pedidos ativos, ordenando por
     prioridade de status e, em seguida, por data.
     """
     # Lista de todos os status que consideramos "ativos" na tela da cozinha
-    lista_status_ativos = ['aguardando_pagamento', 'aguardando_producao', 'em_producao']
+    lista_status_ativos = ['aguardando_pagamento', 'aguardando_producao', 'em_producao', 'aguardando_retirada']
     pedidos_encontrados = []
     conn = None
     try:
@@ -232,7 +292,8 @@ def obter_pedidos_ativos():
                 CASE status
                     WHEN 'aguardando_pagamento' THEN 1 -- Prioridade 1
                     WHEN 'aguardando_producao'  THEN 2 -- Prioridade 2
-                    WHEN 'em_producao'          THEN 3 -- Prioridade 3
+                    WHEN 'aguardando_retirada'  THEN 3 -- Prioridade 3
+                    WHEN 'em_producao'          THEN 4 -- Prioridade 4
                 END,
                 CASE status
                     WHEN 'aguardando_producao' THEN timestamp_pagamento -- Fila do pagamento
@@ -378,68 +439,6 @@ def adicionar_estoque(id_produto, quantidade_adicionada, custo_unitario_moviment
     finally:
         if conn:
             conn.close()
-    """
-    Adiciona novo estoque a um produto existente, recalcula o custo total
-    e registra a entrada no histórico. Aceita valores negativos para ajustes.
-    """
-    try:
-        conn = sqlite3.connect(NOME_BANCO_DADOS)
-        cursor = conn.cursor()
-
-        # PASSO 1: Ler o estado atual do produto
-        cursor.execute("SELECT estoque_atual, custo_total_do_estoque FROM produtos WHERE id = ?", (id_produto,))
-        resultado = cursor.fetchone()
-
-        if resultado:
-            estoque_atual, custo_total_atual = resultado
-
-            # PASSO 2: Calcular os novos valores em Python
-            novo_estoque = estoque_atual + quantidade_adicionada
-            
-            # Se a quantidade for negativa (ajuste/perda), não altera o custo total
-            if quantidade_adicionada < 0:
-                novo_custo_total = custo_total_atual
-            else:
-                # Se for positiva (compra), adiciona ao custo total
-                custo_desta_compra = quantidade_adicionada * custo_da_nova_compra
-                novo_custo_total = custo_total_atual + custo_desta_compra
-            
-            # Garantir que o estoque não fique negativo
-            if novo_estoque < 0:
-                print(f"Erro: O ajuste resultaria em estoque negativo ({novo_estoque}). Operação cancelada.")
-                return False
-
-            # PASSO 3: Atualizar o produto com os novos valores
-            cursor.execute('''
-                UPDATE produtos 
-                SET estoque_atual = ?, custo_total_do_estoque = ?
-                WHERE id = ?
-            ''', (novo_estoque, novo_custo_total, id_produto))
-
-            # PASSO 4: Registrar esta movimentação no histórico
-            data_atual = datetime.datetime.now().isoformat()
-            cursor.execute('''
-                INSERT INTO entradas_de_estoque (id_produto, quantidade_comprada, custo_unitario_compra, data_entrada)
-                VALUES (?, ?, ?, ?)
-            ''', (id_produto, quantidade_adicionada, custo_da_nova_compra, data_atual))
-
-            conn.commit()
-            
-            if quantidade_adicionada < 0:
-                print(f"Estoque do produto ID {id_produto} ajustado: removidas {abs(quantidade_adicionada)} unidades.")
-            else:
-                print(f"Estoque do produto ID {id_produto} atualizado com sucesso.")
-            return True
-        else:
-            print(f"Erro: Produto com ID {id_produto} não encontrado.")
-            return False
-
-    except sqlite3.Error as e:
-        print(f"Ocorreu um erro ao adicionar estoque: {e}")
-        return False
-    finally:
-        if conn:
-            conn.close()
 
 def atualizar_preco_venda_produto(id_produto, novo_preco_venda):
     """
@@ -541,26 +540,58 @@ def obter_historico_produto(id_produto):
 
 def salvar_novo_pedido(dados_do_pedido):
     """
-    Salva um novo pedido com status 'aguardando_pagamento' e reserva o estoque.
-    A coluna timestamp_pagamento fica nula nesta etapa.
+    Salva um novo pedido, buscando o custo médio de cada item no momento da venda
+    e armazenando essa informação no JSON do pedido.
     """
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # --- Missão 1: Salvar o Pedido ---
-        itens_como_json = json.dumps(dados_do_pedido['itens'])
+        # --- LÓGICA DE ENRIQUECIMENTO: Buscar custo e adicionar ao item ---
+        itens_enriquecidos = []
+        for item in dados_do_pedido['itens']:
+            # Busca o estado atual do produto para calcular o custo médio
+            cursor.execute("SELECT custo_total_do_estoque, estoque_atual FROM produtos WHERE id = ?", (item['id'],))
+            resultado = cursor.fetchone()
+            
+            custo_a_registrar = 0
+            if resultado:
+                custo_total_estoque, estoque_atual = resultado
+                
+                if estoque_atual > 0:
+                    # CASO 1: Estoque positivo, usa a média ponderada.
+                    custo_a_registrar = custo_total_estoque / estoque_atual
+                else:
+                    # CASO 2: Estoque zerado, busca o custo da última compra.
+                    cursor.execute("""
+                        SELECT custo_unitario_compra 
+                        FROM entradas_de_estoque 
+                        WHERE id_produto = ? AND quantidade_comprada > 0
+                        ORDER BY data_entrada DESC 
+                        LIMIT 1
+                    """, (item['id'],))
+                    ultimo_custo_resultado = cursor.fetchone()
+                    
+                    if ultimo_custo_resultado:
+                        custo_a_registrar = ultimo_custo_resultado[0]
+
+            # Adiciona o custo capturado ao dicionário do item
+            item_com_custo = item.copy()
+            item_com_custo['custo_unitario'] = custo_a_registrar
+            itens_enriquecidos.append(item_com_custo)
+        
+        # --- Missão 1: Salvar o Pedido com os dados de custo já inclusos ---
+        itens_como_json = json.dumps(itens_enriquecidos)
         timestamp_atual = datetime.datetime.now().isoformat()
         valor_total = sum(item['preco'] * item['quantidade'] for item in dados_do_pedido['itens'])
 
-        # Note que não inserimos 'timestamp_pagamento', ele será nulo por padrão.
         cursor.execute('''
             INSERT INTO pedidos (nome_cliente, status, metodo_pagamento, valor_total, timestamp_criacao, itens_json)
             VALUES (?, ?, ?, ?, ?, ?)
         ''', (
             dados_do_pedido['nome_cliente'],
-            'aguardando_pagamento', # Status inicial correto
+            'aguardando_pagamento',
             dados_do_pedido['metodo_pagamento'],
             valor_total,
             timestamp_atual,
@@ -577,14 +608,14 @@ def salvar_novo_pedido(dados_do_pedido):
                     estoque_reservado = estoque_reservado + ?
                 WHERE id = ?
             ''', (
-                item['quantidade'], 
+                item['quantidade'],
                 item['quantidade'],
                 item['id']
             ))
 
         conn.commit()
 
-        print(f"SUCESSO: Pedido #{id_do_pedido_salvo} criado e estoque RESERVADO.")
+        print(f"SUCESSO: Pedido #{id_do_pedido_salvo} criado com CUSTO REGISTRADO e estoque RESERVADO.")
         return id_do_pedido_salvo
 
     except sqlite3.Error as e:
@@ -595,8 +626,6 @@ def salvar_novo_pedido(dados_do_pedido):
     finally:
         if conn:
             conn.close()
-
-# Em gerenciador_db.py
 
 def confirmar_pagamento_pedido(id_do_pedido):
     """
@@ -670,73 +699,92 @@ def iniciar_preparo_pedido(id_do_pedido):
 
 def entregar_pedido(id_do_pedido):
     """
-    Finaliza um pedido, dando baixa no estoque reservado antes de
-    remover o pedido da lista de ativos.
+    Finaliza um pedido, mudando seu status para 'finalizado'.
+    Calcula o custo total dos itens vendidos, baixa o estoque reservado
+    e armazena o custo e o timestamp de finalização no registro do pedido.
     """
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # Passo 1: Ler os itens do pedido que será entregue.
         cursor.execute("SELECT itens_json FROM pedidos WHERE id = ?", (id_do_pedido,))
         resultado = cursor.fetchone()
-
         if not resultado:
             print(f"AVISO: Tentativa de entregar pedido #{id_do_pedido} que não existe.")
             return False
 
         itens_do_pedido = json.loads(resultado[0])
+        custo_total_dos_itens_vendidos = 0
 
-        # Passo 2: Para cada item, dá baixa definitiva no estoque que estava reservado.
         for item in itens_do_pedido:
+            id_produto = item['id']
+            quantidade_vendida = item['quantidade']
+
+            cursor.execute("""
+                SELECT estoque_atual, estoque_reservado, custo_total_do_estoque
+                FROM produtos WHERE id = ?
+            """, (id_produto,))
+            
+            res_produto = cursor.fetchone()
+            if not res_produto: continue
+
+            estoque_atual, estoque_reservado, custo_total_atual = res_produto
+            estoque_total_antes_da_venda = estoque_atual + estoque_reservado
+
+            custo_medio_unitario = 0
+            if estoque_total_antes_da_venda > 0:
+                custo_medio_unitario = custo_total_atual / estoque_total_antes_da_venda
+
+            custo_desta_venda_especifica = quantidade_vendida * custo_medio_unitario
+            custo_total_dos_itens_vendidos += custo_desta_venda_especifica
+            
             cursor.execute("""
                 UPDATE produtos
-                SET estoque_reservado = estoque_reservado - ?
+                SET estoque_reservado = estoque_reservado - ?,
+                    custo_total_do_estoque = custo_total_do_estoque - ?
                 WHERE id = ?
-            """, (item['quantidade'], item['id']))
+            """, (quantidade_vendida, custo_desta_venda_especifica, id_produto))
 
-        # Passo 3: Apagar o pedido da fila de ativos.
-        cursor.execute("DELETE FROM pedidos WHERE id = ?", (id_do_pedido,))
+        # AGORA, EM VEZ DE DELETAR, ATUALIZAMOS O PEDIDO
+        timestamp_final = datetime.datetime.now().isoformat()
+        cursor.execute("""
+            UPDATE pedidos
+            SET status = 'finalizado',
+                custo_total_pedido = ?,
+                timestamp_finalizacao = ?
+            WHERE id = ?
+        """, (custo_total_dos_itens_vendidos, timestamp_final, id_do_pedido))
 
-        # Passo 4: Confirmar toda a transação.
         conn.commit()
-        print(f"SUCESSO: Pedido #{id_do_pedido} entregue e estoque baixado.")
+        print(f"SUCESSO: Pedido #{id_do_pedido} finalizado e estoque/custos baixados.")
         return True
 
     except sqlite3.Error as e:
         print(f"ERRO ao entregar o pedido #{id_do_pedido}: {e}")
-        if conn:
-            conn.rollback()
+        if conn: conn.rollback()
         return False
     finally:
-        if conn:
-            conn.close()
-
+        if conn: conn.close()
 
 def cancelar_pedido(id_do_pedido):
     """
-    Cancela um pedido, lendo seus itens para devolver o estoque reservado
-    ao estoque atual antes de apagar o pedido.
+    Cancela um pedido, devolvendo o estoque reservado ao estoque atual
+    e mudando o status para 'cancelado'.
     """
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # Passo 1: Ler os itens do pedido que será cancelado, antes de apagá-lo.
         cursor.execute("SELECT itens_json FROM pedidos WHERE id = ?", (id_do_pedido,))
         resultado = cursor.fetchone()
-
-        # Se o pedido não for encontrado, não há o que fazer.
         if not resultado:
             print(f"AVISO: Tentativa de cancelar pedido #{id_do_pedido} que não existe.")
             return False
 
-        # Converte o texto JSON dos itens em uma lista Python
         itens_do_pedido = json.loads(resultado[0])
 
-        # Passo 2: Para cada item no pedido, devolve a quantidade reservada para o estoque atual.
         for item in itens_do_pedido:
             cursor.execute("""
                 UPDATE produtos
@@ -744,21 +792,209 @@ def cancelar_pedido(id_do_pedido):
                     estoque_atual = estoque_atual + ?
                 WHERE id = ?
             """, (item['quantidade'], item['quantidade'], item['id']))
+        
+        # ATUALIZA O STATUS PARA 'CANCELADO'
+        timestamp_final = datetime.datetime.now().isoformat()
+        cursor.execute("""
+            UPDATE pedidos 
+            SET status = 'cancelado', timestamp_finalizacao = ? 
+            WHERE id = ?
+        """, (timestamp_final, id_do_pedido))
 
-        # Passo 3: Agora que o estoque foi devolvido, apaga o pedido da fila de ativos.
-        cursor.execute("DELETE FROM pedidos WHERE id = ?", (id_do_pedido,))
-
-        # Passo 4: Confirma que todas as operações (updates e delete) foram bem-sucedidas.
         conn.commit()
         print(f"SUCESSO: Pedido #{id_do_pedido} cancelado e estoque devolvido.")
         return True
 
     except sqlite3.Error as e:
         print(f"ERRO ao cancelar o pedido #{id_do_pedido}: {e}")
-        # Se qualquer passo falhar, desfaz todas as operações para manter a integridade.
+        if conn: conn.rollback()
+        return False
+    finally:
+        if conn: conn.close()
+
+def chamar_cliente_pedido(id_do_pedido):
+    """
+    Muda o status do pedido para 'aguardando_retirada', indicando que está pronto.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # Altera o status de 'em_producao' para o novo status 'aguardando_retirada'
+        cursor.execute(
+            "UPDATE pedidos SET status = ? WHERE id = ? AND status = ?",
+            ('aguardando_retirada', id_do_pedido, 'em_producao')
+        )
+
+        if cursor.rowcount == 0:
+            print(f"AVISO: Pedido #{id_do_pedido} não encontrado ou não estava 'em produção'.")
+            return False
+
+        conn.commit()
+        print(f"SUCESSO: Pedido #{id_do_pedido} movido para 'aguardando retirada'.")
+        return True
+
+    except sqlite3.Error as e:
+        print(f"ERRO ao chamar cliente para o pedido #{id_do_pedido}: {e}")
         if conn:
             conn.rollback()
         return False
     finally:
         if conn:
             conn.close()
+
+def obter_dados_relatorio(data_inicio, data_fim):
+    """
+    Busca e calcula todos os dados para o relatório de fechamento
+    dentro de um intervalo de datas.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # --- DADOS GERAIS DE PEDIDOS FINALIZADOS ---
+        cursor.execute("""
+            SELECT id, nome_cliente, valor_total, custo_total_pedido, metodo_pagamento, itens_json, timestamp_finalizacao
+            FROM pedidos
+            WHERE status = 'finalizado' AND timestamp_finalizacao BETWEEN ? AND ?
+        """, (data_inicio, data_fim))
+        pedidos_finalizados = cursor.fetchall()
+        
+        # --- DADOS GERAIS DE PERDAS E AJUSTES ---
+        cursor.execute("""
+            SELECT quantidade_comprada, custo_unitario_compra
+            FROM entradas_de_estoque
+            WHERE quantidade_comprada < 0 AND custo_unitario_compra = 0 AND data_entrada BETWEEN ? AND ?
+        """,(data_inicio, data_fim))
+        perdas_e_ajustes = cursor.fetchall()
+
+        # --- CÁLCULO DOS KPIs ---
+        faturamento_bruto = sum(p['valor_total'] for p in pedidos_finalizados)
+        lucro_estimado = sum(p['valor_total'] - (p['custo_total_pedido'] or 0) for p in pedidos_finalizados)
+        pedidos_realizados = len(pedidos_finalizados)
+        ticket_medio = faturamento_bruto / pedidos_realizados if pedidos_realizados > 0 else 0
+        total_itens_vendidos = sum(sum(item['quantidade'] for item in json.loads(p['itens_json'])) for p in pedidos_finalizados)
+        media_itens_pedido = total_itens_vendidos / pedidos_realizados if pedidos_realizados > 0 else 0
+        valor_perdas = 0
+        for pa in perdas_e_ajustes:
+            # Como é perda (custo_unitario = 0), buscamos o custo médio do produto na data
+            cursor.execute("""
+                SELECT p.custo_total_do_estoque, p.estoque_atual, p.estoque_reservado
+                FROM produtos p
+                JOIN entradas_de_estoque e ON p.id = e.id_produto
+                WHERE e.quantidade_comprada = ? AND e.custo_unitario_compra = ? AND e.data_entrada BETWEEN ? AND ?
+                LIMIT 1
+            """, (pa['quantidade_comprada'], pa['custo_unitario_compra'], data_inicio, data_fim))
+            
+            produto_info = cursor.fetchone()
+            if produto_info and (produto_info[1] + produto_info[2]) > 0:
+                custo_medio = produto_info[0] / (produto_info[1] + produto_info[2])
+                valor_perdas += abs(pa['quantidade_comprada']) * custo_medio
+        
+        # --- DADOS PARA GRÁFICOS E TABELAS ---
+        vendas_por_pagamento = {'pix': 0, 'cartao': 0, 'dinheiro': 0}
+        itens_vendidos_agregado = {}
+        historico_pedidos_tabela = []
+
+        for p in pedidos_finalizados:
+            if p['metodo_pagamento'] in vendas_por_pagamento:
+                vendas_por_pagamento[p['metodo_pagamento']] += p['valor_total']
+
+            data_hora_obj = datetime.datetime.fromisoformat(p['timestamp_finalizacao'])
+            data_hora_formatada = data_hora_obj.strftime('%d/%m %H:%M')
+            historico_pedidos_tabela.append(dict(p, horario=data_hora_formatada))
+
+            # Calcula a proporção de custo para este pedido específico
+            ratio_custo = (p['custo_total_pedido'] or 0) / p['valor_total'] if p['valor_total'] > 0 else 0
+
+
+            for item in json.loads(p['itens_json']):
+                pid = item['id']
+                if pid not in itens_vendidos_agregado:
+                    # Inicializa o dicionário com o campo 'lucro'
+                    itens_vendidos_agregado[pid] = {'nome': item['nome'], 'quantidade': 0, 'receita': 0, 'lucro': 0}
+
+                # Usa o custo_unitario que foi 'fotografado' no momento da venda
+                # O .get() garante que o código não quebre em pedidos antigos que não tinham esse dado
+                custo_unitario = item.get('custo_unitario', 0)
+                
+                receita_do_item = item['preco'] * item['quantidade']
+                lucro_do_item = (item['preco'] - custo_unitario) * item['quantidade']
+
+                # Acumula os totais para o item agregado
+                itens_vendidos_agregado[pid]['quantidade'] += item['quantidade']
+                itens_vendidos_agregado[pid]['receita'] += receita_do_item
+                itens_vendidos_agregado[pid]['lucro'] += lucro_do_item
+
+        itens_mais_vendidos = sorted(list(itens_vendidos_agregado.values()), key=lambda x: x['quantidade'], reverse=True)[:10]
+
+        # --- NOVA LÓGICA PARA DECIDIR O MODO DE AGREGAÇÃO ---
+        dt_inicio = datetime.datetime.fromisoformat(data_inicio.replace('Z', '+00:00'))
+        dt_fim = datetime.datetime.fromisoformat(data_fim.replace('Z', '+00:00'))
+        
+        modo_agregacao = '15min' if (dt_fim - dt_inicio) < timedelta(days=2) else 'dia'
+        
+        vendas_por_periodo = _agregar_vendas_por_periodo(pedidos_finalizados, modo_agregacao)
+
+        # Monta o dicionário de resposta
+        return {
+            "kpis": {
+                "faturamentoBruto": faturamento_bruto,
+                "lucroEstimado": lucro_estimado,
+                "perdasAjustes": -valor_perdas,
+                "pedidosRealizados": pedidos_realizados,
+                "ticketMedio": ticket_medio,
+                "mediaItensPedido": media_itens_pedido,
+            },
+            "vendasPorPagamento": {
+                "labels": list(vendas_por_pagamento.keys()),
+                "data": list(vendas_por_pagamento.values()),
+            },
+            "itensMaisVendidos": itens_mais_vendidos,
+            "historicoPedidos": [dict(p) for p in historico_pedidos_tabela],
+            "vendasPorPeriodo": vendas_por_periodo # <-- DADOS DO GRÁFICO PRINCIPAL
+        }
+
+    except sqlite3.Error as e:
+        print(f"ERRO ao obter dados do relatório: {e}")
+        return None
+    finally:
+        if conn: conn.close()
+
+def _agregar_vendas_por_periodo(pedidos, modo):
+    """
+    Agrega os dados de vendas por dia ou por hora a partir de uma lista de pedidos.
+    """
+    vendas_agregadas = {} # Dicionário para agrupar os valores
+
+    for pedido in pedidos:
+        # Converte o texto do timestamp para um objeto datetime
+        timestamp_obj = datetime.datetime.fromisoformat(pedido['timestamp_finalizacao'])
+
+        if modo == '15min':
+            # Arredonda o minuto para o intervalo de 15 mais próximo (0, 15, 30, 45)
+            minuto_arredondado = (timestamp_obj.minute // 15) * 15
+            chave = f"{timestamp_obj.hour:02d}:{minuto_arredondado:02d}"
+        else: # modo == 'dia'
+            chave = timestamp_obj.strftime('%d/%m')
+
+        # Pega o valor já acumulado para esta chave (ou 0 se for a primeira vez)
+        valor_atual = vendas_agregadas.get(chave, 0)
+        
+        # Soma o valor do pedido atual e atualiza o dicionário
+        vendas_agregadas[chave] = valor_atual + pedido['valor_total']
+    
+    if not vendas_agregadas:
+        return {"labels": [], "data": []}
+
+    # Ordena as chaves para garantir que o gráfico fique em ordem cronológica
+    chaves_ordenadas = sorted(vendas_agregadas.keys())
+
+    # Cria as listas finais de labels e dados a partir do dicionário ordenado
+    labels_finais = chaves_ordenadas
+    dados_finais = [vendas_agregadas[chave] for chave in chaves_ordenadas]
+
+    return {"labels": labels_finais, "data": dados_finais}

@@ -197,6 +197,17 @@
             </div>
         </section>
     </main>
+    <div id="modal-detalhes-pedido" class="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="glass-container rounded-2xl p-6 w-full max-w-lg text-white max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center border-b border-white/20 pb-3 mb-4 flex-shrink-0">
+                <h2 id="modal-titulo-pedido" class="text-2xl font-bold">Detalhes do Pedido</h2>
+                <button id="modal-fechar-pedido" class="text-2xl hover:text-red-500">&times;</button>
+            </div>
+    
+            <div id="modal-corpo-pedido" class="overflow-y-auto custom-scrollbar pr-2 space-y-2">
+                </div>
+        </div>
+    </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -209,6 +220,10 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     const divPeriodoCustomizado = document.getElementById('periodo-customizado');
     const btnGerarRelatorio = document.getElementById('gerar-relatorio');
+    const modalDetalhes = document.getElementById('modal-detalhes-pedido');
+    const modalTituloPedido = document.getElementById('modal-titulo-pedido');
+    const modalCorpoPedido = document.getElementById('modal-corpo-pedido');
+    const modalFecharPedido = document.getElementById('modal-fechar-pedido');
 
     // --- INSTÂNCIAS DE GRÁFICOS E PICKER ---
     let graficoVendas, graficoPagamentos;
@@ -281,22 +296,22 @@ document.addEventListener('DOMContentLoaded', function() {
             tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-white/60">Nenhum pedido no período.</td></tr>';
             return;
         }
-        pedidos.forEach(pedido => {
-            const rowHtml = `
-                <tr class="border-b border-white/10 hover:bg-white/5">
-                    <td class="p-3">#${pedido.id}</td>
-                    <td class="p-3">${pedido.nome_cliente}</td>
-                    <td class="p-3">${pedido.horario || ''}</td>
-                    <td class="p-3 font-semibold">${formatCurrency(pedido.valor_total)}</td>
-                    <td class="p-3">${pedido.metodo_pagamento}</td>
-                    <td class="p-3">
-                        <button class="text-blue-400 hover:text-blue-300" title='${JSON.parse(pedido.itens_json).map(i => `${i.quantidade}x ${i.nome}`).join(', ')}'>
-                            <i class="fas fa-eye"></i>
-                        </button>
-                    </td>
-                </tr>`;
-            tbody.innerHTML += rowHtml;
-        });
+        // Usamos .map() para criar o HTML de forma mais limpa e o .join('') no final
+        tbody.innerHTML = pedidos.map(pedido => `
+            <tr class="border-b border-white/10 hover:bg-white/5">
+                <td class="p-3">#${pedido.id}</td>
+                <td class="p-3">${pedido.nome_cliente}</td>
+                <td class="p-3">${pedido.horario || ''}</td>
+                <td class="p-3 font-semibold">${formatCurrency(pedido.valor_total)}</td>
+                <td class="p-3">${pedido.metodo_pagamento}</td>
+                <td class="p-3">
+                    <button class="btn-detalhes-pedido text-blue-400 hover:text-blue-300"
+                            data-id-pedido="${pedido.id}" 
+                            data-itens='${pedido.itens_json}'>
+                        <i class="fas fa-eye"></i>
+                    </button>
+                </td>
+            </tr>`).join('');
     }
 
     function renderGraficos(vendasData, pagamentosData, dadosCompletos) {
@@ -429,6 +444,64 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
     }
+    // --- (NOVO) LÓGICA DO MODAL DE DETALHES ---
+    function abrirModalDetalhes(idPedido, itensJson) {
+        // Define o título do modal com o ID do pedido
+        modalTituloPedido.textContent = `Detalhes do Pedido #${idPedido}`;
+        
+        let htmlItens = ''; // Variável para construir o HTML dos itens
+        try {
+            // 1. Converte a string JSON em um objeto JavaScript
+            const itens = JSON.parse(itensJson);
+
+            // 2. Verifica se existem itens
+            if (itens && itens.length > 0) {
+                // 3. Itera sobre cada item para criar seu HTML
+                htmlItens = itens.map(item => {
+                    const subtotal = (item.quantidade || 0) * (item.preco || 0);
+                    
+                    // Lógica para exibir detalhes de customização, se existirem
+                    let detalhesCustomizacao = '';
+                    if (item.customizacoes && item.customizacoes.length > 0) {
+                        const mapaPonto = { 'mal': 'Mal Passado', 'ponto': 'Ao Ponto', 'bem': 'Bem Passado' };
+                        
+                        detalhesCustomizacao = item.customizacoes.map(custo => {
+                            const pontoTexto = mapaPonto[custo.ponto] || custo.ponto;
+                            const extrasTexto = (custo.extras && custo.extras.length > 0) 
+                                ? `com ${custo.extras.join(', ')}` 
+                                : 'sem extras';
+                            return `<div class="text-xs pl-5 text-white/70">${custo.item}º - ${pontoTexto}, ${extrasTexto}</div>`;
+                        }).join('');
+                    }
+
+                    // 4. Monta o bloco HTML final para este item
+                    return `
+                        <div class="bg-white/5 p-3 rounded-lg flex justify-between items-center">
+                            <div>
+                                <span class="font-semibold">${item.quantidade}x ${item.nome}</span>
+                                ${detalhesCustomizacao}
+                            </div>
+                            <span class="font-bold text-lg">${formatCurrency(subtotal)}</span>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                htmlItens = '<p class="text-white/60">Não foi possível carregar os itens deste pedido.</p>';
+            }
+        } catch (e) {
+            console.error("Erro ao processar itens do pedido:", e);
+            htmlItens = '<p class="text-red-400">Erro ao ler os dados dos itens.</p>';
+        }
+
+        // 5. Insere o HTML gerado no corpo do modal e exibe o modal
+        modalCorpoPedido.innerHTML = htmlItens;
+        modalDetalhes.classList.remove('hidden');
+    }
+    
+    function fecharModalDetalhes() {
+        modalDetalhes.classList.add('hidden');
+    }
+
 
     // --- FUNÇÃO PARA CALCULAR INTERVALOS DE DATAS ---
     function calcularIntervaloDatas(periodo) {
@@ -521,6 +594,24 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- EVENT LISTENERS ---
     btnGerarRelatorio.addEventListener('click', carregarRelatorio);
+
+    // (NOVO) Listeners para o modal de detalhes
+    modalFecharPedido.addEventListener('click', fecharModalDetalhes);
+    modalDetalhes.addEventListener('click', (event) => {
+        if (event.target === modalDetalhes) {
+            fecharModalDetalhes();
+        }
+    });
+
+    // (NOVO) Listener DELEGADO para os botões de detalhes na tabela
+    document.getElementById('tabela-pedidos').addEventListener('click', function(event) {
+        const botaoDetalhes = event.target.closest('.btn-detalhes-pedido');
+        if (botaoDetalhes) {
+            const idPedido = botaoDetalhes.dataset.idPedido;
+            const itensJson = botaoDetalhes.dataset.itens;
+            abrirModalDetalhes(idPedido, itensJson);
+        }
+    });
     
     // --- CARGA INICIAL ---
     carregarRelatorio(); // Gera o relatório de "Hoje" ao carregar a página

@@ -38,6 +38,18 @@ def inicializar_banco():
         ''')
         print("Tabela 'produtos' verificada/criada.")
 
+        # Tabela de Tempos de Preparo (NOVA)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS tempos_preparo (
+                produto_id INTEGER NOT NULL,
+                ponto TEXT NOT NULL,
+                tempo_em_segundos INTEGER NOT NULL,
+                PRIMARY KEY (produto_id, ponto),
+                FOREIGN KEY (produto_id) REFERENCES produtos (id) ON DELETE CASCADE
+            )
+        ''')
+        print("Tabela 'tempos_preparo' verificada/criada.")        
+
         # Tabela de Entradas de Estoque (Histórico de Compras)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS entradas_de_estoque (

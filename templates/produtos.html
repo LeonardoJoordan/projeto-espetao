@@ -197,6 +197,14 @@
                                         <a href="#" title="Ver Histórico de Compras" class="btn-historico text-blue-400 hover:text-blue-300 transition-colors">
                                             <i class="fas fa-history"></i>
                                         </a>
+                                        {% if produto.requer_preparo == 1 %}
+                                        <a href="#" title="Ajustar Tempos de Preparo" 
+                                        class="btn-ajustar-tempos text-teal-400 hover:text-teal-300 transition-colors"
+                                        data-produto-id="{{ produto.id }}"
+                                        data-produto-nome="{{ produto.nome }}">
+                                            <i class="fas fa-stopwatch"></i>
+                                        </a>
+                                        {% endif %}
                                         <a href="{{ url_for('rota_excluir_produto', id_produto=produto.id) }}" title="Excluir Produto" class="text-red-500 hover:text-red-400">
                                             <i class="fas fa-trash"></i>
                                         </a>
@@ -360,6 +368,85 @@ document.addEventListener('DOMContentLoaded', function() {
                 modalCorpo.innerHTML = '<p>Ocorreu um erro ao carregar o histórico.</p>';
             }
         }
+        // Verificamos se o clique foi no botão de ajustar tempos
+        const btnAjustar = event.target.closest('.btn-ajustar-tempos');
+        if (btnAjustar) {
+            event.preventDefault();
+            const produtoId = btnAjustar.dataset.produtoId;
+            const produtoNome = btnAjustar.dataset.produtoNome;
+
+            modalTemposTitulo.textContent = `Ajustar Tempos: ${produtoNome}`;
+            inputProdutoIdTempos.value = produtoId;
+            
+            document.getElementById('tempo-mal').value = '';
+            document.getElementById('tempo-ponto').value = '';
+            document.getElementById('tempo-bem').value = '';
+
+            try {
+                const response = await fetch(`/api/tempos_produto/${produtoId}`);
+                const tempos = await response.json();
+                if (tempos) {
+                    document.getElementById('tempo-mal').value = tempos.mal || 0;
+                    document.getElementById('tempo-ponto').value = tempos.ponto || 0;
+                    document.getElementById('tempo-bem').value = tempos.bem || 0;
+                }
+            } catch (error) {
+                console.error("Erro ao buscar tempos:", error);
+                alert("Não foi possível carregar os tempos de preparo.");
+            }
+
+            modalTempos.classList.remove('hidden');
+        }
+    });
+    
+    // --- ESTAÇÃO DE TRABALHO: Modal de Tempos de Preparo (Lógica Interna) ---
+    // 1. Ferramentas para esta estação
+    const modalTempos = document.getElementById('modal-tempos');
+    const modalTemposTitulo = document.getElementById('modal-tempos-titulo');
+    const modalTemposFechar = document.getElementById('modal-tempos-fechar');
+    const modalTemposSalvar = document.getElementById('modal-tempos-salvar');
+    const inputProdutoIdTempos = document.getElementById('modal-tempos-produto-id');
+
+    // 2. Manual de Instruções para esta estação
+    function fecharModalTempos() {
+        if(modalTempos) modalTempos.classList.add('hidden');
+    }
+
+    // 3. Sensores para as ações DENTRO do modal (Fechar e Salvar)
+    if(modalTemposFechar) modalTemposFechar.addEventListener('click', fecharModalTempos);
+
+    if(modalTempos) modalTempos.addEventListener('click', (event) => {
+        if (event.target === modalTempos) fecharModalTempos();
+    });
+
+    if(modalTemposSalvar) modalTemposSalvar.addEventListener('click', async function() {
+        const produtoId = inputProdutoIdTempos.value;
+        const temposParaSalvar = {
+            'mal': document.getElementById('tempo-mal').value,
+            'ponto': document.getElementById('tempo-ponto').value,
+            'bem': document.getElementById('tempo-bem').value
+        };
+
+        try {
+            const response = await fetch('/salvar_tempos_produto', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    produto_id: produtoId,
+                    tempos: temposParaSalvar
+                })
+            });
+            const result = await response.json();
+            if (result.status === 'sucesso') {
+                alert('Tempos salvos com sucesso!');
+                fecharModalTempos();
+            } else {
+                throw new Error('Erro no servidor ao salvar.');
+            }
+        } catch (error) {
+            console.error("Erro ao salvar tempos:", error);
+            alert('Não foi possível salvar os tempos de preparo.');
+        }
     });
 
 }); // --- FIM DO BLOCO DE SEGURANÇA 'DOMContentLoaded' ---
@@ -439,6 +526,36 @@ function limparFormulario() {
     
             <div id="modal-corpo" class="max-h-96 overflow-y-auto space-y-2">
                 </div>
+        </div>
+    </div>
+    <div id="modal-tempos" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
+        <div class="glass-container rounded-2xl p-6 w-full max-w-md text-white">
+            <div class="flex justify-between items-center border-b border-white/20 pb-3 mb-4">
+                <h2 id="modal-tempos-titulo" class="text-2xl font-bold">Ajustar Tempos</h2>
+                <button id="modal-tempos-fechar" class="text-2xl hover:text-red-500">&times;</button>
+            </div>
+            
+            <div id="modal-tempos-corpo" class="space-y-4">
+                <input type="hidden" id="modal-tempos-produto-id">
+                <div>
+                    <label for="tempo-mal" class="block mb-2 font-semibold">Mal Passado (minutos)</label>
+                    <input type="number" id="tempo-mal" placeholder="0" class="w-full p-2 rounded-lg">
+                </div>
+                <div>
+                    <label for="tempo-ponto" class="block mb-2 font-semibold">Ao Ponto (minutos)</label>
+                    <input type="number" id="tempo-ponto" placeholder="0" class="w-full p-2 rounded-lg">
+                </div>
+                <div>
+                    <label for="tempo-bem" class="block mb-2 font-semibold">Bem Passado (minutos)</label>
+                    <input type="number" id="tempo-bem" placeholder="0" class="w-full p-2 rounded-lg">
+                </div>
+            </div>
+            
+            <div class="mt-6">
+                <button id="modal-tempos-salvar" class="w-full bg-teal-500 hover:bg-teal-600 font-bold py-3 rounded-lg transition-colors">
+                    Salvar Tempos
+                </button>
+            </div>
         </div>
     </div>
 </body>

@@ -106,48 +106,51 @@ def adicionar_categoria():
 @app.route('/adicionar_produto', methods=['POST'])
 def adicionar_produto():
     """
-    Rota inteligente que decide se deve criar um novo produto ou
-    adicionar estoque a um produto existente.
+    Rota inteligente que decide se deve criar um novo produto,
+    atualizar seus dados ou adicionar estoque.
     """
     try:
-        # Pega o ID do produto do campo escondido do formulário
         id_produto = request.form.get('id_produto')
         
-        # --- LÓGICA DE DECISÃO ---
+        # Captura os dados do formulário que são comuns para criar e editar
+        nome = request.form.get('nome_produto')
+        categoria_id = int(request.form.get('categoria_produto'))
+        preco_venda_str = request.form.get('preco_venda')
+        
+        # Converte o valor do checkbox 'on'/'None' para 1/0
+        requer_preparo_str = request.form.get('requer_preparo')
+        requer_preparo = 1 if requer_preparo_str == 'on' else 0
+
         if id_produto:
-            # Se existe um ID, significa que estamos ADICIONANDO ESTOQUE OU ATUALIZANDO DADOS
+            # --- CAMINHO DE ATUALIZAÇÃO ---
             id_produto = int(id_produto)
             
-            # Pega a quantidade e o preço de compra para a adição de estoque
+            # 1. Atualiza os dados principais do produto (nome, categoria, flag de preparo)
+            # Chamando a nova função que ainda vamos implementar.
+            gerenciador_db.atualizar_dados_produto(id_produto, nome, categoria_id, requer_preparo)
+
+            # 2. Lógica para adicionar estoque (se quantidade e preço de compra forem fornecidos)
             quantidade_adicionada = request.form.get('quantidade') 
             preco_compra_unitario = request.form.get('preco_compra')
-            
-            # CORREÇÃO: Pega o preço de venda ANTES de usá-lo na condição
-            novo_preco_venda_str = request.form.get('preco_venda') 
-
-            # Se a quantidade e o preço de compra foram fornecidos, adiciona estoque
             if quantidade_adicionada and preco_compra_unitario:
                 gerenciador_db.adicionar_estoque(id_produto, int(quantidade_adicionada), float(preco_compra_unitario))
             
-            # Se um novo preço de venda foi fornecido, atualiza APENAS o preço de venda
-            if novo_preco_venda_str: # AQUI A VARIÁVEL ESTÁ DEFINIDA
-                gerenciador_db.atualizar_preco_venda_produto(id_produto, float(novo_preco_venda_str))
+            # 3. Lógica para atualizar apenas o preço de venda (se um novo preço for fornecido)
+            if preco_venda_str:
+                gerenciador_db.atualizar_preco_venda_produto(id_produto, float(preco_venda_str))
         
         else:
-            # Se NÃO existe um ID, estamos CRIANDO UM NOVO PRODUTO
-            nome = request.form.get('nome_produto')
-            categoria_id = int(request.form.get('categoria_produto'))
-            preco_venda = float(request.form.get('preco_venda'))
+            # --- CAMINHO DE CRIAÇÃO ---
+            preco_venda = float(preco_venda_str)
             preco_compra = float(request.form.get('preco_compra'))
             quantidade = int(request.form.get('quantidade'))
 
-            if nome and preco_venda and preco_compra and quantidade:
-                gerenciador_db.adicionar_novo_produto(nome, preco_venda, quantidade, preco_compra, categoria_id)
+            # Chama a versão modificada da função, passando o novo parâmetro
+            gerenciador_db.adicionar_novo_produto(nome, preco_venda, quantidade, preco_compra, categoria_id, requer_preparo)
 
     except (ValueError, TypeError) as e:
         print(f"Erro ao converter dados do formulário: {e}")
 
-    # Redireciona de volta para a página de produtos para vermos o resultado
     return redirect(url_for('tela_produtos'))
 
 @app.route('/excluir_categoria/<int:id_categoria>')
@@ -360,6 +363,24 @@ def rota_entregar_direto(id_do_pedido):
         return jsonify({"status": "sucesso"})
     else:
         return jsonify({"status": "erro"}), 400
+
+@app.route('/api/tempos_produto/<int:produto_id>')
+def api_obter_tempos(produto_id):
+    """API para buscar os tempos de preparo de um produto."""
+    tempos = gerenciador_db.obter_tempos_por_produto_id(produto_id)
+    return jsonify(tempos)
+
+@app.route('/salvar_tempos_produto', methods=['POST'])
+def rota_salvar_tempos():
+    """API para salvar os tempos de preparo de um produto."""
+    data = request.get_json()
+    produto_id = data.get('produto_id')
+    tempos = data.get('tempos')
+    if produto_id and tempos:
+        sucesso = gerenciador_db.salvar_tempos_preparo(produto_id, tempos)
+        if sucesso:
+            return jsonify({"status": "sucesso"})
+    return jsonify({"status": "erro"}), 400
 
 @app.route('/')
 def index():

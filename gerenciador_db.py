@@ -112,7 +112,7 @@ def criar_novo_pedido(nome_cliente, itens_pedido, metodo_pagamento):
     _proximo_id += 1
     return novo_pedido['id']
 
-def adicionar_novo_produto(nome, preco_venda, estoque_inicial, custo_inicial, categoria_id):
+def adicionar_novo_produto(nome, preco_venda, estoque_inicial, custo_inicial, categoria_id, requer_preparo):
     """
     Adiciona um novo produto na tabela 'produtos'.
     Calcula o custo total inicial do estoque.
@@ -126,12 +126,12 @@ def adicionar_novo_produto(nome, preco_venda, estoque_inicial, custo_inicial, ca
 
         # Comando SQL para inserir um novo produto
         cursor.execute('''
-            INSERT INTO produtos (nome, preco_venda, estoque_atual, custo_total_do_estoque, categoria_id)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (nome, preco_venda, estoque_inicial, custo_total_estoque, categoria_id))
+            INSERT INTO produtos (nome, preco_venda, estoque_atual, custo_total_do_estoque, categoria_id, requer_preparo)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (nome, preco_venda, estoque_inicial, custo_total_estoque, categoria_id, requer_preparo))
 
         conn.commit()
-        print(f"Produto '{nome}' adicionado com sucesso.")
+        print(f"Produto '{nome}' adicionado com  (Requer preparo: {requer_preparo}).")
         return True
 
     except sqlite3.IntegrityError:
@@ -218,7 +218,7 @@ def obter_todos_produtos_para_gestao():
 
         # A consulta é idêntica à original, mas sem o filtro "WHERE"
         cursor.execute('''
-            SELECT p.id, p.nome, p.preco_venda, p.estoque_atual, p.custo_total_do_estoque, c.nome as categoria_nome, p.categoria_id
+            SELECT p.id, p.nome, p.preco_venda, p.estoque_atual, p.custo_total_do_estoque, c.nome as categoria_nome, p.categoria_id, p.requer_preparo
             FROM produtos p
             LEFT JOIN categorias c ON p.categoria_id = c.id
             ORDER BY c.ordem, p.ordem, p.nome 
@@ -227,7 +227,7 @@ def obter_todos_produtos_para_gestao():
         produtos_tuplas = cursor.fetchall()
         produtos_lista = []
         for tupla in produtos_tuplas:
-            id_produto, nome, preco_venda, estoque, custo_total, categoria, categoria_id = tupla
+            id_produto, nome, preco_venda, estoque, custo_total, categoria, categoria_id, requer_preparo = tupla
             
             if estoque > 0:
                 custo_medio = custo_total / estoque
@@ -256,7 +256,8 @@ def obter_todos_produtos_para_gestao():
                 'lucro': lucro,
                 'categoria': categoria,
                 'categoria_id': categoria_id,
-                'ultimo_preco_compra': ultimo_preco_compra
+                'ultimo_preco_compra': ultimo_preco_compra,
+                'requer_preparo': requer_preparo
             })
         
         return produtos_lista
@@ -1016,3 +1017,80 @@ def _agregar_vendas_por_periodo(pedidos, modo):
     dados_finais = [vendas_agregadas[chave] for chave in chaves_ordenadas]
 
     return {"labels": labels_finais, "data": dados_finais}
+
+def obter_tempos_por_produto_id(produto_id):
+    """
+    Busca os tempos de preparo (mal, ponto, bem) para um produto específico.
+    """
+    tempos = {'mal': 0, 'ponto': 0, 'bem': 0}
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+        cursor.execute("SELECT ponto, tempo_em_segundos FROM tempos_preparo WHERE produto_id = ?", (produto_id,))
+        for row in cursor.fetchall():
+            ponto, tempo_em_segundos = row
+            if ponto in tempos:
+                # Converte segundos para minutos para exibição na interface
+                tempos[ponto] = tempo_em_segundos / 60
+        return tempos
+    except sqlite3.Error as e:
+        print(f"Erro ao obter tempos para o produto {produto_id}: {e}")
+        return {}
+    finally:
+        if conn:
+            conn.close()
+
+def salvar_tempos_preparo(produto_id, tempos_data):
+    """
+    Salva ou atualiza os tempos de preparo para um produto.
+    Usa a lógica 'UPSERT' (INSERT OR REPLACE).
+    """
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+        for ponto, minutos in tempos_data.items():
+            if minutos is not None:
+                tempo_em_segundos = int(minutos) * 60
+                # INSERT OR REPLACE é uma forma eficiente de fazer UPSERT no SQLite.
+                # Se a combinação de produto_id e ponto já existir, ele atualiza a linha.
+                # Se não existir, ele insere uma nova.
+                cursor.execute('''
+                    INSERT OR REPLACE INTO tempos_preparo (produto_id, ponto, tempo_em_segundos)
+                    VALUES (?, ?, ?)
+                ''', (produto_id, ponto, tempo_em_segundos))
+        conn.commit()
+        return True
+    except sqlite3.Error as e:
+        print(f"Erro ao salvar tempos para o produto {produto_id}: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def atualizar_dados_produto(id_produto, nome, categoria_id, requer_preparo):
+    """
+    Atualiza os dados principais de um produto existente (nome, categoria, flag de preparo).
+    """
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # Comando SQL para atualizar os dados do produto com base no ID
+        cursor.execute('''
+            UPDATE produtos 
+            SET nome = ?,
+                categoria_id = ?,
+                requer_preparo = ?
+            WHERE id = ?
+        ''', (nome, categoria_id, requer_preparo, id_produto))
+
+        conn.commit()
+        print(f"Dados do produto ID {id_produto} atualizados com sucesso.")
+        return True
+
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao atualizar os dados do produto: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()

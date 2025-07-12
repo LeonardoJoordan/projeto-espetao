@@ -156,7 +156,7 @@ def obter_todos_produtos():
 
         # Adicionamos ORDER BY p.ordem
         cursor.execute('''
-            SELECT p.id, p.nome, p.preco_venda, p.estoque_atual, p.custo_total_do_estoque, c.nome as categoria_nome, p.categoria_id
+            SELECT p.id, p.nome, p.preco_venda, p.estoque_atual, p.custo_total_do_estoque, c.nome as categoria_nome, p.categoria_id, p.requer_preparo
             FROM produtos p
             LEFT JOIN categorias c ON p.categoria_id = c.id
             WHERE p.estoque_atual > 0
@@ -166,7 +166,7 @@ def obter_todos_produtos():
         produtos_tuplas = cursor.fetchall()
         produtos_lista = []
         for tupla in produtos_tuplas:
-            id_produto, nome, preco_venda, estoque, custo_total, categoria, categoria_id = tupla
+            id_produto, nome, preco_venda, estoque, custo_total, categoria, categoria_id, requer_preparo = tupla
             
             if estoque > 0:
                 custo_medio = custo_total / estoque
@@ -196,7 +196,8 @@ def obter_todos_produtos():
                 'lucro': lucro,
                 'categoria': categoria,
                 'categoria_id': categoria_id,
-                'ultimo_preco_compra': ultimo_preco_compra
+                'ultimo_preco_compra': ultimo_preco_compra,
+                'requer_preparo': requer_preparo
             })
         
         return produtos_lista
@@ -685,17 +686,20 @@ def confirmar_pagamento_pedido(id_do_pedido):
 
 def iniciar_preparo_pedido(id_do_pedido):
     """
-    Muda o status de um pedido para 'em_producao'.
+    Muda o status de um pedido para 'em_producao' e grava o timestamp de início.
     """
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
+        # Captura o horário exato da ação
+        timestamp_inicio = datetime.datetime.now().isoformat()
+
         # Atualiza o status do pedido de 'aguardando_producao' para 'em_producao'
         cursor.execute(
-            "UPDATE pedidos SET status = ? WHERE id = ? AND status = ?",
-            ('em_producao', id_do_pedido, 'aguardando_producao')
+            "UPDATE pedidos SET status = ?, timestamp_inicio_preparo = ? WHERE id = ? AND status = ?",
+            ('em_producao', timestamp_inicio, id_do_pedido, 'aguardando_producao')
         )
 
         # Verifica se alguma linha foi realmente alterada

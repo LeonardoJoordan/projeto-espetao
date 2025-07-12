@@ -74,6 +74,7 @@ def inicializar_banco():
                 custo_total_pedido REAL,
                 timestamp_criacao TEXT NOT NULL,
                 timestamp_pagamento TEXT,
+                timestamp_inicio_preparo TEXT,
                 timestamp_finalizacao TEXT,
                 itens_json TEXT, 
                 fluxo_simples INTEGER NOT NULL DEFAULT 0 -- 1 se for simples, 0 se for complexo

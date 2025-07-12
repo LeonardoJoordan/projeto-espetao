@@ -413,7 +413,8 @@
                             data-nome="{{ produto.nome }}" 
                             data-preco="{{ produto.preco_venda }}"
                             data-categoria-nome="{{ categoria.nome }}"
-                            data-estoque="{{ produto.estoque }}">
+                            data-estoque="{{ produto.estoque }}"
+                            data-requer-preparo="{{ produto.requer_preparo }}">
                             <div class="w-24 h-24 bg-zinc-700 rounded-md flex-shrink-0 flex items-center justify-center">
                                 <i class="fas fa-camera text-3xl text-zinc-500"></i>
                             </div>
@@ -623,7 +624,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         id: idProduto,
                         nome: nomeProduto,
                         preco: precoProduto,
-                        quantidade: quantidade
+                        quantidade: quantidade,
+                        requer_preparo: parseInt(productCard.dataset.requerPreparo)
                     });
                 }
                 atualizarBotaoPrincipal();
@@ -828,7 +830,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         nome: nomeProduto,
                         preco: precoProduto,
                         quantidade: 1, // A quantidade é sempre 1
-                        customizacao: customizacaoDoItem // Usamos a propriedade no singular
+                        customizacao: customizacaoDoItem,
+                        requer_preparo: parseInt(productCard.dataset.requerPreparo) // Usamos a propriedade no singular
                     });
                 });
 

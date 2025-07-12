@@ -141,6 +141,13 @@ document.addEventListener('DOMContentLoaded', function() {
             return '<div class="p-4 text-red-500">Status inválido</div>';
         }
 
+        // ✅ 1. Criamos nosso "mapa de tradução" aqui.
+        const mapaPonto = {
+            'mal': 'Mal Passado',
+            'ponto': 'Ao Ponto',
+            'bem': 'Bem Passado'
+        };
+
         // Lógica para decidir qual botão de ação principal mostrar
         let acaoPrincipalHtml = '';
         if (pedido.status === 'aguardando_producao') {
@@ -167,6 +174,9 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         const itemsListHtml = pedido.itens.map(item => {
+            
+            const pontoTraduzido = item.customizacao ? (mapaPonto[item.customizacao.ponto] || item.customizacao.ponto) : '';
+
             let itemHtml = `
                 <li class="item-pedido text-base flex flex-col bg-white/20 p-3 rounded-lg"
                     data-produto-id="${item.id}" 
@@ -191,11 +201,11 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
                     // --- NOVO: Adiciona o HTML do Timer apenas se o pedido estiver 'em_producao' ---
-            if (pedido.status === 'em_producao') {
+            if (pedido.status === 'em_producao' && item.requer_preparo === 1) {
                 itemHtml += `
                     <div class="timer-container mt-2">
                         <div class="flex justify-between items-center text-xs text-white/70 mb-1">
-                            <span class="font-semibold uppercase">${item.customizacao ? item.customizacao.ponto : ''}</span>
+                            <span class="font-semibold uppercase">${item.customizacao ? (mapaPonto[item.customizacao.ponto] || item.customizacao.ponto) : ''}</span>
                             <span class="tempo-restante font-bold text-base text-white">--:--</span>
                         </div>
                         <div class="barra-progresso-fundo w-full bg-black/30 rounded-full h-2">
@@ -276,6 +286,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const card = templates.querySelector('#card-template > div').cloneNode(true);
                 card.classList.add('h-full');
                 card.dataset.id = pedido.id;
+                card.dataset.status = pedido.status;
                 card.innerHTML = buildCardContent(pedido, isSplitView);
                 if(isSplitView) card.classList.replace('h-96', 'h-48');
                 cardContainer.appendChild(card);
@@ -290,6 +301,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 const card = templates.querySelector('#card-template > div').cloneNode(true);
                 card.classList.add('h-full');
                 card.dataset.id = pedido.id;
+                card.dataset.status = pedido.status;
+                card.dataset.timestampInicio = pedido.timestamp_inicio_preparo || '';
                 card.innerHTML = buildCardContent(pedido, isSplitView);
                 if(isSplitView) card.classList.replace('h-96', 'h-48');
                 cardContainer.appendChild(card);
@@ -311,6 +324,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const card = templates.querySelector('#card-template > div').cloneNode(true);
         card.classList.add('h-full');
         card.dataset.id = pedido.id;
+        card.dataset.status = pedido.status;
         card.innerHTML = buildCardContent(pedido, false);
         
         modalContent.innerHTML = '';
@@ -479,47 +493,72 @@ document.addEventListener('DOMContentLoaded', function() {
         return `${String(min).padStart(2, '0')}:${String(seg).padStart(2, '0')}`;
     }
 
-    async function iniciarTimerParaItem(elementoItem) {
-        const produtoId = elementoItem.dataset.produtoId;
-        const ponto = elementoItem.dataset.ponto;
+async function iniciarTimerParaItem(elementoItem) {
+    const produtoId = elementoItem.dataset.produtoId;
+    const ponto = elementoItem.dataset.ponto;
+    const cardPai = elementoItem.closest('.card-pedido');
+    const timestampInicioPreparo = cardPai.dataset.timestampInicio;
 
-        // A API ainda não existe, então isso vai falhar por enquanto
-        try {
-            const response = await fetch(`/api/tempo_preparo/${produtoId}/${ponto}`);
-            const data = await response.json();
-            let tempoTotal = data.tempo_em_segundos || 0;
-            let tempoRestante = tempoTotal;
+    // Se não houver um timestamp de início, não faz nada.
+    if (!timestampInicioPreparo) return;
 
-            const elTempo = elementoItem.querySelector('.tempo-restante');
-            const elBarra = elementoItem.querySelector('.barra-progresso-preenchimento');
+    try {
+        // 1. Busca a duração total do preparo, como antes.
+        const response = await fetch(`/api/tempo_preparo/${produtoId}/${ponto}`);
+        const data = await response.json();
+        const tempoTotalSegundos = data.tempo_em_segundos || 0;
 
-            if (!elTempo || !elBarra) return;
+        if (tempoTotalSegundos === 0) return; // Não inicia timer se a duração for 0.
 
-            // Limpa qualquer timer antigo para este item
-            if (timersAtivos[produtoId]) {
-                clearInterval(timersAtivos[produtoId]);
-            }
-            
-            // Inicia um novo timer
-            timersAtivos[produtoId] = setInterval(() => {
-                tempoRestante--;
-                elTempo.textContent = formatarTempo(tempoRestante);
-                const porcentagem = (tempoRestante / tempoTotal) * 100;
-                elBarra.style.width = `${porcentagem}%`;
+        // 2. Calcula o tempo que já se passou.
+        const dataInicio = new Date(timestampInicioPreparo);
+        const dataAgora = new Date();
+        const tempoDecorridoSegundos = Math.floor((dataAgora - dataInicio) / 1000);
 
-                if (tempoRestante <= 0) {
-                    clearInterval(timersAtivos[produtoId]);
-                    elBarra.classList.remove('bg-green-500');
-                    elBarra.classList.add('bg-red-500'); // Fica vermelho quando o tempo acaba
-                }
-            }, 1000);
+        // 3. Calcula o tempo restante.
+        let tempoRestanteSegundos = tempoTotalSegundos - tempoDecorridoSegundos;
 
-        } catch (error) {
-            console.error(`Ainda não foi possível buscar o tempo para ${produtoId}/${ponto}. Isso é esperado.`, error);
-            const elTempo = elementoItem.querySelector('.tempo-restante');
-            if(elTempo) elTempo.textContent = "Erro!";
+        const elTempo = elementoItem.querySelector('.tempo-restante');
+        const elBarra = elementoItem.querySelector('.barra-progresso-preenchimento');
+        if (!elTempo || !elBarra) return;
+
+        // Limpa qualquer timer antigo para este item (segurança)
+        const timerId = `${produtoId}-${ponto}`;
+        if (timersAtivos[timerId]) {
+            clearInterval(timersAtivos[timerId]);
         }
+
+        // 4. Inicia o intervalo, que vai rodar a cada segundo.
+        function atualizarTimer() {
+            if (tempoRestanteSegundos <= 0) {
+                elTempo.textContent = "00:00";
+                elBarra.style.width = '100%';
+                elBarra.classList.remove('bg-red-500', 'bg-yellow-500');
+                elBarra.classList.add('bg-green-500');
+                clearInterval(timersAtivos[timerId]);
+                return;
+            }
+
+            elTempo.textContent = formatarTempo(tempoRestanteSegundos);
+            const porcentagem = (tempoRestanteSegundos / tempoTotalSegundos) * 100;
+            elBarra.style.width = `${100 - porcentagem}%`; // Barra de progresso enche
+
+            // Muda a cor da barra conforme o tempo passa
+            if(porcentagem < 25) elBarra.classList.add('bg-yellow-500');
+            else elBarra.classList.add('bg-red-500');
+            
+            tempoRestanteSegundos--;
+        }
+
+        atualizarTimer(); // Executa uma vez imediatamente
+        timersAtivos[timerId] = setInterval(atualizarTimer, 1000);
+
+    } catch (error) {
+        console.error(`Erro ao buscar ou calcular o tempo para ${produtoId}/${ponto}:`, error);
+        const elTempo = elementoItem.querySelector('.tempo-restante');
+        if (elTempo) elTempo.textContent = "Erro!";
     }
+}
 
     function iniciarTimersDoPedido(cardElement) {
         console.log("Procurando itens para iniciar timers...");

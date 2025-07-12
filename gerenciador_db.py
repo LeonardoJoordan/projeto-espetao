@@ -1094,3 +1094,30 @@ def atualizar_dados_produto(id_produto, nome, categoria_id, requer_preparo):
     finally:
         if conn:
             conn.close()
+
+def obter_tempo_preparo_especifico(produto_id, ponto):
+    """
+    Busca no banco de dados o tempo de preparo em segundos para um 
+    produto e um ponto de cozimento específicos.
+    """
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT tempo_em_segundos 
+            FROM tempos_preparo 
+            WHERE produto_id = ? AND ponto = ?
+        """, (produto_id, ponto))
+        
+        resultado = cursor.fetchone()
+
+        # Se encontrar um tempo, retorna os segundos. Senão, retorna 0.
+        return resultado[0] if resultado else 0
+
+    except sqlite3.Error as e:
+        print(f"Erro ao obter tempo de preparo para produto {produto_id} e ponto {ponto}: {e}")
+        return 0 # Retorna 0 em caso de erro
+    finally:
+        if conn:
+            conn.close()

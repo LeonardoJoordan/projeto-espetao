@@ -811,29 +811,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 modalCustomizacao.classList.add('hidden');
                 modalCustomizacao.innerHTML = ''; // Limpa o conteúdo para a próxima vez
             }
-            // Botão Adicionar ao Pedido
+            // --- LÓGICA DE ADICIONAR AO PEDIDO (ATUALIZADA) ---
             if (target.closest('#btn-adicionar-pedido-popup')) {
-                const customizacoes = [];
-                document.querySelectorAll('.item-customizacao').forEach((item, index) => {
-                    const ponto = item.querySelector('input[name$="ponto"]:checked').value;
-                    const extras = Array.from(item.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.closest('.extra-item').textContent.trim());
-                    customizacoes.push({ item: index + 1, ponto: ponto, extras: extras });
-                });
+                const todosOsItensCustomizados = document.querySelectorAll('.item-customizacao');
 
-                const itemExistente = pedidoAtual.find(item => item.id === idProduto);
-                if (itemExistente) {
-                    itemExistente.quantidade += quantidade;
-                    // Futuramente, podemos adicionar as customizações aqui
-                } else {
+                todosOsItensCustomizados.forEach((itemNode) => {
+                    const ponto = itemNode.querySelector('input[name$="ponto"]:checked').value;
+                    const extras = Array.from(itemNode.querySelectorAll('input[type="checkbox"]:checked'))
+                                    .map(cb => cb.closest('.extra-item').textContent.trim());
+                    
+                    const customizacaoDoItem = { ponto: ponto, extras: extras };
+
+                    // Adiciona um NOVO objeto ao pedido para CADA item, com quantidade 1
                     pedidoAtual.push({
                         id: idProduto,
                         nome: nomeProduto,
                         preco: precoProduto,
-                        quantidade: quantidade,
-                        customizacoes: customizacoes
+                        quantidade: 1, // A quantidade é sempre 1
+                        customizacao: customizacaoDoItem // Usamos a propriedade no singular
                     });
-                }
-                
+                });
+
                 atualizarBotaoPrincipal();
                 modalCustomizacao.classList.add('hidden');
                 modalCustomizacao.innerHTML = '';
@@ -858,46 +856,35 @@ document.addEventListener('DOMContentLoaded', () => {
         const totalDisplay = document.getElementById('total-confirmacao');
         let valorTotal = 0;
 
-        // 1. Limpa a lista antiga e calcula o novo total
         listaContainer.innerHTML = ''; 
         valorTotal = pedidoAtual.reduce((acc, item) => acc + (item.preco * item.quantidade), 0);
 
-        // 2. Cria e adiciona o HTML de cada item do pedido na lista
         pedidoAtual.forEach((item, index) => {
+            // --- VARIÁVEL DE VOLTA AO NOME ORIGINAL ---
             let detalhesItem = '';
-            // Se for um item customizado (espetinho), mostra os detalhes
-            if (item.customizacoes && item.customizacoes.length > 0) {
-                // 1. Cria o título principal, usando a mesma formatação dos itens simples.
-                detalhesItem = `<div class="text-base font-semibold text-white pl-8">${item.quantidade}x ${item.nome}</div>`;
-
-                // 2. Itera sobre cada customização para criar a sub-lista numerada.
-                // Note o "(custo, i)" que nos dá o índice para a numeração.
-                item.customizacoes.forEach((custo, i) => {
-                    // 1. Nosso pequeno "dicionário tradutor"
-                    const mapaPonto = {
-                        'mal': 'Carne Mal Passada',
-                        'ponto': 'Carne ao Ponto',
-                        'bem': 'Carne Bem Passada'
-                    };
-
-                    // 2. Traduz o valor 'cru' (ex: 'mal') para o texto completo (ex: 'Mal Passado')
-                    const pontoTexto = mapaPonto[custo.ponto] || custo.ponto;
-
-                    let extrasTexto = 'sem extras';
-                    if (custo.extras.length > 0) {
-                        extrasTexto = `com ${custo.extras.join(', ')}`;
-                    }
-
-                    // 3. Usa a variável 'pontoTexto' (já traduzida) na linha final
-                    detalhesItem += `<div class="text-sm text-zinc-400 pl-11">${i + 1}º - ${pontoTexto}, ${extrasTexto}.</div>`;
-                });
+            
+            if (item.customizacao) { 
+                const mapaPonto = {
+                    'mal': 'Mal Passado',
+                    'ponto': 'Ao Ponto',
+                    'bem': 'Bem Passado'
+                };
+                const pontoTexto = mapaPonto[item.customizacao.ponto] || item.customizacao.ponto;
+                let extrasTexto = 'sem extras';
+                if (item.customizacao.extras && item.customizacao.extras.length > 0) {
+                    extrasTexto = `com ${item.customizacao.extras.join(', ')}`;
+                }
+                
+                detalhesItem = `
+                    <div class="text-base font-semibold text-white">${item.nome}</div>
+                    <div class="text-sm text-zinc-400 pl-4">↳ ${pontoTexto}, ${extrasTexto}</div>
+                `;
             } else {
-                // LÓGICA PARA ITENS SIMPLES
-                detalhesItem = `<div class="text-base font-semibold text-white pl-8">${item.quantidade}x ${item.nome}</div>`;
+                detalhesItem = `<div class="text-base font-semibold text-white">${item.quantidade}x ${item.nome}</div>`;
             }
 
             const itemHtml = `
-                <div class="flex items-center justify-between">
+                <div class="flex items-center justify-between bg-zinc-900/50 p-3 rounded-lg">
                     <div>${detalhesItem}</div>
                     <div class="flex items-center gap-4">
                         <span class="font-semibold w-20 text-right">R$ ${(item.preco * item.quantidade).toFixed(2).replace('.',',')}</span>
@@ -910,10 +897,7 @@ document.addEventListener('DOMContentLoaded', () => {
             listaContainer.innerHTML += itemHtml;
         });
 
-        // 3. Atualiza o valor total no rodapé do popup
         totalDisplay.textContent = `R$ ${valorTotal.toFixed(2).replace('.', ',')}`;
-
-        // 4. Exibe o popup
         modalConfirmacao.classList.remove('hidden');
         mainContainer.classList.add('content-blurred');
     }

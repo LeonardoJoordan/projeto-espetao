@@ -18,17 +18,24 @@ def tela_cliente():
 
     # --- Lógica para exibir o cardápio ---
     # 1. Busca os dados brutos do banco, já ordenados
-    categorias = gerenciador_db.obter_todas_categorias()
+    todas_as_categorias = gerenciador_db.obter_todas_categorias()
     produtos = gerenciador_db.obter_todos_produtos()
     
     # 2. Agrupa os produtos por categoria para a exibição
-    produtos_agrupados = {cat['id']: [] for cat in categorias}
+    produtos_agrupados = {cat['id']: [] for cat in todas_as_categorias}
     for produto in produtos:
         if produto['categoria_id'] in produtos_agrupados:
             produtos_agrupados[produto['categoria_id']].append(produto)
     
-    # 3. Envia os dados para o template renderizar
-    return render_template('cliente.html', categorias=categorias, produtos_agrupados=produtos_agrupados)
+    # --- AJUSTE DE 2 LINHAS PARA RESOLVER O PROBLEMA ---
+    # 3. Filtra a lista de categorias para mostrar apenas as que têm produtos
+    categorias_visiveis = [
+        cat for cat in todas_as_categorias 
+        if produtos_agrupados[cat['id']]
+    ]
+
+    # 4. Envia os dados para o template renderizar
+    return render_template('cliente.html', categorias=categorias_visiveis, produtos_agrupados=produtos_agrupados)
 
 # --- NOVA ROTA DA COZINHA ---
 @app.route('/cozinha')
@@ -381,6 +388,16 @@ def rota_salvar_tempos():
         if sucesso:
             return jsonify({"status": "sucesso"})
     return jsonify({"status": "erro"}), 400
+
+@app.route('/api/tempo_preparo/<int:produto_id>/<string:ponto>')
+def api_get_tempo_preparo(produto_id, ponto):
+    """
+    API para buscar o tempo de preparo de um item específico.
+    """
+    tempo_segundos = gerenciador_db.obter_tempo_preparo_especifico(produto_id, ponto)
+    
+    # Retorna o tempo em um formato JSON que o JavaScript espera
+    return jsonify({'tempo_em_segundos': tempo_segundos})
 
 @app.route('/')
 def index():

@@ -168,7 +168,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const itemsListHtml = pedido.itens.map(item => {
             let itemHtml = `
-                <li class="text-base flex flex-col bg-white/20 p-2 rounded-lg">
+                <li class="item-pedido text-base flex flex-col bg-white/20 p-3 rounded-lg"
+                    data-produto-id="${item.id}" 
+                    data-ponto="${item.customizacao ? item.customizacao.ponto : 'padrao'}">
                     <div class="flex items-center font-bold">
                         <i class="fas fa-drumstick-bite mr-2 opacity-80"></i>
                         <span>${item.quantidade}x ${item.nome}</span>
@@ -186,6 +188,21 @@ document.addEventListener('DOMContentLoaded', function() {
                     return `<div class="text-sm pl-6 opacity-90">${custo.item}º - ${pontoTexto}, ${extrasTexto}</div>`;
                 }).join('');
                 itemHtml += `<div class="w-full mt-1">${detalhesHtml}</div>`;
+            }
+
+                    // --- NOVO: Adiciona o HTML do Timer apenas se o pedido estiver 'em_producao' ---
+            if (pedido.status === 'em_producao') {
+                itemHtml += `
+                    <div class="timer-container mt-2">
+                        <div class="flex justify-between items-center text-xs text-white/70 mb-1">
+                            <span class="font-semibold uppercase">${item.customizacao ? item.customizacao.ponto : ''}</span>
+                            <span class="tempo-restante font-bold text-base text-white">--:--</span>
+                        </div>
+                        <div class="barra-progresso-fundo w-full bg-black/30 rounded-full h-2">
+                            <div class="barra-progresso-preenchimento bg-green-500 h-2 rounded-full" style="width: 100%;"></div>
+                        </div>
+                    </div>
+                `;
             }
 
             itemHtml += `</li>`;
@@ -278,6 +295,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 cardContainer.appendChild(card);
             });
             mainContainer.appendChild(sectionNode);
+
+            // --- ADICIONE ESTAS 3 LINHAS ABAIXO ---
+            // Após os cards serem adicionados à tela, iniciamos os timers para eles
+            const cardsEmProducao = mainContainer.querySelectorAll('.card-pedido[data-status="em_producao"]');
+            cardsEmProducao.forEach(card => iniciarTimersDoPedido(card));
         }
     }
 
@@ -445,6 +467,68 @@ document.addEventListener('DOMContentLoaded', function() {
             console.error("Erro ao buscar pedidos:", error);
             mainContainer.innerHTML = `<p class="text-center text-red-400 p-10">Falha ao carregar os pedidos do servidor. Verifique se o backend está rodando.</p>`;
         }
+    }
+
+    // --- LÓGICA DE CONTROLE DOS TIMERS (NOVO) ---
+    const timersAtivos = {}; // Guarda os intervalos dos timers para podermos pará-los
+
+    function formatarTempo(segundos) {
+        if (isNaN(segundos) || segundos < 0) return "00:00";
+        const min = Math.floor(segundos / 60);
+        const seg = segundos % 60;
+        return `${String(min).padStart(2, '0')}:${String(seg).padStart(2, '0')}`;
+    }
+
+    async function iniciarTimerParaItem(elementoItem) {
+        const produtoId = elementoItem.dataset.produtoId;
+        const ponto = elementoItem.dataset.ponto;
+
+        // A API ainda não existe, então isso vai falhar por enquanto
+        try {
+            const response = await fetch(`/api/tempo_preparo/${produtoId}/${ponto}`);
+            const data = await response.json();
+            let tempoTotal = data.tempo_em_segundos || 0;
+            let tempoRestante = tempoTotal;
+
+            const elTempo = elementoItem.querySelector('.tempo-restante');
+            const elBarra = elementoItem.querySelector('.barra-progresso-preenchimento');
+
+            if (!elTempo || !elBarra) return;
+
+            // Limpa qualquer timer antigo para este item
+            if (timersAtivos[produtoId]) {
+                clearInterval(timersAtivos[produtoId]);
+            }
+            
+            // Inicia um novo timer
+            timersAtivos[produtoId] = setInterval(() => {
+                tempoRestante--;
+                elTempo.textContent = formatarTempo(tempoRestante);
+                const porcentagem = (tempoRestante / tempoTotal) * 100;
+                elBarra.style.width = `${porcentagem}%`;
+
+                if (tempoRestante <= 0) {
+                    clearInterval(timersAtivos[produtoId]);
+                    elBarra.classList.remove('bg-green-500');
+                    elBarra.classList.add('bg-red-500'); // Fica vermelho quando o tempo acaba
+                }
+            }, 1000);
+
+        } catch (error) {
+            console.error(`Ainda não foi possível buscar o tempo para ${produtoId}/${ponto}. Isso é esperado.`, error);
+            const elTempo = elementoItem.querySelector('.tempo-restante');
+            if(elTempo) elTempo.textContent = "Erro!";
+        }
+    }
+
+    function iniciarTimersDoPedido(cardElement) {
+        console.log("Procurando itens para iniciar timers...");
+        const itensDoPedido = cardElement.querySelectorAll('.item-pedido');
+        itensDoPedido.forEach(item => {
+            if (item.querySelector('.timer-container')) { // Só inicia se o container do timer existir
+                iniciarTimerParaItem(item);
+            }
+        });
     }
 
     // --- EXECUÇÃO INICIAL ---

@@ -686,33 +686,104 @@ def confirmar_pagamento_pedido(id_do_pedido):
 
 def iniciar_preparo_pedido(id_do_pedido):
     """
-    Muda o status de um pedido para 'em_producao' e grava o timestamp de início.
+    Muda o status do pedido para 'em_producao' e adiciona um timestamp
+    de início em cada item que requer preparo dentro do itens_json.
     """
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # Captura o horário exato da ação
-        timestamp_inicio = datetime.datetime.now().isoformat()
+        # 1. Busca o JSON de itens atual do pedido.
+        cursor.execute("SELECT itens_json FROM pedidos WHERE id = ? AND status = ?", (id_do_pedido, 'aguardando_producao'))
+        resultado = cursor.fetchone()
 
-        # Atualiza o status do pedido de 'aguardando_producao' para 'em_producao'
-        cursor.execute(
-            "UPDATE pedidos SET status = ?, timestamp_inicio_preparo = ? WHERE id = ? AND status = ?",
-            ('em_producao', timestamp_inicio, id_do_pedido, 'aguardando_producao')
-        )
-
-        # Verifica se alguma linha foi realmente alterada
-        if cursor.rowcount == 0:
+        if not resultado:
             print(f"AVISO: Pedido #{id_do_pedido} não encontrado ou não estava aguardando produção.")
             return False
 
+        itens_atuais = json.loads(resultado[0])
+        timestamp_inicio = datetime.datetime.now().isoformat()
+        itens_modificados = []
+
+        # 2. Itera sobre os itens e adiciona o timestamp naqueles que precisam.
+        for item in itens_atuais:
+            if item.get('requer_preparo') == 1:
+                item['timestamp_inicio_item'] = timestamp_inicio
+            itens_modificados.append(item)
+            
+        novo_itens_json = json.dumps(itens_modificados)
+
+        # 3. Atualiza o pedido com o novo status e o JSON modificado.
+        cursor.execute(
+            "UPDATE pedidos SET status = ?, itens_json = ? WHERE id = ?",
+            ('em_producao', novo_itens_json, id_do_pedido)
+        )
+
         conn.commit()
-        print(f"SUCESSO: Pedido #{id_do_pedido} movido para 'em produção'.")
+        print(f"SUCESSO: Pedido #{id_do_pedido} movido para 'em produção'. Timestamps adicionados aos itens.")
         return True
 
     except sqlite3.Error as e:
         print(f"ERRO ao iniciar preparo do pedido #{id_do_pedido}: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def reiniciar_preparo_item(pedido_id, produto_id):
+    """
+    Encontra um item específico dentro do itens_json de um pedido e
+    atualiza seu timestamp_inicio_item para o horário atual.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # 1. Busca o JSON de itens atual do pedido.
+        cursor.execute("SELECT itens_json FROM pedidos WHERE id = ?", (pedido_id,))
+        resultado = cursor.fetchone()
+
+        if not resultado:
+            print(f"ERRO: Pedido #{pedido_id} não encontrado ao tentar reiniciar item.")
+            return False
+
+        itens_atuais = json.loads(resultado[0])
+        timestamp_novo = datetime.datetime.now().isoformat()
+        item_encontrado = False
+        itens_modificados = []
+
+        # 2. Itera sobre os itens para encontrar o item a ser reiniciado.
+        for item in itens_atuais:
+            # Reinicia apenas o primeiro item que encontrar com o ID correspondente e que ainda não foi reiniciado
+            if str(item.get('id')) == str(produto_id) and not item_encontrado:
+                if 'timestamp_inicio_item' in item:
+                    item['timestamp_inicio_item'] = timestamp_novo
+                    item_encontrado = True # Marca que já reiniciamos um item
+            
+            itens_modificados.append(item)
+            
+        if not item_encontrado:
+            print(f"AVISO: Item #{produto_id} não encontrado no pedido #{pedido_id} para reiniciar.")
+            return False
+
+        novo_itens_json = json.dumps(itens_modificados)
+
+        # 3. Atualiza o pedido com o novo JSON modificado.
+        cursor.execute(
+            "UPDATE pedidos SET itens_json = ? WHERE id = ?",
+            (novo_itens_json, pedido_id)
+        )
+
+        conn.commit()
+        print(f"SUCESSO: Item #{produto_id} do pedido #{pedido_id} reiniciado às {timestamp_novo}.")
+        return True
+
+    except sqlite3.Error as e:
+        print(f"ERRO ao reiniciar item do pedido #{pedido_id}: {e}")
         if conn:
             conn.rollback()
         return False

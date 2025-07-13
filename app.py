@@ -399,6 +399,19 @@ def api_get_tempo_preparo(produto_id, ponto):
     # Retorna o tempo em um formato JSON que o JavaScript espera
     return jsonify({'tempo_em_segundos': tempo_segundos})
 
+@app.route('/pedido/<int:pedido_id>/item/<int:produto_id>/reiniciar', methods=['POST'])
+def rota_reiniciar_item(pedido_id, produto_id):
+    """
+    Rota para reiniciar o tempo de preparo de um item específico.
+    """
+    sucesso = gerenciador_db.reiniciar_preparo_item(pedido_id, produto_id)
+    if sucesso:
+        # Emite um evento para que a cozinha recarregue e recalcule os timers
+        socketio.emit('novo_pedido', {'msg': f'Item {produto_id} do pedido {pedido_id} reiniciado!'})
+        return jsonify({"status": "sucesso", "mensagem": "Item reiniciado."})
+    else:
+        return jsonify({"status": "erro", "mensagem": "Item não pôde ser reiniciado."}), 400
+
 @app.route('/')
 def index():
     # Redireciona a rota principal para a tela do cliente por padrão

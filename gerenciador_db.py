@@ -1196,3 +1196,31 @@ def obter_tempo_preparo_especifico(produto_id, ponto):
     finally:
         if conn:
             conn.close()
+
+# gerenciador_db.py
+
+def obter_proximo_id_pedido():
+    """
+    Consulta o banco de dados para determinar qual será o próximo ID
+    da tabela de pedidos. Retorna 1 se a tabela estiver vazia.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+        # A tabela sqlite_sequence guarda o último ID usado em tabelas com AUTOINCREMENT
+        cursor.execute("SELECT seq FROM sqlite_sequence WHERE name = 'pedidos'")
+        resultado = cursor.fetchone()
+        
+        if resultado:
+            return resultado[0] + 1
+        else:
+            # Se não houver sequência (tabela vazia), o próximo ID será 1
+            return 1
+            
+    except sqlite3.Error as e:
+        print(f"ERRO ao obter o próximo ID do pedido: {e}")
+        return "?" # Retorna um placeholder em caso de erro
+    finally:
+        if conn:
+            conn.close()

@@ -34,9 +34,17 @@ def tela_cliente():
         if produtos_agrupados[cat['id']]
     ]
 
-    # 4. Envia os dados para o template renderizar
-    return render_template('cliente.html', categorias=categorias_visiveis, produtos_agrupados=produtos_agrupados)
-
+    # 4. Busca o ID do próximo pedido a ser criado
+    proximo_pedido_id = gerenciador_db.obter_proximo_id_pedido()
+    
+    # 5. Envia todos os dados, incluindo o novo ID, para o template renderizar
+    return render_template(
+        'cliente.html', 
+        categorias=categorias_visiveis, 
+        produtos_agrupados=produtos_agrupados,
+        proximo_pedido_id=proximo_pedido_id
+    )
+    
 # --- NOVA ROTA DA COZINHA ---
 @app.route('/cozinha')
 def tela_cozinha():

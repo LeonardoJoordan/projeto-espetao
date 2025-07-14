@@ -299,14 +299,35 @@ def rota_cancelar_pedido(id_do_pedido):
 @app.route('/pedido/confirmar_pagamento/<int:pedido_id>', methods=['POST'])
 def rota_confirmar_pagamento(pedido_id):
     """
-    Rota que o JavaScript da cozinha chama para confirmar o pagamento de um pedido.
+    Rota inteligente que confirma o pagamento. Para pedidos de fluxo simples,
+    o pedido pula diretamente para o status de 'aguardando_retirada'.
     """
-    sucesso = gerenciador_db.confirmar_pagamento_pedido(pedido_id)
+    pedido = gerenciador_db.obter_pedido_por_id(pedido_id)
+    if not pedido:
+        return jsonify({"status": "erro", "mensagem": "Pedido não encontrado."}), 404
+
+    # Ação 1: O pagamento é sempre confirmado primeiro.
+    # Isso move o pedido para o estado 'aguardando_producao'.
+    sucesso_pagamento = gerenciador_db.confirmar_pagamento_pedido(pedido_id)
+
+    if not sucesso_pagamento:
+        return jsonify({"status": "erro", "mensagem": "Falha ao confirmar o pagamento."}), 500
+
+    # Ação 2: O Desvio Inteligente
+    if pedido['fluxo_simples'] == 1:
+        # Se for simples, usamos nossa nova função para pular para a retirada.
+        sucesso = gerenciador_db.pular_pedido_para_retirada(pedido_id)
+        mensagem_socket = f'Pedido simples {pedido_id} está pronto para retirada!'
+    else:
+        # Se for complexo, o trabalho aqui está feito. O pedido aguarda preparo.
+        sucesso = True
+        mensagem_socket = f'Pagamento do pedido {pedido_id} confirmado, aguardando preparo.'
 
     if sucesso:
-        return jsonify({"status": "sucesso", "mensagem": f"Pagamento do pedido {pedido_id} confirmado."})
+        socketio.emit('novo_pedido', {'msg': mensagem_socket})
+        return jsonify({"status": "sucesso"})
     else:
-        return jsonify({"status": "erro", "mensagem": "Não foi possível confirmar o pagamento."}), 500
+        return jsonify({"status": "erro", "mensagem": "Ação pós-pagamento falhou."}), 500
 
 @app.route('/api/pedidos_ativos')
 def api_pedidos_ativos():
@@ -419,6 +440,7 @@ def rota_reiniciar_item(pedido_id, produto_id):
         return jsonify({"status": "sucesso", "mensagem": "Item reiniciado."})
     else:
         return jsonify({"status": "erro", "mensagem": "Item não pôde ser reiniciado."}), 400
+
 
 @app.route('/')
 def index():

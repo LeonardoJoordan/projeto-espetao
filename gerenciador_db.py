@@ -1224,3 +1224,60 @@ def obter_proximo_id_pedido():
     finally:
         if conn:
             conn.close()
+
+def obter_pedido_por_id(id_do_pedido):
+    """
+    Busca um único pedido no banco de dados pelo seu ID.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        # Usamos a row_factory para que o resultado venha como um dicionário
+        conn.row_factory = sqlite3.Row 
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM pedidos WHERE id = ?", (id_do_pedido,))
+        
+        pedido = cursor.fetchone()
+        
+        # Retorna o pedido encontrado (ou None se não existir)
+        return dict(pedido) if pedido else None
+
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao obter o pedido por ID: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def pular_pedido_para_retirada(id_do_pedido):
+    """
+    Muda o status de um pedido de 'aguardando_producao' diretamente para
+    'aguardando_retirada', para ser usado em fluxos simples.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "UPDATE pedidos SET status = ? WHERE id = ? AND status = ?",
+            ('aguardando_retirada', id_do_pedido, 'aguardando_producao')
+        )
+
+        if cursor.rowcount == 0:
+            print(f"AVISO: Pedido #{id_do_pedido} não pôde ser pulado para retirada (status pode não ser 'aguardando_producao').")
+            return False
+
+        conn.commit()
+        print(f"SUCESSO: Pedido #{id_do_pedido} pulou para 'aguardando retirada'.")
+        return True
+
+    except sqlite3.Error as e:
+        print(f"ERRO ao pular pedido para retirada #{id_do_pedido}: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()

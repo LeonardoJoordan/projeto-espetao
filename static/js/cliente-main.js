@@ -445,6 +445,7 @@ if (btnNovoPedido) {
     btnNovoPedido.addEventListener('click', () => {
         if (telaInicial) telaInicial.classList.add('hidden');
         if (telaTeclado) telaTeclado.classList.remove('hidden');
+        if (mainContainer) mainContainer.classList.add('content-blurred');
     });
 }
 

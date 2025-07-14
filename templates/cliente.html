@@ -333,6 +333,14 @@
             border-radius: 10px;
             border: 2px solid var(--surface-dark);
         }
+        .keyboard-letter-key {
+            width: var(--key-width);
+            padding-left: 0;
+            padding-right: 0;
+            /* Garante que as teclas não encolham por conta própria, 
+               respeitando a largura calculada. */
+            flex-shrink: 0;
+        }
     </style>
 </head>
 <body class="text-white">
@@ -346,7 +354,7 @@
     </div>
     
     <div id="tela-teclado" class="screen hidden fixed inset-0 flex flex-col items-center justify-center bg-zinc-900 z-40 p-4">
-        <div class="w-full max-w-5xl flex-grow flex flex-col items-center border-4 border-zinc-800 rounded-3xl p-4 md:p-6">
+        <div class="w-full max-w-5xl flex flex-col items-center border-4 border-zinc-800 rounded-3xl p-4 md:p-6">
             <div class="my-6 text-center">
                 <p class="text-6xl font-bold text-amber-400">#{{ proximo_pedido_id }}</p>
             </div>

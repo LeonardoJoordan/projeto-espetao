@@ -421,34 +421,7 @@ const layoutTeclas = [
     ['ESPAÇO', 'Backspace']
 ];
 
-function renderizarTeclado() {
-    if (!tecladoContainer) return;
-    tecladoContainer.innerHTML = '';
-    layoutTeclas.forEach(linha => {
-        const linhaDiv = document.createElement('div');
-        linhaDiv.className = 'flex justify-center gap-2 md:gap-3';
-        linha.forEach(tecla => {
-            const teclaBtn = document.createElement('button');
-            teclaBtn.className = 'keyboard-key h-16 rounded-lg font-bold text-xl flex items-center justify-center';
-            if (tecla === 'Backspace') {
-                teclaBtn.innerHTML = '<i class="fas fa-backspace"></i>';
-                teclaBtn.classList.add('flex-grow', 'flex-grow-[2]', 'text-2xl', 'bg-red-700/80', 'hover:bg-red-600/80');
-            } else if (tecla === 'ESPAÇO') {
-                teclaBtn.textContent = 'ESPAÇO';
-                teclaBtn.classList.add('flex-grow', 'flex-grow-[6]');
-            } else {
-                teclaBtn.classList.add('w-20');
-                teclaBtn.textContent = tecla;
-                if (tecla === '´' || tecla === '~') {
-                    teclaBtn.classList.add('bg-blue-600/80', 'hover:bg-blue-500/80');
-                }
-            }
-            teclaBtn.dataset.key = tecla;
-            linhaDiv.appendChild(teclaBtn);
-        });
-        tecladoContainer.appendChild(linhaDiv);
-    });
-}
+
 
 function atualizarVisualAcento() {
     document.querySelectorAll('.keyboard-key').forEach(btn => {
@@ -696,3 +669,78 @@ document.addEventListener('DOMContentLoaded', () => {
         btnIniciar: !!btnIniciar
     });
 });
+
+// ==========================================================
+// 5. LÓGICA DE AJUSTE DE LAYOUT DO TECLADO
+// ==========================================================
+
+/**
+ * Calcula a largura ideal das teclas com base na fileira mais longa (10 teclas)
+ * e a aplica a todas as teclas de letra/acento usando uma variável CSS.
+ */
+function ajustarLarguraTeclas() {
+    if (!tecladoContainer || !tecladoContainer.isConnected) return;
+
+    const QTD_TECLAS_FILA_LONGA = 10;
+    const GAP_EM_PX = 8; // Corresponde a 'gap-2' no Tailwind. Mude se alterar o gap.
+
+    // Calcula a largura total disponível dentro do container do teclado
+    const larguraTotalContainer = tecladoContainer.clientWidth;
+
+    // Calcula o espaço total ocupado pelos vãos (gaps) entre as teclas
+    const espacoTotalGaps = (QTD_TECLAS_FILA_LONGA - 1) * GAP_EM_PX;
+
+    // A largura disponível para as teclas é o total menos os gaps
+    const larguraDisponivelParaTeclas = larguraTotalContainer - espacoTotalGaps;
+
+    // A largura de cada tecla é o espaço disponível dividido pelo número de teclas
+    const larguraCalculadaTecla = larguraDisponivelParaTeclas / QTD_TECLAS_FILA_LONGA;
+
+    // Aplica a largura calculada como uma variável CSS no próprio container do teclado
+    tecladoContainer.style.setProperty('--key-width', `${larguraCalculadaTecla}px`);
+}
+
+// Adiciona um listener para reajustar a largura das teclas caso o usuário redimensione a janela
+// (por exemplo, virar o tablet de retrato para paisagem)
+window.addEventListener('resize', ajustarLarguraTeclas);
+
+// Também chamamos a função após o teclado ser renderizado pela primeira vez.
+// Altere o final da função `renderizarTeclado` para incluir esta chamada:
+function renderizarTeclado() {
+    if (!tecladoContainer) return;
+    tecladoContainer.innerHTML = '';
+    layoutTeclas.forEach(linha => {
+        const linhaDiv = document.createElement('div');
+        linhaDiv.className = 'flex justify-center gap-2 md:gap-3';
+        linha.forEach(tecla => {
+            const teclaBtn = document.createElement('button');
+            teclaBtn.className = 'keyboard-key h-16 rounded-lg font-bold text-xl flex items-center justify-center';
+            if (tecla === 'Backspace') {
+                teclaBtn.innerHTML = '<i class="fas fa-backspace"></i>';
+                teclaBtn.classList.add('flex-grow', 'flex-grow-[2]', 'text-2xl', 'bg-red-700/80', 'hover:bg-red-600/80');
+            } else if (tecla === 'ESPAÇO') {
+                teclaBtn.textContent = 'ESPAÇO';
+                teclaBtn.classList.add('flex-grow', 'flex-grow-[6]');
+            } else {
+                teclaBtn.classList.add('keyboard-letter-key');
+                teclaBtn.textContent = tecla;
+                if (tecla === '´' || tecla === '~') {
+                    teclaBtn.classList.add('bg-blue-600/80', 'hover:bg-blue-500/80');
+                }
+            }
+            teclaBtn.dataset.key = tecla;
+            linhaDiv.appendChild(teclaBtn);
+        });
+        tecladoContainer.appendChild(linhaDiv);
+    });
+}
+
+// E no listener do botão "Novo Pedido" para garantir o ajuste quando o teclado aparece
+if (btnNovoPedido) {
+    btnNovoPedido.addEventListener('click', () => {
+        if (telaInicial) telaInicial.classList.add('hidden');
+        if (telaTeclado) telaTeclado.classList.remove('hidden');
+        // Adicione esta chamada aqui também
+        ajustarLarguraTeclas();
+    });
+}

@@ -35,14 +35,14 @@ def tela_cliente():
     ]
 
     # 4. Busca o ID do próximo pedido a ser criado
-    proximo_pedido_id = gerenciador_db.obter_proximo_id_pedido()
+    proxima_senha = gerenciador_db.obter_proxima_senha_diaria()
     
     # 5. Envia todos os dados, incluindo o novo ID, para o template renderizar
     return render_template(
         'cliente.html', 
         categorias=categorias_visiveis, 
         produtos_agrupados=produtos_agrupados,
-        proximo_pedido_id=proximo_pedido_id
+        proxima_senha=proxima_senha
     )
     
 # --- NOVA ROTA DA COZINHA ---
@@ -55,19 +55,25 @@ def tela_cozinha():
     pedidos_backlog = []      # Linha 1: Aguardando Pagamento e Aguardando Produção
     pedidos_em_producao = []  # Linha 2: Em Produção
 
-    # 3. Itera sobre a lista ordenada e distribui cada pedido para a sua respectiva "linha"
-    for pedido in todos_pedidos_ativos:
-        if pedido['status'] in ['aguardando_pagamento', 'aguardando_producao']:
-            pedidos_backlog.append(pedido)
-        elif pedido['status'] == 'em_producao':
-            pedidos_em_producao.append(pedido)
+    # 3. Chama a função "trabalhadora" para salvar o pedido no banco de dados
+    resultado_pedido = gerenciador_db.salvar_novo_pedido(dados_do_pedido)
 
-    # 4. Envia as duas listas separadas para o template da cozinha
-    return render_template(
-        'cozinha.html', 
-        pedidos_backlog=pedidos_backlog, 
-        pedidos_em_producao=pedidos_em_producao
-    )
+    # 4. Verifica se a operação foi bem-sucedida antes de responder
+    if resultado_pedido is None:
+        # Se deu erro, retorna uma resposta de erro para o frontend
+        return jsonify({
+            "status": "erro",
+            "mensagem": "Ocorreu um erro ao processar o pedido no servidor."
+        }), 500 # 500 é o código para "Erro Interno do Servidor"
+
+    socketio.emit('novo_pedido', {'msg': 'Um novo pedido chegou!'})
+
+    return jsonify({
+        "status": "sucesso",
+        "mensagem": "Pedido recebido, em preparação!",
+        "pedido_id": resultado_pedido['id'],
+        "senha": resultado_pedido['senha']
+    })
 
 # Em app.py
 

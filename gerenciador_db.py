@@ -550,7 +550,10 @@ def salvar_novo_pedido(dados_do_pedido):
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # --- NOVA LÓGICA DE VERIFICAÇÃO ---
+        # --- Calcular a senha do dia ---
+        proxima_senha = obter_proxima_senha_diaria()
+
+        # --- LÓGICA DE VERIFICAÇÃO DE FLUXO ---
         fluxo_e_simples = True # Começamos assumindo que o pedido é simples
         ids_dos_produtos = [item['id'] for item in dados_do_pedido['itens']]
         
@@ -600,14 +603,14 @@ def salvar_novo_pedido(dados_do_pedido):
             item_com_custo['custo_unitario'] = custo_a_registrar
             itens_enriquecidos.append(item_com_custo)
         
-        # --- Missão 1: Salvar o Pedido com os dados de custo já inclusos ---
+        # --- Salvar o Pedido com os dados de custo e senha ---
         itens_como_json = json.dumps(itens_enriquecidos)
         timestamp_atual = datetime.datetime.now().isoformat()
         valor_total = sum(item['preco'] * item['quantidade'] for item in dados_do_pedido['itens'])
 
         cursor.execute('''
-            INSERT INTO pedidos (nome_cliente, status, metodo_pagamento, valor_total, timestamp_criacao, itens_json, fluxo_simples)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO pedidos (nome_cliente, status, metodo_pagamento, valor_total, timestamp_criacao, itens_json, fluxo_simples, senha_diaria)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             dados_do_pedido['nome_cliente'],
             'aguardando_pagamento',
@@ -615,12 +618,13 @@ def salvar_novo_pedido(dados_do_pedido):
             valor_total,
             timestamp_atual,
             itens_como_json,
-            1 if fluxo_e_simples else 0 # Salva 1 se for simples, 0 se for complexo
+            1 if fluxo_e_simples else 0,
+            proxima_senha
         ))
 
         id_do_pedido_salvo = cursor.lastrowid
 
-        # --- Missão 2: Mover o estoque de 'atual' para 'reservado' ---
+        # --- Mover o estoque de 'atual' para 'reservado' ---
         for item in dados_do_pedido['itens']:
             cursor.execute('''
                 UPDATE produtos
@@ -635,8 +639,8 @@ def salvar_novo_pedido(dados_do_pedido):
 
         conn.commit()
 
-        print(f"SUCESSO: Pedido #{id_do_pedido_salvo} criado com CUSTO REGISTRADO e estoque RESERVADO.")
-        return id_do_pedido_salvo
+        print(f"SUCESSO: Pedido #{id_do_pedido_salvo} criado com SENHA DIÁRIA #{proxima_senha}, CUSTO REGISTRADO e estoque RESERVADO.")
+        return {'id': id_do_pedido_salvo, 'senha': proxima_senha}
 
     except sqlite3.Error as e:
         print(f"ERRO ao salvar o pedido: {e}")
@@ -1278,6 +1282,47 @@ def pular_pedido_para_retirada(id_do_pedido):
         if conn:
             conn.rollback()
         return False
+    finally:
+        if conn:
+            conn.close()
+
+def obter_proxima_senha_diaria():
+    """
+    Calcula a próxima senha diária com base no horário de trabalho que
+    começa às 5h da manhã.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        agora = datetime.datetime.now()
+        horario_corte = agora.replace(hour=5, minute=0, second=0, microsecond=0)
+
+        # Define a data de início da busca pela última senha
+        if agora < horario_corte:
+            # Regra 1 (Antes das 5h): Busca nas últimas 8 horas
+            data_inicio_busca = agora - datetime.timedelta(hours=8)
+        else:
+            # Regra 2 (Depois das 5h): Busca a partir das 5h de hoje
+            data_inicio_busca = horario_corte
+
+        # Busca a maior senha usada desde o início do ciclo de trabalho
+        cursor.execute(
+            "SELECT MAX(senha_diaria) FROM pedidos WHERE timestamp_criacao >= ?",
+            (data_inicio_busca.isoformat(),)
+        )
+        resultado = cursor.fetchone()
+
+        # Calcula a próxima senha
+        if resultado and resultado[0] is not None:
+            return resultado[0] + 1
+        else:
+            return 1 # Se não houver pedidos no ciclo, começa do 1
+
+    except sqlite3.Error as e:
+        print(f"ERRO ao obter a próxima senha diária: {e}")
+        return 1 # Retorna 1 como segurança em caso de erro
     finally:
         if conn:
             conn.close()

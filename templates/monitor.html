@@ -203,7 +203,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function criarCardHtml(pedido, tipo) {
         const classeStatus = tipo === 'pronto' ? 'pronto' : 'card-em-preparacao entrando';
         const nomeCliente = pedido.nome_cliente.split(' ')[0].toUpperCase(); // Pega só o primeiro nome
-        const numeroPedido = String(pedido.id).padStart(3, '0');
+        const numeroPedido = String(pedido.senha_diaria).padStart(3, '0');
         return `<div class="card-pedido ${classeStatus}" data-id="${pedido.id}">
                     <div class="nome-cliente">${nomeCliente}</div>
                     <div class="numero-pedido">#${numeroPedido}</div>

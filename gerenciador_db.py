@@ -993,7 +993,7 @@ def obter_dados_relatorio(data_inicio, data_fim):
                 valor_perdas += abs(pa['quantidade_comprada']) * custo_medio
         
         # --- DADOS PARA GRÁFICOS E TABELAS ---
-        vendas_por_pagamento = {'pix': 0, 'cartao': 0, 'dinheiro': 0}
+        vendas_por_pagamento = {'pix': 0, 'cartao_credito': 0, 'cartao_debito': 0, 'dinheiro': 0}
         itens_vendidos_agregado = {}
         historico_pedidos_tabela = []
 

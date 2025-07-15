@@ -631,14 +631,20 @@ if (modalConfirmacao) {
 
         // Confirmar e Enviar o Pedido para o Servidor
         if (target.id === 'btn-confirmar-pedido') {
+            // Desabilita o botão imediatamente para evitar cliques duplos
+            target.disabled = true;
+
             const metodoPagamento = document.querySelector('input[name="metodo_pagamento"]:checked').value;
             
             try {
                 await salvarPedido(metodoPagamento);
-                // A função salvarPedido já faz o location.reload() em caso de sucesso
+                // Se o pedido for salvo com sucesso, a página será recarregada
+                // pela função salvarPedido, então não precisamos reativar o botão.
             } catch (error) {
-                // O erro já é tratado dentro da função salvarPedido
+                // Se ocorrer um erro, a página não recarrega.
+                // Reativamos o botão para que o usuário possa tentar novamente.
                 console.error("Erro ao finalizar pedido:", error);
+                target.disabled = false;
             }
         }
     });

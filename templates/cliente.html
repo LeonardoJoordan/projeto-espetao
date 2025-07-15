@@ -473,12 +473,15 @@
     
             <section class="p-6 border-t border-zinc-700">
                 <h3 class="text-lg font-semibold mb-3">Forma de Pagamento</h3>
-                <div id="opcoes-pagamento" class="grid grid-cols-3 gap-3">
+                <div id="opcoes-pagamento" class="grid grid-cols-4 gap-3">
                      <label class="ponto-option selected" data-valor="pix">
                         <input type="radio" name="metodo_pagamento" value="pix" class="hidden" checked> PIX
                     </label>
-                    <label class="ponto-option" data-valor="cartao">
-                        <input type="radio" name="metodo_pagamento" value="cartao" class="hidden"> Cartão
+                    <label class="ponto-option" data-valor="cartao_credito">
+                        <input type="radio" name="metodo_pagamento" value="cartao_credito" class="hidden"> Crédito
+                    </label>
+                    <label class="ponto-option" data-valor="cartao_debito">
+                        <input type="radio" name="metodo_pagamento" value="cartao_debito" class="hidden"> Débito
                     </label>
                     <label class="ponto-option" data-valor="dinheiro">
                         <input type="radio" name="metodo_pagamento" value="dinheiro" class="hidden"> Dinheiro

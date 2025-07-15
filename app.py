@@ -52,28 +52,22 @@ def tela_cozinha():
     todos_pedidos_ativos = gerenciador_db.obter_pedidos_ativos()
 
     # 2. Prepara as duas listas vazias para as "linhas" da cozinha
-    pedidos_backlog = []      # Linha 1: Aguardando Pagamento e Aguardando Produção
-    pedidos_em_producao = []  # Linha 2: Em Produção
+    pedidos_backlog = []
+    pedidos_em_producao = []
 
-    # 3. Chama a função "trabalhadora" para salvar o pedido no banco de dados
-    resultado_pedido = gerenciador_db.salvar_novo_pedido(dados_do_pedido)
+    # 3. Itera sobre a lista ordenada e distribui cada pedido para a sua respectiva "linha"
+    for pedido in todos_pedidos_ativos:
+        if pedido['status'] in ['aguardando_pagamento', 'aguardando_producao']:
+            pedidos_backlog.append(pedido)
+        elif pedido['status'] == 'em_producao':
+            pedidos_em_producao.append(pedido)
 
-    # 4. Verifica se a operação foi bem-sucedida antes de responder
-    if resultado_pedido is None:
-        # Se deu erro, retorna uma resposta de erro para o frontend
-        return jsonify({
-            "status": "erro",
-            "mensagem": "Ocorreu um erro ao processar o pedido no servidor."
-        }), 500 # 500 é o código para "Erro Interno do Servidor"
-
-    socketio.emit('novo_pedido', {'msg': 'Um novo pedido chegou!'})
-
-    return jsonify({
-        "status": "sucesso",
-        "mensagem": "Pedido recebido, em preparação!",
-        "pedido_id": resultado_pedido['id'],
-        "senha": resultado_pedido['senha']
-    })
+    # 4. Envia as duas listas separadas para o template da cozinha
+    return render_template(
+        'cozinha.html', 
+        pedidos_backlog=pedidos_backlog, 
+        pedidos_em_producao=pedidos_em_producao
+    )
 
 # Em app.py
 
@@ -261,7 +255,7 @@ def salvar_pedido():
     return jsonify({
         "status": "sucesso",
         "mensagem": "Pedido recebido, em preparação!",
-        "pedido_id": id_do_pedido_salvo,
+        "senha_diaria": id_do_pedido_salvo['senha']
         
     })
 

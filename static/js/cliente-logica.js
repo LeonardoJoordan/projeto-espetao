@@ -106,7 +106,7 @@ export async function salvarPedido(metodoPagamento) {
         }
 
         const result = await response.json();
-        alert(`Pedido #${result.pedido_id} recebido com sucesso!`);
+        alert(`Pedido #${result.senha_diaria} recebido com sucesso!`);
         
         // Após salvar com sucesso, recarrega a página para um novo pedido
         location.reload();

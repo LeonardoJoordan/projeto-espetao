@@ -38,6 +38,11 @@ def inicializar_banco():
         ''')
         print("Tabela 'produtos' verificada/criada.")
 
+        # Garante que a categoria 'Espetinhos' sempre exista
+        cursor.execute('''
+            INSERT OR IGNORE INTO categorias (id, nome, ordem) VALUES (1, 'Espetinhos', 0)
+        ''')
+
         # Tabela de Tempos de Preparo (NOVA)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS tempos_preparo (
@@ -81,6 +86,16 @@ def inicializar_banco():
             )
         ''')
         print("Tabela 'pedidos' verificada/criada.")
+
+        # Tabela de Acompanhamentos (NOVA)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS acompanhamentos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT NOT NULL UNIQUE,
+                is_visivel INTEGER NOT NULL DEFAULT 1
+            )
+        ''')
+        print("Tabela 'acompanhamentos' verificada/criada.")
 
 
         conn.commit()

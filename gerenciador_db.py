@@ -1326,3 +1326,100 @@ def obter_proxima_senha_diaria():
     finally:
         if conn:
             conn.close()
+
+# === NOVAS FUNÇÕES PARA GERENCIAR ACOMPANHAMENTOS ===
+
+def adicionar_acompanhamento(nome):
+    """Adiciona um novo acompanhamento à tabela."""
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO acompanhamentos (nome) VALUES (?)", (nome,))
+        conn.commit()
+        print(f"Acompanhamento '{nome}' adicionado com sucesso.")
+        return True
+    except sqlite3.IntegrityError:
+        print(f"Erro: O acompanhamento '{nome}' já existe.")
+        return False
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao adicionar o acompanhamento: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def obter_todos_acompanhamentos():
+    """Busca todos os acompanhamentos (visíveis e ocultos) para a tela de gestão."""
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, nome, is_visivel FROM acompanhamentos ORDER BY nome")
+
+        acompanhamentos_tuplas = cursor.fetchall()
+        lista_final = []
+        for tupla in acompanhamentos_tuplas:
+            lista_final.append({'id': tupla[0], 'nome': tupla[1], 'is_visivel': tupla[2]})
+
+        return lista_final
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao obter os acompanhamentos: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+def obter_acompanhamentos_visiveis():
+    """Busca apenas os acompanhamentos visíveis para a tela do cliente."""
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, nome FROM acompanhamentos WHERE is_visivel = 1 ORDER BY nome")
+
+        acompanhamentos_tuplas = cursor.fetchall()
+        lista_final = []
+        for tupla in acompanhamentos_tuplas:
+            lista_final.append({'id': tupla[0], 'nome': tupla[1]})
+
+        return lista_final
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao obter os acompanhamentos visíveis: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+def excluir_acompanhamento(id_acompanhamento):
+    """Exclui um acompanhamento da tabela."""
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM acompanhamentos WHERE id = ?", (id_acompanhamento,))
+        conn.commit()
+        return True
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao excluir o acompanhamento: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def toggle_visibilidade_acompanhamento(id_acompanhamento):
+    """Alterna o status de visibilidade de um acompanhamento."""
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+        # Esta sintaxe SQL alterna o valor de is_visivel entre 0 e 1 de forma eficiente
+        cursor.execute("UPDATE acompanhamentos SET is_visivel = CASE WHEN is_visivel = 1 THEN 0 ELSE 1 END WHERE id = ?", (id_acompanhamento,))
+        conn.commit()
+        return True
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao alternar a visibilidade do acompanhamento: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()

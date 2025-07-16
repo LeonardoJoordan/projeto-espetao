@@ -173,18 +173,30 @@ function abrirPopupSimples(productCard) {
     atualizarInterfaceSimples();
 }
 
-function abrirPopupCustomizacao(productCard) {
+async function abrirPopupCustomizacao(productCard) { // Adicionamos 'async' aqui
     if (!modalCustomizacao) return;
 
-    // Remove o event listener anterior se existir
+    // Remove o event listener anterior para segurança
     if (eventoPopupAtivo) {
         modalCustomizacao.removeEventListener('click', eventoPopupAtivo);
+    }
+
+    // PASSO 1: Buscar os acompanhamentos da API ANTES de montar o popup.
+    let acompanhamentosDisponiveis = [];
+    try {
+        const response = await fetch('/api/acompanhamentos_visiveis');
+        if (!response.ok) throw new Error('Falha na rede');
+        acompanhamentosDisponiveis = await response.json();
+    } catch (error) {
+        console.error("Erro ao buscar acompanhamentos:", error);
+        // Podemos alertar o usuário ou apenas não mostrar os extras.
     }
 
     const idProduto = productCard.dataset.id;
     const nomeProduto = productCard.dataset.nome;
     const precoProduto = parseFloat(productCard.dataset.preco);
-    
+
+    // A estrutura principal do modal permanece a mesma.
     modalCustomizacao.innerHTML = `
         <div class="popup-container popup-enter bg-zinc-800 rounded-3xl shadow-2xl w-full max-w-4xl border border-zinc-600 flex flex-col relative z-10 max-h-[90vh]">
             <header class="header-bg p-8 border-b border-zinc-600 relative">
@@ -230,8 +242,18 @@ function abrirPopupCustomizacao(productCard) {
     const containerLinhas = document.getElementById('linhas-customizacao-popup');
     let quantidade = 1;
 
-    function criarLinhaHtml(numeroItem) {
+    // PASSO 2: A função de criar a linha agora RECEBE a lista de acompanhamentos.
+    function criarLinhaHtml(numeroItem, acompanhamentos) {
         const uniqueIdPrefix = `item-${numeroItem}-`;
+
+        // Gera os checkboxes dos acompanhamentos dinamicamente
+        const acompanhamentosHtml = acompanhamentos.map(extra => `
+            <label class="extra-item" for="${uniqueIdPrefix}${extra.id}">
+                <input type="checkbox" id="${uniqueIdPrefix}${extra.id}" value="${extra.nome}" class="hidden">
+                ${extra.nome}
+            </label>
+        `).join('');
+
         return `
             <div class="espetinho-card p-6 rounded-2xl item-customizacao">
                 <h3 class="text-xl font-bold text-orange-400 mb-6">Espetinho #${numeroItem}</h3>
@@ -257,18 +279,7 @@ function abrirPopupCustomizacao(productCard) {
                         <h4 class="text-lg font-semibold">Complete seu espetinho</h4>
                         <p class="text-sm text-zinc-400 mb-4">Acompanhamentos inclusos no valor.</p>
                         <div class="extras-grid grid grid-cols-2 gap-3">
-                            <label class="extra-item" for="${uniqueIdPrefix}farofa">
-                                <input type="checkbox" id="${uniqueIdPrefix}farofa" class="hidden">
-                                Farofa
-                            </label>
-                            <label class="extra-item" for="${uniqueIdPrefix}limao">
-                                <input type="checkbox" id="${uniqueIdPrefix}limao" class="hidden">
-                                Limão
-                            </label>
-                            <label class="extra-item" for="${uniqueIdPrefix}tempero">
-                                <input type="checkbox" id="${uniqueIdPrefix}tempero" class="hidden">
-                                Tempero Especial
-                            </label>
+                            ${acompanhamentosHtml}
                         </div>
                     </div>
                 </div>
@@ -276,31 +287,33 @@ function abrirPopupCustomizacao(productCard) {
         `;
     }
 
+    // A função de atualizar a UI agora passa a lista de acompanhamentos para a função de criar a linha.
     function atualizarInterfacePopup() {
         quantidadeDisplay.textContent = quantidade;
         containerLinhas.innerHTML = '';
         for (let i = 1; i <= quantidade; i++) {
-            containerLinhas.innerHTML += criarLinhaHtml(i);
+            containerLinhas.innerHTML += criarLinhaHtml(i, acompanhamentosDisponiveis);
         }
         const total = quantidade * precoProduto;
         precoTotalDisplay.textContent = `R$ ${total.toFixed(2).replace('.', ',')}`;
     }
 
+    // A lógica de eventos permanece a mesma...
     eventoPopupAtivo = (event) => {
         const target = event.target;
-        
+
         if (target.closest('#btn-aumentar-popup')) {
             const estoqueDisponivel = parseInt(productCard.dataset.estoque);
             if (quantidade < estoqueDisponivel) {
                 quantidade++;
-                containerLinhas.insertAdjacentHTML('beforeend', criarLinhaHtml(quantidade));
+                containerLinhas.insertAdjacentHTML('beforeend', criarLinhaHtml(quantidade, acompanhamentosDisponiveis));
                 quantidadeDisplay.textContent = quantidade;
                 precoTotalDisplay.textContent = `R$ ${(quantidade * precoProduto).toFixed(2).replace('.', ',')}`;
             } else {
                 alert(`Desculpe, temos apenas ${estoqueDisponivel} espetinhos deste tipo em estoque.`);
             }
         }
-        
+
         if (target.closest('#btn-diminuir-popup')) {
             if (quantidade > 1) {
                 quantidade--;
@@ -311,7 +324,7 @@ function abrirPopupCustomizacao(productCard) {
                 precoTotalDisplay.textContent = `R$ ${(quantidade * precoProduto).toFixed(2).replace('.', ',')}`;
             }
         }
-        
+
         const pontoOption = target.closest('.ponto-option');
         if (pontoOption) {
             const grupo = pontoOption.closest('.ponto-options');
@@ -319,7 +332,8 @@ function abrirPopupCustomizacao(productCard) {
             pontoOption.classList.add('selected');
             pontoOption.querySelector('input').checked = true;
         }
-        
+
+        // A lógica de selecionar o extra já era dinâmica, então não precisa mudar!
         const extraItem = target.closest('.extra-item');
         if (extraItem) {
             event.preventDefault();
@@ -327,31 +341,33 @@ function abrirPopupCustomizacao(productCard) {
             input.checked = !input.checked;
             extraItem.classList.toggle('selected', input.checked);
         }
-        
+
         if (target.closest('#btn-cancelar-item-popup')) {
             modalCustomizacao.classList.add('hidden');
             modalCustomizacao.innerHTML = '';
         }
-        
+
         if (target.closest('#btn-adicionar-pedido-popup')) {
             const todosOsItensCustomizados = document.querySelectorAll('.item-customizacao');
 
             todosOsItensCustomizados.forEach((itemNode) => {
                 const ponto = itemNode.querySelector('input[name$="ponto"]:checked').value;
-                const extras = Array.from(itemNode.querySelectorAll('input[type="checkbox"]:checked'))
-                                .map(cb => cb.closest('.extra-item').textContent.trim());
-                
-                const customizacaoDoItem = { ponto: ponto, extras: extras };
+
+                // A lógica para pegar os extras já era genérica e continua funcionando!
+                const acompanhamentos = Array.from(itemNode.querySelectorAll('.extras-grid input[type="checkbox"]:checked'))
+                                .map(cb => cb.value);
+
+                const customizacaoDoItem = { ponto: ponto, acompanhamentos: acompanhamentos };
 
                 const novoItem = {
                     id: idProduto,
                     nome: nomeProduto,
                     preco: precoProduto,
-                    quantidade: 1,
+                    quantidade: 1, // Cada item customizado é individual
                     customizacao: customizacaoDoItem,
                     requer_preparo: parseInt(productCard.dataset.requerPreparo)
                 };
-                
+
                 adicionarItemAoPedido(novoItem);
             });
 
@@ -377,10 +393,15 @@ function abrirPopupConfirmacao() {
 
     listaContainer.innerHTML = pedidoAtual.map((item, index) => {
         let detalhesItem = '';
-        if (item.customizacao) { 
+        if (item.customizacao) {
             const mapaPonto = { 'mal': 'Mal Passado', 'ponto': 'Ao Ponto', 'bem': 'Bem Passado' };
             const pontoTexto = mapaPonto[item.customizacao.ponto] || item.customizacao.ponto;
-            let extrasTexto = item.customizacao.extras?.length > 0 ? `com ${item.customizacao.extras.join(', ')}` : 'sem extras';
+            
+            // CORREÇÃO APLICADA AQUI: lendo 'acompanhamentos' em vez de 'extras'.
+            const extrasTexto = item.customizacao.acompanhamentos && item.customizacao.acompanhamentos.length > 0 
+                ? `com ${item.customizacao.acompanhamentos.join(', ')}` 
+                : 'sem extras';
+
             detalhesItem = `<div class="text-base font-semibold text-white">${item.nome}</div><div class="text-sm text-zinc-400 pl-4">↳ ${pontoTexto}, ${extrasTexto}</div>`;
         } else {
             detalhesItem = `<div class="text-base font-semibold text-white">${item.quantidade}x ${item.nome}</div>`;

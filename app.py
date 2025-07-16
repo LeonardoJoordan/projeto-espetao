@@ -441,6 +441,42 @@ def rota_reiniciar_item(pedido_id, produto_id):
     else:
         return jsonify({"status": "erro", "mensagem": "Item não pôde ser reiniciado."}), 400
 
+# === NOVAS ROTAS PARA GERENCIAR ACOMPANHAMENTOS ===
+
+@app.route('/adicionar_acompanhamento', methods=['POST'])
+def rota_adicionar_acompanhamento():
+    """ Rota para adicionar um novo acompanhamento via formulário. """
+    nome_acompanhamento = request.form.get('nome_acompanhamento')
+    if nome_acompanhamento:
+        gerenciador_db.adicionar_acompanhamento(nome_acompanhamento)
+    return redirect(url_for('tela_produtos'))
+
+@app.route('/excluir_acompanhamento/<int:id_acompanhamento>')
+def rota_excluir_acompanhamento(id_acompanhamento):
+    """ Rota para excluir um acompanhamento. """
+    gerenciador_db.excluir_acompanhamento(id_acompanhamento)
+    return redirect(url_for('tela_produtos'))
+
+@app.route('/toggle_acompanhamento/<int:id_acompanhamento>', methods=['POST'])
+def rota_toggle_acompanhamento(id_acompanhamento):
+    """ Rota para alternar a visibilidade de um acompanhamento. """
+    sucesso = gerenciador_db.toggle_visibilidade_acompanhamento(id_acompanhamento)
+    if sucesso:
+        return jsonify({'status': 'sucesso'})
+    else:
+        return jsonify({'status': 'erro'}), 500
+
+@app.route('/api/acompanhamentos_visiveis')
+def api_get_acompanhamentos_visiveis():
+    """ API que retorna apenas os acompanhamentos visíveis para o cliente. """
+    acompanhamentos_visiveis = gerenciador_db.obter_acompanhamentos_visiveis()
+    return jsonify(acompanhamentos_visiveis)
+
+@app.route('/api/acompanhamentos')
+def api_get_todos_acompanhamentos():
+    """ API que retorna a lista completa de acompanhamentos para a gestão. """
+    todos_acompanhamentos = gerenciador_db.obter_todos_acompanhamentos()
+    return jsonify(todos_acompanhamentos)
 
 @app.route('/')
 def index():

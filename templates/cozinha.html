@@ -192,15 +192,21 @@ document.addEventListener('DOMContentLoaded', function() {
             // Nova lógica para exibir os detalhes da customização
             if (item.customizacao) {
                 
-                const acompanhamentosTexto = item.customizacao.acompanhamentos && item.customizacao.acompanhamentos.length > 0
-                    ? item.customizacao.acompanhamentos.join('<br> Com ')
-                    : 'sem acompanhamentos';
-
-                itemHtml += `
-                    <div class="text-sm pl-6 opacity-90 mt-1 font-semibold text-white/90">
-                    Com ${acompanhamentosTexto}
-                    </div>
-                `;
+                if (item.customizacao.acompanhamentos && item.customizacao.acompanhamentos.length > 0) {
+                    const acompanhamentosTexto = item.customizacao.acompanhamentos.join('<br>Com ');
+                    
+                    itemHtml += `
+                        <div class="text-sm pl-6 opacity-90 mt-1 font-semibold text-white/90">
+                            Com ${acompanhamentosTexto}
+                        </div>
+                    `;
+                } else {
+                    itemHtml += `
+                        <div class="text-sm pl-6 opacity-90 mt-1 font-semibold text-white/90">
+                            Sem acompanhamentos
+                        </div>
+                    `;
+                }
             }
 
                     // --- NOVO: Adiciona o HTML do Timer apenas se o pedido estiver 'em_producao' ---

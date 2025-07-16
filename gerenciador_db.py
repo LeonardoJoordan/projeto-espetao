@@ -1122,25 +1122,37 @@ def obter_tempos_por_produto_id(produto_id):
 def salvar_tempos_preparo(produto_id, tempos_data):
     """
     Salva ou atualiza os tempos de preparo para um produto.
-    Usa a lógica 'UPSERT' (INSERT OR REPLACE).
+    Usa a lógica 'UPSERT' (INSERT OR REPLACE) e itera sobre
+    qualquer dicionário de tempos recebido.
     """
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
-        for ponto, minutos in tempos_data.items():
-            if minutos is not None:
-                tempo_em_segundos = int(minutos) * 60
-                # INSERT OR REPLACE é uma forma eficiente de fazer UPSERT no SQLite.
-                # Se a combinação de produto_id e ponto já existir, ele atualiza a linha.
-                # Se não existir, ele insere uma nova.
-                cursor.execute('''
-                    INSERT OR REPLACE INTO tempos_preparo (produto_id, ponto, tempo_em_segundos)
-                    VALUES (?, ?, ?)
-                ''', (produto_id, ponto, tempo_em_segundos))
+        for ponto, minutos_str in tempos_data.items():
+            # Verifica se o valor de minutos não é nulo ou uma string vazia
+            if minutos_str is not None and str(minutos_str).strip() != '':
+                minutos = float(minutos_str)
+                tempo_em_segundos = int(minutos * 60)
+                
+                # Se o tempo for zero ou negativo, remove o registro do banco
+                if tempo_em_segundos <= 0:
+                    cursor.execute(
+                        "DELETE FROM tempos_preparo WHERE produto_id = ? AND ponto = ?",
+                        (produto_id, ponto)
+                    )
+                else:
+                    # Senão, insere ou atualiza o tempo
+                    cursor.execute('''
+                        INSERT OR REPLACE INTO tempos_preparo (produto_id, ponto, tempo_em_segundos)
+                        VALUES (?, ?, ?)
+                    ''', (produto_id, ponto, tempo_em_segundos))
         conn.commit()
         return True
+    except (ValueError, TypeError) as e:
+        print(f"Erro de conversão de tipo ao salvar tempos para o produto {produto_id}: {e}")
+        return False
     except sqlite3.Error as e:
-        print(f"Erro ao salvar tempos para o produto {produto_id}: {e}")
+        print(f"Erro de banco de dados ao salvar tempos para o produto {produto_id}: {e}")
         return False
     finally:
         if conn:

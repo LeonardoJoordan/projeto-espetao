@@ -31,7 +31,7 @@ def inicializar_banco():
                 preco_venda REAL NOT NULL,
                 estoque_atual INTEGER NOT NULL,
                 estoque_reservado INTEGER NOT NULL DEFAULT 0,
-                custo_total_do_estoque REAL NOT NULL,
+                custo_medio REAL NOT NULL DEFAULT 0,
                 categoria_id INTEGER,
                 ordem INTEGER DEFAULT 0,
                 requer_preparo INTEGER NOT NULL DEFAULT 0,

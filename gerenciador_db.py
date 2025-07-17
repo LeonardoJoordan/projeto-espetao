@@ -114,24 +114,23 @@ def criar_novo_pedido(nome_cliente, itens_pedido, metodo_pagamento):
 
 def adicionar_novo_produto(nome, descricao, foto_url, preco_venda, estoque_inicial, custo_inicial, categoria_id, requer_preparo):
     """
-    Adiciona um novo produto na tabela 'produtos'.
-    Calcula o custo total inicial do estoque.
+    Adiciona um novo produto na tabela 'produtos', salvando seu custo médio inicial.
     """
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # Calcula o custo total do estoque inicial
-        custo_total_estoque = custo_inicial * estoque_inicial
+        # O custo_inicial de compra é o primeiro custo_medio do produto.
+        custo_medio_inicial = custo_inicial
 
-        # Comando SQL para inserir um novo produto
+        # Comando SQL atualizado para usar a coluna `custo_medio`
         cursor.execute('''
-            INSERT INTO produtos (nome, descricao, foto_url, preco_venda, estoque_atual, custo_total_do_estoque, categoria_id, requer_preparo)
+            INSERT INTO produtos (nome, descricao, foto_url, preco_venda, estoque_atual, custo_medio, categoria_id, requer_preparo)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (nome, descricao, foto_url, preco_venda, estoque_inicial, custo_total_estoque, categoria_id, requer_preparo))
+        ''', (nome, descricao, foto_url, preco_venda, estoque_inicial, custo_medio_inicial, categoria_id, requer_preparo))
 
         conn.commit()
-        print(f"Produto '{nome}' adicionado com  (Requer preparo: {requer_preparo}).")
+        print(f"Produto '{nome}' adicionado com custo médio de {custo_medio_inicial:.2f} (Requer preparo: {requer_preparo}).")
         return True
 
     except sqlite3.IntegrityError:
@@ -146,17 +145,16 @@ def adicionar_novo_produto(nome, descricao, foto_url, preco_venda, estoque_inici
 
 def obter_todos_produtos():
     """
-    Busca todos os produtos, juntando com o nome da categoria,
-    e calcula o custo médio e o lucro para cada um, ordenados pela 'ordem' do produto.
-    Também busca o último preço de compra registrado.
+    Busca todos os produtos com estoque, lendo o custo médio diretamente do banco
+    e calculando o lucro.
     """
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # Adicionamos ORDER BY p.ordem
+        # A query agora busca p.custo_medio em vez de p.custo_total_do_estoque
         cursor.execute('''
-            SELECT p.id, p.nome, p.descricao, p.foto_url, p.preco_venda, p.estoque_atual, p.custo_total_do_estoque, c.nome as categoria_nome, p.categoria_id, p.requer_preparo
+            SELECT p.id, p.nome, p.descricao, p.foto_url, p.preco_venda, p.estoque_atual, p.custo_medio, c.nome as categoria_nome, p.categoria_id, p.requer_preparo
             FROM produtos p
             LEFT JOIN categorias c ON p.categoria_id = c.id
             WHERE p.estoque_atual > 0
@@ -166,40 +164,30 @@ def obter_todos_produtos():
         produtos_tuplas = cursor.fetchall()
         produtos_lista = []
         for tupla in produtos_tuplas:
-            id_produto, nome, descricao, foto_url, preco_venda, estoque, custo_total, categoria, categoria_id, requer_preparo = tupla
+            # Desempacota os valores, incluindo o novo custo_medio
+            id_produto, nome, descricao, foto_url, preco_venda, estoque, custo_medio, categoria, categoria_id, requer_preparo = tupla
             
-            if estoque > 0:
-                custo_medio = custo_total / estoque
-                lucro = preco_venda - custo_medio
-            else:
-                custo_medio = 0
-                lucro = preco_venda 
+            # O lucro é simplesmente a diferença entre o preço de venda e o custo médio já armazenado
+            lucro = preco_venda - custo_medio
 
-            # Busca o último preço de compra registrado
+            # A lógica para buscar o último preço de compra para o formulário continua útil
             cursor.execute('''
                 SELECT custo_unitario_compra 
                 FROM entradas_de_estoque 
-                WHERE id_produto = ? 
+                WHERE id_produto = ? AND quantidade_comprada > 0
                 ORDER BY data_entrada DESC 
                 LIMIT 1
             ''', (id_produto,))
             
             ultimo_preco_compra_resultado = cursor.fetchone()
+            # Se não houver histórico de compra, o último preço é o custo médio atual.
             ultimo_preco_compra = ultimo_preco_compra_resultado[0] if ultimo_preco_compra_resultado else custo_medio
 
             produtos_lista.append({
-                'id': id_produto,
-                'nome': nome,
-                'descricao': descricao,
-                'foto_url': foto_url,
-                'preco_venda': preco_venda,
-                'estoque': estoque,
-                'custo_medio': custo_medio,
-                'lucro': lucro,
-                'categoria': categoria,
-                'categoria_id': categoria_id,
-                'ultimo_preco_compra': ultimo_preco_compra,
-                'requer_preparo': requer_preparo
+                'id': id_produto, 'nome': nome, 'descricao': descricao, 'foto_url': foto_url,
+                'preco_venda': preco_venda, 'estoque': estoque, 'custo_medio': custo_medio,
+                'lucro': lucro, 'categoria': categoria, 'categoria_id': categoria_id,
+                'ultimo_preco_compra': ultimo_preco_compra, 'requer_preparo': requer_preparo
             })
         
         return produtos_lista
@@ -213,15 +201,16 @@ def obter_todos_produtos():
 
 def obter_todos_produtos_para_gestao():
     """
-    Busca TODOS os produtos para a tela de gestão, incluindo os sem estoque.
+    Busca TODOS os produtos para a tela de gestão, lendo o custo médio diretamente
+    do banco e calculando o lucro.
     """
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # A consulta é idêntica à original, mas sem o filtro "WHERE"
+        # Query atualizada para buscar p.custo_medio
         cursor.execute('''
-            SELECT p.id, p.nome, p.descricao, p.foto_url, p.preco_venda, p.estoque_atual, p.custo_total_do_estoque, c.nome as categoria_nome, p.categoria_id, p.requer_preparo
+            SELECT p.id, p.nome, p.descricao, p.foto_url, p.preco_venda, p.estoque_atual, p.custo_medio, c.nome as categoria_nome, p.categoria_id, p.requer_preparo
             FROM produtos p
             LEFT JOIN categorias c ON p.categoria_id = c.id
             ORDER BY c.ordem, p.ordem, p.nome 
@@ -230,19 +219,17 @@ def obter_todos_produtos_para_gestao():
         produtos_tuplas = cursor.fetchall()
         produtos_lista = []
         for tupla in produtos_tuplas:
-            id_produto, nome, descricao, foto_url, preco_venda, estoque, custo_total, categoria, categoria_id, requer_preparo = tupla
+            # Desempacota os valores, incluindo o novo custo_medio
+            id_produto, nome, descricao, foto_url, preco_venda, estoque, custo_medio, categoria, categoria_id, requer_preparo = tupla
             
-            if estoque > 0:
-                custo_medio = custo_total / estoque
-                lucro = preco_venda - custo_medio
-            else:
-                custo_medio = 0
-                lucro = preco_venda 
+            # Cálculo de lucro simplificado
+            lucro = preco_venda - custo_medio
 
+            # Lógica para buscar o último preço de compra para preencher o formulário
             cursor.execute('''
                 SELECT custo_unitario_compra 
                 FROM entradas_de_estoque 
-                WHERE id_produto = ? 
+                WHERE id_produto = ? AND quantidade_comprada > 0
                 ORDER BY data_entrada DESC 
                 LIMIT 1
             ''', (id_produto,))
@@ -251,18 +238,10 @@ def obter_todos_produtos_para_gestao():
             ultimo_preco_compra = ultimo_preco_compra_resultado[0] if ultimo_preco_compra_resultado else custo_medio
 
             produtos_lista.append({
-                'id': id_produto,
-                'nome': nome,
-                'descricao': descricao,
-                'foto_url': foto_url,
-                'preco_venda': preco_venda,
-                'estoque': estoque,
-                'custo_medio': custo_medio,
-                'lucro': lucro,
-                'categoria': categoria,
-                'categoria_id': categoria_id,
-                'ultimo_preco_compra': ultimo_preco_compra,
-                'requer_preparo': requer_preparo
+                'id': id_produto, 'nome': nome, 'descricao': descricao, 'foto_url': foto_url,
+                'preco_venda': preco_venda, 'estoque': estoque, 'custo_medio': custo_medio,
+                'lucro': lucro, 'categoria': categoria, 'categoria_id': categoria_id,
+                'ultimo_preco_compra': ultimo_preco_compra, 'requer_preparo': requer_preparo
             })
         
         return produtos_lista
@@ -374,61 +353,62 @@ def excluir_produto(id_produto):
 
 def adicionar_estoque(id_produto, quantidade_adicionada, custo_unitario_movimentacao):
     """
-    Adiciona ou remove estoque, tratando os casos de Compra, Perda e Correção,
-    e registra a entrada no histórico.
+    Adiciona ou remove estoque, recalculando o custo médio ponderado do produto
+    e registrando a entrada no histórico.
     """
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # PASSO 1: Ler o estado atual do produto
-        cursor.execute("SELECT estoque_atual, custo_total_do_estoque FROM produtos WHERE id = ?", (id_produto,))
+        # PASSO 1: Ler o estado atual do produto (estoque e custo médio)
+        cursor.execute("SELECT estoque_atual, custo_medio FROM produtos WHERE id = ?", (id_produto,))
         resultado = cursor.fetchone()
-
         if not resultado:
             print(f"Erro: Produto com ID {id_produto} não encontrado.")
             return False
-
-        estoque_atual, custo_total_atual = resultado
-        novo_custo_total = custo_total_atual # Valor padrão
-
-        # PASSO 2: A nova árvore de decisão de três vias
-        if quantidade_adicionada > 0:
-            # CASO 1: COMPRA (Quantidade positiva)
-            print("INFO: Detectada operação de COMPRA.")
-            custo_desta_compra = quantidade_adicionada * custo_unitario_movimentacao
-            novo_custo_total = custo_total_atual + custo_desta_compra
         
-        elif quantidade_adicionada < 0 and custo_unitario_movimentacao > 0:
-            # CASO 2: CORREÇÃO DE ERRO (Qtd negativa, Custo positivo)
-            print("INFO: Detectada operação de CORREÇÃO DE ERRO.")
-            custo_a_reverter = abs(quantidade_adicionada) * custo_unitario_movimentacao
-            novo_custo_total = custo_total_atual - custo_a_reverter
-            
-        elif quantidade_adicionada < 0 and custo_unitario_movimentacao == 0:
-            # CASO 3: PERDA (Qtd negativa, Custo zero)
-            print("INFO: Detectada operação de PERDA.")
-            # O novo_custo_total já é igual ao custo_total_atual, nada a fazer aqui.
+        estoque_atual, custo_medio_atual = resultado
+        novo_custo_medio = custo_medio_atual # Valor padrão inicial
 
-        # Calcula o novo estoque e valida para não ficar negativo
+        # PASSO 2: Calcular o novo estoque
         novo_estoque = estoque_atual + quantidade_adicionada
         if novo_estoque < 0:
             print(f"Erro: A operação resultaria em estoque negativo ({novo_estoque}). Operação cancelada.")
             return False
-        # Valida para o custo não ficar negativo
-        if novo_custo_total < 0:
-            print(f"Erro: A operação resultaria em custo total negativo (R$ {novo_custo_total:.2f}). Verifique os valores. Operação cancelada.")
-            return False
 
+        # PASSO 3: Calcular o novo custo médio com base na operação
+        if novo_estoque > 0:
+            # Calcula o valor total do estoque antigo
+            valor_total_estoque_antigo = estoque_atual * custo_medio_atual
 
-        # PASSO 3: Atualizar o produto com os novos valores
+            if quantidade_adicionada > 0:
+                # LÓGICA DE COMPRA (Cenário 1)
+                valor_da_nova_compra = quantidade_adicionada * custo_unitario_movimentacao
+                novo_valor_total = valor_total_estoque_antigo + valor_da_nova_compra
+                novo_custo_medio = novo_valor_total / novo_estoque
+            
+            elif quantidade_adicionada < 0 and custo_unitario_movimentacao == 0:
+                # LÓGICA DE PERDA (Cenário 2)
+                # O valor total do estoque permanece o mesmo, mas é dividido por menos itens.
+                novo_custo_medio = valor_total_estoque_antigo / novo_estoque
+
+            elif quantidade_adicionada < 0 and custo_unitario_movimentacao > 0:
+                # LÓGICA DE CORREÇÃO DE ERRO
+                valor_a_reverter = abs(quantidade_adicionada) * custo_unitario_movimentacao
+                novo_valor_total = valor_total_estoque_antigo - valor_a_reverter
+                novo_custo_medio = novo_valor_total / novo_estoque
+
+        else: # Se o novo estoque for 0, o custo médio também deve ser 0
+            novo_custo_medio = 0
+
+        # PASSO 4: Atualizar o produto com os novos valores de estoque e custo médio
         cursor.execute('''
             UPDATE produtos 
-            SET estoque_atual = ?, custo_total_do_estoque = ?
+            SET estoque_atual = ?, custo_medio = ?
             WHERE id = ?
-        ''', (novo_estoque, novo_custo_total, id_produto))
+        ''', (novo_estoque, novo_custo_medio, id_produto))
 
-        # PASSO 4: Registrar esta movimentação no histórico
+        # PASSO 5: Registrar esta movimentação no histórico (esta parte não muda)
         data_atual = datetime.datetime.now().isoformat()
         cursor.execute('''
             INSERT INTO entradas_de_estoque (id_produto, quantidade_comprada, custo_unitario_compra, data_entrada)
@@ -436,7 +416,7 @@ def adicionar_estoque(id_produto, quantidade_adicionada, custo_unitario_moviment
         ''', (id_produto, quantidade_adicionada, custo_unitario_movimentacao, data_atual))
 
         conn.commit()
-        print(f"Estoque do produto ID {id_produto} atualizado com sucesso. Novo estoque: {novo_estoque}.")
+        print(f"Estoque do produto ID {id_produto} atualizado. Novo estoque: {novo_estoque}. Novo Custo Médio: {novo_custo_medio:.2f}.")
         return True
 
     except sqlite3.Error as e:
@@ -546,7 +526,7 @@ def obter_historico_produto(id_produto):
 
 def salvar_novo_pedido(dados_do_pedido):
     """
-    Salva um novo pedido, buscando o custo médio de cada item no momento da venda
+    Salva um novo pedido, lendo o custo médio de cada item no momento da venda
     e armazenando essa informação no JSON do pedido.
     """
     conn = None
@@ -554,60 +534,30 @@ def salvar_novo_pedido(dados_do_pedido):
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # --- Calcular a senha do dia ---
         proxima_senha = obter_proxima_senha_diaria()
-
-        # --- LÓGICA DE VERIFICAÇÃO DE FLUXO ---
-        fluxo_e_simples = True # Começamos assumindo que o pedido é simples
+        
         ids_dos_produtos = [item['id'] for item in dados_do_pedido['itens']]
-        
-        # Criamos os placeholders (?) para a consulta SQL
-        placeholders = ','.join('?' for id in ids_dos_produtos)
-        
-        # Buscamos a propriedade 'requer_preparo' de TODOS os produtos do pedido de uma só vez
+        if not ids_dos_produtos: # Impede erro se o carrinho estiver vazio
+             return None
+
+        placeholders = ','.join('?' for _ in ids_dos_produtos)
         cursor.execute(f"SELECT requer_preparo FROM produtos WHERE id IN ({placeholders})", ids_dos_produtos)
         resultados_preparo = cursor.fetchall()
 
-        # Verificamos se ALGUM dos produtos retornados requer preparo
-        for resultado in resultados_preparo:
-            if resultado[0] == 1: # Se requer_preparo for 1 (verdadeiro)
-                fluxo_e_simples = False # O pedido não é mais simples
-                break # Já sabemos que é complexo, podemos parar a verificação
+        fluxo_e_simples = all(resultado[0] == 0 for resultado in resultados_preparo)
 
-        # --- LÓGICA DE ENRIQUECIMENTO: Buscar custo e adicionar ao item ---
         itens_enriquecidos = []
         for item in dados_do_pedido['itens']:
-            # Busca o estado atual do produto para calcular o custo médio
-            cursor.execute("SELECT custo_total_do_estoque, estoque_atual FROM produtos WHERE id = ?", (item['id'],))
+            # LÓGICA CORRIGIDA: Busca o custo_medio diretamente.
+            cursor.execute("SELECT custo_medio FROM produtos WHERE id = ?", (item['id'],))
             resultado = cursor.fetchone()
             
-            custo_a_registrar = 0
-            if resultado:
-                custo_total_estoque, estoque_atual = resultado
-                
-                if estoque_atual > 0:
-                    # CASO 1: Estoque positivo, usa a média ponderada.
-                    custo_a_registrar = custo_total_estoque / estoque_atual
-                else:
-                    # CASO 2: Estoque zerado, busca o custo da última compra.
-                    cursor.execute("""
-                        SELECT custo_unitario_compra 
-                        FROM entradas_de_estoque 
-                        WHERE id_produto = ? AND quantidade_comprada > 0
-                        ORDER BY data_entrada DESC 
-                        LIMIT 1
-                    """, (item['id'],))
-                    ultimo_custo_resultado = cursor.fetchone()
-                    
-                    if ultimo_custo_resultado:
-                        custo_a_registrar = ultimo_custo_resultado[0]
+            custo_a_registrar = resultado[0] if resultado else 0
 
-            # Adiciona o custo capturado ao dicionário do item
             item_com_custo = item.copy()
             item_com_custo['custo_unitario'] = custo_a_registrar
             itens_enriquecidos.append(item_com_custo)
         
-        # --- Salvar o Pedido com os dados de custo e senha ---
         itens_como_json = json.dumps(itens_enriquecidos)
         timestamp_atual = datetime.datetime.now().isoformat()
         valor_total = sum(item['preco'] * item['quantidade'] for item in dados_do_pedido['itens'])
@@ -616,30 +566,20 @@ def salvar_novo_pedido(dados_do_pedido):
             INSERT INTO pedidos (nome_cliente, status, metodo_pagamento, valor_total, timestamp_criacao, itens_json, fluxo_simples, senha_diaria)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
-            dados_do_pedido['nome_cliente'],
-            'aguardando_pagamento',
-            dados_do_pedido['metodo_pagamento'],
-            valor_total,
-            timestamp_atual,
-            itens_como_json,
-            1 if fluxo_e_simples else 0,
-            proxima_senha
+            dados_do_pedido['nome_cliente'], 'aguardando_pagamento',
+            dados_do_pedido['metodo_pagamento'], valor_total, timestamp_atual,
+            itens_como_json, 1 if fluxo_e_simples else 0, proxima_senha
         ))
 
         id_do_pedido_salvo = cursor.lastrowid
 
-        # --- Mover o estoque de 'atual' para 'reservado' ---
         for item in dados_do_pedido['itens']:
             cursor.execute('''
                 UPDATE produtos
                 SET estoque_atual = estoque_atual - ?,
                     estoque_reservado = estoque_reservado + ?
                 WHERE id = ?
-            ''', (
-                item['quantidade'],
-                item['quantidade'],
-                item['id']
-            ))
+            ''', (item['quantidade'], item['quantidade'], item['id']))
 
         conn.commit()
 
@@ -801,15 +741,16 @@ def reiniciar_preparo_item(pedido_id, produto_id):
 
 def entregar_pedido(id_do_pedido):
     """
-    Finaliza um pedido, mudando seu status para 'finalizado'.
-    Calcula o custo total dos itens vendidos, baixa o estoque reservado
-    e armazena o custo e o timestamp de finalização no registro do pedido.
+    Finaliza um pedido. Lê o custo médio de cada item para registrar o custo da venda,
+    dá baixa no estoque reservado e atualiza o status do pedido para 'finalizado'.
+    Esta função NÃO altera mais o custo médio dos produtos.
     """
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
+        # Busca os itens do pedido para saber o que foi vendido
         cursor.execute("SELECT itens_json FROM pedidos WHERE id = ?", (id_do_pedido,))
         resultado = cursor.fetchone()
         if not resultado:
@@ -823,32 +764,22 @@ def entregar_pedido(id_do_pedido):
             id_produto = item['id']
             quantidade_vendida = item['quantidade']
 
-            cursor.execute("""
-                SELECT estoque_atual, estoque_reservado, custo_total_do_estoque
-                FROM produtos WHERE id = ?
-            """, (id_produto,))
-            
+            # LÊ o custo médio do produto para registrar o custo desta venda
+            cursor.execute("SELECT custo_medio FROM produtos WHERE id = ?", (id_produto,))
             res_produto = cursor.fetchone()
-            if not res_produto: continue
-
-            estoque_atual, estoque_reservado, custo_total_atual = res_produto
-            estoque_total_antes_da_venda = estoque_atual + estoque_reservado
-
-            custo_medio_unitario = 0
-            if estoque_total_antes_da_venda > 0:
-                custo_medio_unitario = custo_total_atual / estoque_total_antes_da_venda
-
-            custo_desta_venda_especifica = quantidade_vendida * custo_medio_unitario
-            custo_total_dos_itens_vendidos += custo_desta_venda_especifica
+            custo_medio_unitario = res_produto[0] if res_produto else 0
             
+            # Acumula o custo total para este pedido específico
+            custo_total_dos_itens_vendidos += quantidade_vendida * custo_medio_unitario
+            
+            # ATUALIZA a tabela de produtos, dando baixa APENAS no estoque reservado
             cursor.execute("""
                 UPDATE produtos
-                SET estoque_reservado = estoque_reservado - ?,
-                    custo_total_do_estoque = custo_total_do_estoque - ?
+                SET estoque_reservado = estoque_reservado - ?
                 WHERE id = ?
-            """, (quantidade_vendida, custo_desta_venda_especifica, id_produto))
+            """, (quantidade_vendida, id_produto))
 
-        # AGORA, EM VEZ DE DELETAR, ATUALIZAMOS O PEDIDO
+        # Atualiza o pedido para 'finalizado' e salva o custo total daquela venda
         timestamp_final = datetime.datetime.now().isoformat()
         cursor.execute("""
             UPDATE pedidos
@@ -859,7 +790,7 @@ def entregar_pedido(id_do_pedido):
         """, (custo_total_dos_itens_vendidos, timestamp_final, id_do_pedido))
 
         conn.commit()
-        print(f"SUCESSO: Pedido #{id_do_pedido} finalizado e estoque/custos baixados.")
+        print(f"SUCESSO: Pedido #{id_do_pedido} finalizado e estoque baixado. O custo médio dos produtos não foi alterado.")
         return True
 
     except sqlite3.Error as e:

@@ -112,7 +112,7 @@ def criar_novo_pedido(nome_cliente, itens_pedido, metodo_pagamento):
     _proximo_id += 1
     return novo_pedido['id']
 
-def adicionar_novo_produto(nome, preco_venda, estoque_inicial, custo_inicial, categoria_id, requer_preparo):
+def adicionar_novo_produto(nome, descricao, foto_url, preco_venda, estoque_inicial, custo_inicial, categoria_id, requer_preparo):
     """
     Adiciona um novo produto na tabela 'produtos'.
     Calcula o custo total inicial do estoque.
@@ -126,9 +126,9 @@ def adicionar_novo_produto(nome, preco_venda, estoque_inicial, custo_inicial, ca
 
         # Comando SQL para inserir um novo produto
         cursor.execute('''
-            INSERT INTO produtos (nome, preco_venda, estoque_atual, custo_total_do_estoque, categoria_id, requer_preparo)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (nome, preco_venda, estoque_inicial, custo_total_estoque, categoria_id, requer_preparo))
+            INSERT INTO produtos (nome, descricao, foto_url, preco_venda, estoque_atual, custo_total_do_estoque, categoria_id, requer_preparo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (nome, descricao, foto_url, preco_venda, estoque_inicial, custo_total_estoque, categoria_id, requer_preparo))
 
         conn.commit()
         print(f"Produto '{nome}' adicionado com  (Requer preparo: {requer_preparo}).")
@@ -156,7 +156,7 @@ def obter_todos_produtos():
 
         # Adicionamos ORDER BY p.ordem
         cursor.execute('''
-            SELECT p.id, p.nome, p.preco_venda, p.estoque_atual, p.custo_total_do_estoque, c.nome as categoria_nome, p.categoria_id, p.requer_preparo
+            SELECT p.id, p.nome, p.descricao, p.foto_url, p.preco_venda, p.estoque_atual, p.custo_total_do_estoque, c.nome as categoria_nome, p.categoria_id, p.requer_preparo
             FROM produtos p
             LEFT JOIN categorias c ON p.categoria_id = c.id
             WHERE p.estoque_atual > 0
@@ -166,7 +166,7 @@ def obter_todos_produtos():
         produtos_tuplas = cursor.fetchall()
         produtos_lista = []
         for tupla in produtos_tuplas:
-            id_produto, nome, preco_venda, estoque, custo_total, categoria, categoria_id, requer_preparo = tupla
+            id_produto, nome, descricao, foto_url, preco_venda, estoque, custo_total, categoria, categoria_id, requer_preparo = tupla
             
             if estoque > 0:
                 custo_medio = custo_total / estoque
@@ -190,6 +190,8 @@ def obter_todos_produtos():
             produtos_lista.append({
                 'id': id_produto,
                 'nome': nome,
+                'descricao': descricao,
+                'foto_url': foto_url,
                 'preco_venda': preco_venda,
                 'estoque': estoque,
                 'custo_medio': custo_medio,
@@ -219,7 +221,7 @@ def obter_todos_produtos_para_gestao():
 
         # A consulta é idêntica à original, mas sem o filtro "WHERE"
         cursor.execute('''
-            SELECT p.id, p.nome, p.preco_venda, p.estoque_atual, p.custo_total_do_estoque, c.nome as categoria_nome, p.categoria_id, p.requer_preparo
+            SELECT p.id, p.nome, p.descricao, p.foto_url, p.preco_venda, p.estoque_atual, p.custo_total_do_estoque, c.nome as categoria_nome, p.categoria_id, p.requer_preparo
             FROM produtos p
             LEFT JOIN categorias c ON p.categoria_id = c.id
             ORDER BY c.ordem, p.ordem, p.nome 
@@ -228,7 +230,7 @@ def obter_todos_produtos_para_gestao():
         produtos_tuplas = cursor.fetchall()
         produtos_lista = []
         for tupla in produtos_tuplas:
-            id_produto, nome, preco_venda, estoque, custo_total, categoria, categoria_id, requer_preparo = tupla
+            id_produto, nome, descricao, foto_url, preco_venda, estoque, custo_total, categoria, categoria_id, requer_preparo = tupla
             
             if estoque > 0:
                 custo_medio = custo_total / estoque
@@ -251,6 +253,8 @@ def obter_todos_produtos_para_gestao():
             produtos_lista.append({
                 'id': id_produto,
                 'nome': nome,
+                'descricao': descricao,
+                'foto_url': foto_url,
                 'preco_venda': preco_venda,
                 'estoque': estoque,
                 'custo_medio': custo_medio,
@@ -1158,7 +1162,7 @@ def salvar_tempos_preparo(produto_id, tempos_data):
         if conn:
             conn.close()
 
-def atualizar_dados_produto(id_produto, nome, categoria_id, requer_preparo):
+def atualizar_dados_produto(id_produto, nome, descricao, foto_url, categoria_id, requer_preparo):
     """
     Atualiza os dados principais de um produto existente (nome, categoria, flag de preparo).
     """
@@ -1170,10 +1174,12 @@ def atualizar_dados_produto(id_produto, nome, categoria_id, requer_preparo):
         cursor.execute('''
             UPDATE produtos 
             SET nome = ?,
+                descricao = ?,
+                foto_url = ?,
                 categoria_id = ?,
                 requer_preparo = ?
             WHERE id = ?
-        ''', (nome, categoria_id, requer_preparo, id_produto))
+        ''', (nome, descricao, foto_url, categoria_id, requer_preparo, id_produto))
 
         conn.commit()
         print(f"Dados do produto ID {id_produto} atualizados com sucesso.")

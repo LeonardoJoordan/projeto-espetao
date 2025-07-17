@@ -21,12 +21,12 @@
             border: 1px solid rgba(255, 255, 255, 0.2);
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
         }
-        input, select {
+        input, select, textarea {
             background: rgba(255, 255, 255, 0.2) !important;
             border: 1px solid rgba(255, 255, 255, 0.3) !important;
             color: white !important;
         }
-        input::placeholder {
+        input::placeholder, textarea::placeholder {
             color: rgba(255, 255, 255, 0.6) !important;
         }
         option {
@@ -71,7 +71,7 @@
         <div class="lg:col-span-1 space-y-8">
             <div class="glass-container rounded-2xl p-6">
                 <h2 class="text-2xl font-bold mb-4 flex items-center"><i class="fas fa-drumstick-bite mr-3"></i>Adicionar/Atualizar Produto</h2>
-                <form id="form-produto" action="/adicionar_produto" method="POST" class="space-y-4">
+                <form id="form-produto" action="/adicionar_produto" method="POST" enctype="multipart/form-data" class="space-y-4">
                     <input type="hidden" id="id_produto" name="id_produto">
                     <div>
                         <label for="nome_produto" class="block mb-2 font-semibold">Nome do Produto</label>
@@ -111,6 +111,23 @@
                             <li><strong>Para registrar uma PERDA:</strong> Mantenha o "Preço Compra" como <strong>0</strong>. O custo médio do produto irá aumentar.</li>
                             <li><strong>Para CORRIGIR um erro de entrada:</strong> Insira o "Preço Compra" <strong>original</strong> da entrada errada. O sistema irá reverter o custo.</li>
                         </ul>
+                    </div>
+                    <div>
+                        <label for="descricao" class="block mb-2 font-semibold">Descrição do Produto</label>
+                        <textarea id="descricao" name="descricao" rows="3" placeholder="Ex: Pão de alho crocante com recheio de queijo..." class="w-full p-2 rounded-lg"></textarea>
+                        <input type="hidden" id="foto_url" name="foto_url_antiga">
+                    </div>
+                    <div>
+                        <label for="foto_produto" class="block mb-2 font-semibold">Foto do Produto</label>
+                        <input type="file" id="foto_produto" name="foto_produto" class="w-full text-sm text-white
+                            file:mr-4 file:py-2 file:px-4
+                            file:rounded-lg file:border-0
+                            file:text-sm file:font-semibold
+                            file:bg-blue-500 file:text-white
+                            hover:file:bg-blue-600 cursor-pointer">
+                    </div>
+                    <div class="mt-2">
+                        <img id="foto-preview" src="" alt="Pré-visualização da imagem" class="w-full h-32 object-cover rounded-lg hidden bg-white/10">
                     </div>
                     <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 font-bold py-3 rounded-lg transition-colors">Salvar Produto</button>
                 </form>
@@ -162,6 +179,8 @@
                         <div class="produto-item p-3 bg-white/10 rounded-lg cursor-move" 
                             data-id="{{ produto.id }}"
                             data-nome="{{ produto.nome }}"
+                            data-descricao="{{ produto.descricao or '' }}"
+                            data-foto-url="{{ produto.foto_url or '' }}"
                             data-categoria-id="{{ produto.categoria_id }}"
                             data-categoria-nome="{{ categoria_nome }}"
                             data-requer-preparo="{{ produto.requer_preparo }}"
@@ -302,13 +321,27 @@
                     
                     document.getElementById('id_produto').value = produtoItem.dataset.id;
                     document.getElementById('nome_produto').value = produtoItem.dataset.nome;
+                    document.getElementById('descricao').value = produtoItem.dataset.descricao;
+                    document.getElementById('foto_url').value = produtoItem.dataset.fotoUrl;
                     document.getElementById('categoria_produto').value = produtoItem.dataset.categoriaId; 
                     document.getElementById('preco_venda').value = produtoItem.dataset.precoVenda;
                     document.getElementById('preco_compra').value = produtoItem.dataset.precoCompra;
                     document.getElementById('requer_preparo').checked = produtoItem.dataset.requerPreparo == '1';
-
-
                     document.getElementById('quantidade').value = '';
+                    // Lógica para exibir a foto atual na pré-visualização
+                    const fotoPreview = document.getElementById('foto-preview');
+                    const urlFotoAtual = produtoItem.dataset.fotoUrl;
+
+                    if (urlFotoAtual) {
+                        fotoPreview.src = "{{ url_for('static', filename='images/produtos/') }}" + urlFotoAtual;
+                        fotoPreview.classList.remove('hidden');
+                    } else {
+                        fotoPreview.src = "";
+                        fotoPreview.classList.add('hidden');
+                    }
+
+                    // Limpa o valor do input de arquivo para não reenviar o arquivo antigo acidentalmente
+                    document.getElementById('foto_produto').value = '';
                     document.getElementById('nome_produto').focus();
                 }
 
@@ -646,6 +679,22 @@
                     event.preventDefault();
                     alert('Por favor, corrija os seguintes erros:\n\n' + mensagemErro);
                     return false;
+                }
+            });
+
+            // --- LÓGICA DE PRÉ-VISUALIZAÇÃO DA FOTO ---
+            const inputFoto = document.getElementById('foto_produto');
+            const previewFoto = document.getElementById('foto-preview');
+
+            inputFoto.addEventListener('change', function() {
+                const file = this.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    previewFoto.classList.remove('hidden');
+                    reader.onload = function(event) {
+                        previewFoto.src = event.target.result;
+                    }
+                    reader.readAsDataURL(file);
                 }
             });
         });

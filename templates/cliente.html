@@ -435,13 +435,23 @@
                             data-categoria-nome="{{ categoria.nome }}"
                             data-estoque="{{ produto.estoque }}"
                             data-requer-preparo="{{ produto.requer_preparo }}">
-                            <div class="w-24 h-24 bg-zinc-700 rounded-md flex-shrink-0 flex items-center justify-center">
-                                <i class="fas fa-camera text-3xl text-zinc-500"></i>
-                            </div>
+
+                            {% if produto.foto_url %}
+                                <img src="{{ url_for('static', filename='images/produtos/' + produto.foto_url) }}" alt="Foto de {{ produto.nome }}" class="w-24 h-24 bg-zinc-700 rounded-md flex-shrink-0 object-cover">
+                            {% else %}
+                                <div class="w-24 h-24 bg-zinc-700 rounded-md flex-shrink-0 flex items-center justify-center">
+                                    <i class="fas fa-camera text-3xl text-zinc-500"></i>
+                                </div>
+                            {% endif %}
+
                             <div class="flex-grow">
                                 <h4 class="text-xl font-semibold">{{ produto.nome }}</h4>
-                                <p class="text-zinc-400 text-sm mt-1">Descrição customizável do produto para atrair o cliente.</p>
+
+                                {% if produto.descricao %}
+                                    <p class="text-zinc-400 text-sm mt-1">{{ produto.descricao }}</p>
+                                {% endif %}
                             </div>
+
                             <div class="flex items-center gap-6">
                                 <span class="text-2xl font-semibold w-28 text-right">
                                     R$ {{ "%.2f"|format(produto.preco_venda) | replace('.', ',') }}

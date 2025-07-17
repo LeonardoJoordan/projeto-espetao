@@ -1,6 +1,9 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 import gerenciador_db
 from flask_socketio import SocketIO
+import os
+import uuid
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 socketio = SocketIO(app)
@@ -121,52 +124,77 @@ def adicionar_categoria():
 @app.route('/adicionar_produto', methods=['POST'])
 def adicionar_produto():
     """
-    Rota inteligente que decide se deve criar um novo produto,
-    atualizar seus dados ou adicionar estoque.
+    Rota inteligente que lida com a criação e atualização de produtos,
+    incluindo o upload, salvamento e exclusão de fotos.
     """
+    # --- Configurações de Upload ---
+    PASTA_UPLOAD = os.path.join(app.static_folder, 'images', 'produtos')
+    if not os.path.exists(PASTA_UPLOAD):
+        os.makedirs(PASTA_UPLOAD)
+
     try:
         id_produto = request.form.get('id_produto')
-        
-        # Captura os dados do formulário que são comuns para criar e editar
+        nome_foto_salva = request.form.get('foto_url_antiga') # Usaremos um campo auxiliar
+
+        # 1. LÓGICA DE MANIPULAÇÃO DO ARQUIVO DE FOTO
+        if 'foto_produto' in request.files:
+            foto_arquivo = request.files['foto_produto']
+
+            # Se um novo arquivo foi enviado e tem um nome...
+            if foto_arquivo.filename != '':
+                # Deleta a foto antiga, se existir
+                if nome_foto_salva:
+                    caminho_foto_antiga = os.path.join(PASTA_UPLOAD, nome_foto_salva)
+                    if os.path.exists(caminho_foto_antiga):
+                        os.remove(caminho_foto_antiga)
+
+                # Gera um nome de arquivo seguro e único
+                nome_seguro = secure_filename(foto_arquivo.filename)
+                extensao = os.path.splitext(nome_seguro)[1]
+                nome_foto_salva = str(uuid.uuid4()) + extensao
+
+                # Salva o novo arquivo
+                caminho_para_salvar = os.path.join(PASTA_UPLOAD, nome_foto_salva)
+                foto_arquivo.save(caminho_para_salvar)
+
+        # 2. LÓGICA DE MANIPULAÇÃO DOS DADOS DO FORMULÁRIO
         nome = request.form.get('nome_produto')
+        descricao = request.form.get('descricao')
         categoria_id = int(request.form.get('categoria_produto'))
         preco_venda_str = request.form.get('preco_venda')
-        
-        # Converte o valor do checkbox 'on'/'None' para 1/0
+
         requer_preparo_str = request.form.get('requer_preparo')
         requer_preparo = 1 if requer_preparo_str == 'on' else 0
 
         if id_produto:
             # --- CAMINHO DE ATUALIZAÇÃO ---
             id_produto = int(id_produto)
-            
-            # 1. Atualiza os dados principais do produto (nome, categoria, flag de preparo)
-            # Chamando a nova função que ainda vamos implementar.
-            gerenciador_db.atualizar_dados_produto(id_produto, nome, categoria_id, requer_preparo)
+            # Passa o nome da foto (antiga ou a nova recém-salva) para o DB
+            gerenciador_db.atualizar_dados_produto(id_produto, nome, descricao, nome_foto_salva, categoria_id, requer_preparo)
 
-            # 2. Lógica para adicionar estoque (se quantidade e preço de compra forem fornecidos)
             quantidade_adicionada = request.form.get('quantidade') 
             preco_compra_unitario = request.form.get('preco_compra')
             if quantidade_adicionada and preco_compra_unitario:
                 gerenciador_db.adicionar_estoque(id_produto, int(quantidade_adicionada), float(preco_compra_unitario))
-            
-            # 3. Lógica para atualizar apenas o preço de venda (se um novo preço for fornecido)
+
             if preco_venda_str:
                 gerenciador_db.atualizar_preco_venda_produto(id_produto, float(preco_venda_str))
-        
+
         else:
             # --- CAMINHO DE CRIAÇÃO ---
             preco_venda = float(preco_venda_str)
             preco_compra = float(request.form.get('preco_compra'))
             quantidade = int(request.form.get('quantidade'))
-
-            # Chama a versão modificada da função, passando o novo parâmetro
-            gerenciador_db.adicionar_novo_produto(nome, preco_venda, quantidade, preco_compra, categoria_id, requer_preparo)
+            # Passa o nome da foto salva para o DB
+            gerenciador_db.adicionar_novo_produto(nome, descricao, nome_foto_salva, preco_venda, quantidade, preco_compra, categoria_id, requer_preparo)
 
     except (ValueError, TypeError) as e:
         print(f"Erro ao converter dados do formulário: {e}")
+    except Exception as e:
+        print(f"Ocorreu um erro inesperado no upload: {e}")
 
     return redirect(url_for('tela_produtos'))
+
 
 @app.route('/excluir_categoria/<int:id_categoria>')
 def rota_excluir_categoria(id_categoria):

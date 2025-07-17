@@ -26,6 +26,8 @@ def inicializar_banco():
             CREATE TABLE IF NOT EXISTS produtos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 nome TEXT NOT NULL UNIQUE,
+                descricao TEXT,
+                foto_url TEXT,
                 preco_venda REAL NOT NULL,
                 estoque_atual INTEGER NOT NULL,
                 estoque_reservado INTEGER NOT NULL DEFAULT 0,

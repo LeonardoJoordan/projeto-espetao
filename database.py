@@ -99,6 +99,25 @@ def inicializar_banco():
         ''')
         print("Tabela 'acompanhamentos' verificada/criada.")
 
+        # Tabela de Configurações
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS configuracoes (
+                chave TEXT PRIMARY KEY,
+                valor REAL NOT NULL
+            )
+        ''')
+        print("Tabela 'configuracoes' verificada/criada.")
+
+        # Insere valores padrão para as taxas, caso não existam
+        config_padrao = {
+            'taxa_credito': 0.0,
+            'taxa_debito': 0.0,
+            'taxa_pix': 0.0
+        }
+        for chave, valor in config_padrao.items():
+            cursor.execute("INSERT OR IGNORE INTO configuracoes (chave, valor) VALUES (?, ?)", (chave, valor))
+        print("Configurações padrão de taxas verificadas/inseridas.")
+
 
         conn.commit()
         print("Alterações salvas no banco de dados.")

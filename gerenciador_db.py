@@ -1,7 +1,7 @@
 import sqlite3
 import datetime
 import json # Adicione esta importação no topo do seu arquivo, junto com as outras
-from datetime import timedelta # Adicione esta importação também
+from datetime import timedelta, timezone # Adicione esta importação também
 
 NOME_BANCO_DADOS = 'espetao.db'
 
@@ -98,7 +98,7 @@ def criar_novo_pedido(nome_cliente, itens_pedido, metodo_pagamento):
         'itens': itens_pedido,
         'metodo_pagamento': metodo_pagamento,
         'status': 'recebido',
-        'timestamp': datetime.datetime.now().isoformat(),
+        'timestamp': datetime.datetime.now(timezone.utc).isoformat(),
         'valor_total': valor_total # Adicionamos o campo calculado
     }
 
@@ -880,13 +880,19 @@ def chamar_cliente_pedido(id_do_pedido):
 def obter_dados_relatorio(data_inicio, data_fim):
     """
     Busca e calcula todos os dados para o relatório de fechamento
-    dentro de um intervalo de datas.
+    dentro de um intervalo de datas, aplicando as taxas de pagamento.
     """
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+
+        # PASSO 1: Obter as taxas de configuração primeiro.
+        taxas = {}
+        cursor.execute("SELECT chave, valor FROM configuracoes")
+        for chave, valor in cursor.fetchall():
+            taxas[chave] = valor
 
         # --- DADOS GERAIS DE PEDIDOS FINALIZADOS ---
         cursor.execute("""
@@ -906,7 +912,28 @@ def obter_dados_relatorio(data_inicio, data_fim):
 
         # --- CÁLCULO DOS KPIs ---
         faturamento_bruto = sum(p['valor_total'] for p in pedidos_finalizados)
-        lucro_estimado = sum(p['valor_total'] - (p['custo_total_pedido'] or 0) for p in pedidos_finalizados)
+        lucro_estimado = 0  # Inicializa o lucro
+
+        # PASSO 2: Loop detalhado para calcular o lucro líquido
+        for p in pedidos_finalizados:
+            lucro_bruto_pedido = p['valor_total'] - (p['custo_total_pedido'] or 0)
+            
+            # Descobre a taxa para este método de pagamento
+            taxa_aplicada = 0
+            if p['metodo_pagamento'] == 'cartao_credito':
+                taxa_aplicada = taxas.get('taxa_credito', 0.0)
+            elif p['metodo_pagamento'] == 'cartao_debito':
+                taxa_aplicada = taxas.get('taxa_debito', 0.0)
+            elif p['metodo_pagamento'] == 'pix':
+                taxa_aplicada = taxas.get('taxa_pix', 0.0)
+            
+            # Calcula o valor do desconto
+            desconto_taxa = p['valor_total'] * (taxa_aplicada / 100.0)
+            
+            # Calcula o lucro líquido do pedido e o acumula
+            lucro_liquido_pedido = lucro_bruto_pedido - desconto_taxa
+            lucro_estimado += lucro_liquido_pedido
+
         pedidos_realizados = len(pedidos_finalizados)
         ticket_medio = faturamento_bruto / pedidos_realizados if pedidos_realizados > 0 else 0
         total_itens_vendidos = sum(sum(item['quantidade'] for item in json.loads(p['itens_json'])) for p in pedidos_finalizados)
@@ -1368,6 +1395,45 @@ def toggle_visibilidade_acompanhamento(id_acompanhamento):
         return True
     except sqlite3.Error as e:
         print(f"Ocorreu um erro ao alternar a visibilidade do acompanhamento: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def obter_configuracoes():
+    """
+    Busca todas as configurações da tabela 'configuracoes' e retorna como um dicionário.
+    """
+    configs = {}
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+        cursor.execute("SELECT chave, valor FROM configuracoes")
+        for chave, valor in cursor.fetchall():
+            configs[chave] = valor
+        return configs
+    except sqlite3.Error as e:
+        print(f"ERRO ao obter configurações: {e}")
+        # Retorna um dicionário vazio em caso de erro para não quebrar o sistema
+        return {}
+    finally:
+        if conn:
+            conn.close()
+
+def salvar_configuracoes(novas_taxas):
+    """
+    Recebe um dicionário de taxas e as salva no banco de dados.
+    """
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+        for chave, valor in novas_taxas.items():
+            # Usamos UPDATE para alterar os valores existentes com base na chave primária
+            cursor.execute("UPDATE configuracoes SET valor = ? WHERE chave = ?", (valor, chave))
+        conn.commit()
+        return True
+    except sqlite3.Error as e:
+        print(f"ERRO ao salvar configurações: {e}")
         return False
     finally:
         if conn:

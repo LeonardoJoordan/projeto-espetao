@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fechamento de Caixa - Espetão do Léo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #6B73FF 0%, #000DFF 100%);
+            min-height: 100vh;
+        }
+        .glass-container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+        }
+        .kpi-card {
+            transition: all 0.3s ease;
+            border-bottom: 4px solid transparent;
+        }
+        .kpi-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.15);
+        }
+        .kpi-card.faturamento { border-color: #34D399; }
+        .kpi-card.lucro { border-color: #60A5FA; }
+        .kpi-card.pedidos { border-color: #FBBF24; }
+        .kpi-card.ticket { border-color: #A78BFA; }
+        .kpi-card.perdas { border-color: #F87171; }
+        .kpi-card.media-itens { border-color: #2DD4BF; }
+
+        .flatpickr-calendar {
+            background: #2d3748;
+            border-radius: 0.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .flatpickr-day { color: #cbd5e0; }
+        .flatpickr-day.selected { background: #60A5FA; border-color: #60A5FA; }
+        .flatpickr-day:hover { background: #4a5568; }
+        .flatpickr-weekday, .flatpickr-monthDropdown-month, .numInput, .cur-month { color: white !important; }
+        .flatpickr-prev-month, .flatpickr-next-month { fill: white !important; }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.5); }
+        
+        select {
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+            background-position: right 0.5rem center;
+            background-repeat: no-repeat;
+            background-size: 1.5em 1.5em;
+            padding-right: 2.5rem;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+        }
+        
+        select option {
+            background-color: #2d3748 !important;
+            color: white !important;
+            padding: 8px !important;
+        }
+        
+        select option:hover {
+            background-color: #4a5568 !important;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8 text-white">
+
+    <header class="mb-8 glass-container rounded-2xl p-6 max-w-7xl mx-auto">
+        <div class="flex items-center justify-center">
+            <i class="fas fa-chart-line text-white text-3xl mr-4"></i>
+            <h1 class="text-4xl font-bold text-white text-center">Fechamento de Caixa e Relatórios</h1>
+        </div>
+        <p class="text-center text-white/80 mt-2">Analise o desempenho do seu negócio com dados detalhados.</p>
+    </header>
+
+    <main class="max-w-7xl mx-auto space-y-8">
+        <section class="glass-container rounded-2xl p-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6 items-end">
+                <div>
+                    <label for="periodo" class="block mb-2 font-semibold">Período</label>
+                    <select id="periodo" class="w-full p-3 rounded-lg bg-white/20 border border-white/30 text-white">
+                        <option value="hoje">Hoje</option>
+                        <option value="ontem">Ontem</option>
+                        <option value="7dias">Últimos 7 dias</option>
+                        <option value="mes_atual">Este Mês</option>
+                        <option value="custom">Período Customizado</option>
+                    </select>
+                </div>
+                <div id="periodo-customizado" class="hidden md:col-span-2 lg:col-span-2">
+                     <label for="daterange" class="block mb-2 font-semibold">Selecione o Intervalo</label>
+                    <input type="text" id="daterange" placeholder="Selecione as datas" class="w-full p-3 rounded-lg bg-white/20 border border-white/30 text-white">
+                </div>
+                <div class="lg:col-start-4">
+                    <button id="gerar-relatorio" class="w-full bg-blue-500 hover:bg-blue-600 font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2">
+                        <i class="fas fa-sync-alt"></i>
+                        Gerar Relatório
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <section class="space-y-6">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="kpi-card faturamento glass-container rounded-2xl p-5 text-center">
+                    <p class="text-sm text-white/80 uppercase">Faturamento Bruto</p>
+                    <p id="kpi-faturamento" class="text-3xl font-extrabold mt-2">R$ 0,00</p>
+                </div>
+                <div class="kpi-card lucro glass-container rounded-2xl p-5 text-center">
+                    <p class="text-sm text-white/80 uppercase">Lucro Estimado</p>
+                    <p id="kpi-lucro" class="text-3xl font-extrabold mt-2">R$ 0,00</p>
+                </div>
+                <div class="kpi-card perdas glass-container rounded-2xl p-5 text-center">
+                    <p class="text-sm text-white/80 uppercase">Perdas e Ajustes</p>
+                    <p id="kpi-perdas" class="text-3xl font-extrabold mt-2">R$ 0,00</p>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="kpi-card pedidos glass-container rounded-2xl p-5 text-center">
+                    <p class="text-sm text-white/80 uppercase">Pedidos Realizados</p>
+                    <p id="kpi-pedidos" class="text-3xl font-extrabold mt-2">0</p>
+                </div>
+                <div class="kpi-card ticket glass-container rounded-2xl p-5 text-center">
+                    <p class="text-sm text-white/80 uppercase">Ticket Médio</p>
+                    <p id="kpi-ticket" class="text-3xl font-extrabold mt-2">R$ 0,00</p>
+                </div>
+                <div class="kpi-card media-itens glass-container rounded-2xl p-5 text-center">
+                    <p class="text-sm text-white/80 uppercase">Média de Itens / Pedido</p>
+                    <p id="kpi-media-itens" class="text-3xl font-extrabold mt-2">0.0</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div class="lg:col-span-2 glass-container rounded-2xl p-6 flex flex-col h-96">
+                <div class="flex justify-between items-center mb-4 flex-shrink-0">
+                    <h3 id="titulo-grafico-vendas" class="text-xl font-bold">Vendas por Período</h3>
+                    <div>
+                        <label for="metrica-grafico" class="text-sm mr-2">Analisar Métrica:</label>
+                        <select id="metrica-grafico" class="p-2 rounded-lg bg-white/20 border border-white/30 text-white text-sm">
+                            <option value="faturamento">Faturamento</option>
+                            <option value="lucro">Lucro</option>
+                            <option value="pedidos">Pedidos</option>
+                            <option value="ticket_medio">Ticket Médio</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="relative flex-grow">
+                    <canvas id="grafico-vendas"></canvas>
+                </div>
+            </div>
+            <div class="glass-container rounded-2xl p-6 flex flex-col h-96">
+                <h3 class="text-xl font-bold mb-4 flex-shrink-0">Vendas por Pagamento</h3>
+                <div class="relative flex-grow">
+                    <canvas id="grafico-pagamentos"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <section class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div class="lg:col-span-1 glass-container rounded-2xl p-6 flex flex-col">
+                <h3 class="text-xl font-bold mb-4">Itens Mais Vendidos</h3>
+                <div id="lista-mais-vendidos" class="flex-grow overflow-y-auto custom-scrollbar pr-2 space-y-3">
+                    </div>
+            </div>
+            <div class="lg:col-span-2 glass-container rounded-2xl p-6 flex flex-col">
+                <h3 class="text-xl font-bold mb-4">Histórico de Pedidos</h3>
+                <div class="flex-grow overflow-y-auto custom-scrollbar pr-2">
+                    <table class="w-full text-left">
+                        <thead class="sticky top-0 bg-white/10">
+                            <tr>
+                                <th class="p-3">ID</th>
+                                <th class="p-3">Cliente</th>
+                                <th class="p-3">Horário</th>
+                                <th class="p-3">Valor</th>
+                                <th class="p-3">Pagamento</th>
+                                <th class="p-3">Detalhes</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabela-pedidos">
+                            </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </main>
+    <div id="modal-detalhes-pedido" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
+        <div class="glass-container rounded-2xl p-6 w-full max-w-lg text-white max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center border-b border-white/20 pb-3 mb-4 flex-shrink-0">
+                <h2 id="modal-titulo-pedido" class="text-2xl font-bold">Detalhes do Pedido</h2>
+                <button id="modal-fechar-pedido" class="text-2xl hover:text-red-500">&times;</button>
+            </div>
+    
+            <div id="modal-corpo-pedido" class="overflow-y-auto custom-scrollbar pr-2 space-y-2">
+                </div>
+        </div>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // --- ELEMENTOS DO DOM ---
+    const selectPeriodo = document.getElementById('periodo');
+    const selectMetrica = document.getElementById('metrica-grafico');
+    selectMetrica.addEventListener('change', function() {
+        // Se já temos dados carregados, recarrega o relatório com a nova métrica
+        carregarRelatorio();
+    });
+    const divPeriodoCustomizado = document.getElementById('periodo-customizado');
+    const btnGerarRelatorio = document.getElementById('gerar-relatorio');
+    const modalDetalhes = document.getElementById('modal-detalhes-pedido');
+    const modalTituloPedido = document.getElementById('modal-titulo-pedido');
+    const modalCorpoPedido = document.getElementById('modal-corpo-pedido');
+    const modalFecharPedido = document.getElementById('modal-fechar-pedido');
+
+    // --- INSTÂNCIAS DE GRÁFICOS E PICKER ---
+    let graficoVendas, graficoPagamentos;
+    const dateRangePicker = flatpickr("#daterange", {
+        mode: "range",
+        dateFormat: "Y-m-d H:i:S",
+        enableTime: true,
+        time_24hr: true,
+        locale: {
+            firstDayOfWeek: 1,
+            weekdays: {
+                shorthand: ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'],
+                longhand: ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado']
+            },
+            months: {
+                shorthand: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'],
+                longhand: ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
+            },
+            time_24hr: true
+        }
+    });
+
+    // --- LÓGICA DE UI ---
+    selectPeriodo.addEventListener('change', function() {
+        divPeriodoCustomizado.classList.toggle('hidden', this.value !== 'custom');
+    });
+
+    // --- FUNÇÕES DE RENDERIZAÇÃO ---
+    function formatCurrency(value) {
+        if (typeof value !== 'number') value = 0;
+        return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    }
+
+    function renderKPIs(data) {
+        document.getElementById('kpi-faturamento').textContent = formatCurrency(data.faturamentoBruto);
+        document.getElementById('kpi-lucro').textContent = formatCurrency(data.lucroEstimado);
+        document.getElementById('kpi-pedidos').textContent = data.pedidosRealizados || 0;
+        document.getElementById('kpi-ticket').textContent = formatCurrency(data.ticketMedio);
+        document.getElementById('kpi-perdas').textContent = formatCurrency(data.perdasAjustes);
+        document.getElementById('kpi-media-itens').textContent = (data.mediaItensPedido || 0).toFixed(1);
+    }
+
+    function renderMaisVendidos(itens) {
+        const container = document.getElementById('lista-mais-vendidos');
+        container.innerHTML = '';
+        if (!itens || itens.length === 0) {
+            container.innerHTML = '<p class="text-white/60 text-center">Nenhum item vendido no período.</p>';
+            return;
+        }
+        itens.forEach(item => {
+            const itemHtml = `
+                <div class="bg-white/5 p-3 rounded-lg">
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="font-semibold">${item.nome}</span>
+                        <span class="text-sm font-bold bg-blue-500/50 px-2 py-1 rounded-full">${item.quantidade} un</span>
+                    </div>
+                    <div class="text-xs text-white/70">
+                        <span>Receita: ${formatCurrency(item.receita)}</span> | 
+                        <span class="font-semibold text-green-400">Lucro: ${formatCurrency(item.lucro)}</span>
+                    </div>
+                </div>`;
+            container.innerHTML += itemHtml;
+        });
+    }
+
+    function renderTabelaPedidos(pedidos) {
+        const tbody = document.getElementById('tabela-pedidos');
+        tbody.innerHTML = '';
+        if (!pedidos || pedidos.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-white/60">Nenhum pedido no período.</td></tr>';
+            return;
+        }
+        // Usamos .map() para criar o HTML de forma mais limpa e o .join('') no final
+        tbody.innerHTML = pedidos.map(pedido => `
+            <tr class="border-b border-white/10 hover:bg-white/5">
+                <td class="p-3">#${pedido.id}</td>
+                <td class="p-3">${pedido.nome_cliente}</td>
+                <td class="p-3">${pedido.horario || ''}</td>
+                <td class="p-3 font-semibold">${formatCurrency(pedido.valor_total)}</td>
+                <td class="p-3">${pedido.metodo_pagamento}</td>
+                <td class="p-3">
+                    <button class="btn-detalhes-pedido text-blue-400 hover:text-blue-300"
+                            data-id-pedido="${pedido.id}" 
+                            data-itens='${pedido.itens_json}'>
+                        <i class="fas fa-eye"></i>
+                    </button>
+                </td>
+            </tr>`).join('');
+    }
+
+    function renderGraficos(vendasData, pagamentosData, dadosCompletos) {
+        const metricaSelecionada = selectMetrica.value;
+        const ctxVendas = document.getElementById('grafico-vendas').getContext('2d');
+        if(graficoVendas) graficoVendas.destroy();
+
+        if (vendasData && vendasData.data.length > 0) {
+            let dadosGrafico, labelGrafico, tituloGrafico, corPrincipal, corGradiente;
+            
+            // Lógica para selecionar dados e estilo com base na métrica
+            switch(metricaSelecionada) {
+                case 'lucro':
+                    dadosGrafico = vendasData.data.map(valor => valor * (dadosCompletos.kpis.lucroEstimado / dadosCompletos.kpis.faturamentoBruto || 0.5));
+                    labelGrafico = 'Lucro Estimado';
+                    tituloGrafico = 'Lucro por Período';
+                    corPrincipal = '#2DD4BF';
+                    corGradiente = 'rgba(45, 212, 191, 0.1)';
+                    break;
+                case 'pedidos':
+                    dadosGrafico = vendasData.data.map(valor => Math.ceil(valor / (dadosCompletos.kpis.ticketMedio || 1)));
+                    labelGrafico = 'Nº de Pedidos';
+                    tituloGrafico = 'Pedidos por Período';
+                    corPrincipal = '#FBBF24';
+                    corGradiente = 'rgba(251, 191, 36, 0.1)';
+                    break;
+                default: // Faturamento
+                    dadosGrafico = vendasData.data;
+                    labelGrafico = 'Faturamento';
+                    tituloGrafico = 'Faturamento por Período';
+                    corPrincipal = '#60A5FA';
+                    corGradiente = 'rgba(96, 165, 250, 0.1)';
+                    break;
+            }
+
+            document.getElementById('titulo-grafico-vendas').textContent = tituloGrafico;
+
+            const gradient = ctxVendas.createLinearGradient(0, 0, 0, ctxVendas.canvas.clientHeight);
+            gradient.addColorStop(0, corGradiente.replace('0.1', '0.5'));
+            gradient.addColorStop(1, corGradiente.replace('0.1', '0'));
+            
+            graficoVendas = new Chart(ctxVendas, {
+                type: 'line', // <-- A grande mudança está aqui!
+                data: {
+                    labels: vendasData.labels,
+                    datasets: [{
+                        label: labelGrafico,
+                        data: dadosGrafico,
+                        borderColor: corPrincipal,
+                        backgroundColor: gradient,
+                        fill: true,
+                        tension: 0.4,
+                        pointBackgroundColor: corPrincipal,
+                        pointRadius: 3,
+                        pointHoverRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false }, tooltip: { /* ... */ } },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { color: 'white', callback: function(value) { return metricaSelecionada === 'pedidos' ? Math.round(value) : formatCurrency(value); } },
+                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
+                        },
+                        x: {
+                            ticks: { color: 'white', autoSkip: true, maxTicksLimit: 20 },
+                            grid: { display: false }
+                        }
+                    }
+                }
+            });
+        } else {
+            document.getElementById('titulo-grafico-vendas').textContent = 'Sem dados de vendas para o período';
+        }
+
+        // Gráfico de Pagamentos (Pizza) - permanece o mesmo
+        const ctxPagamentos = document.getElementById('grafico-pagamentos').getContext('2d');
+        if(graficoPagamentos) graficoPagamentos.destroy();
+        if (pagamentosData && pagamentosData.data.some(d => d > 0)) {
+            graficoPagamentos = new Chart(ctxPagamentos, {
+                type: 'doughnut',
+                data: {
+                    labels: pagamentosData.labels,
+                    datasets: [{
+                        data: pagamentosData.data,
+                        backgroundColor: ['#60A5FA', '#A78BFA', '#FBBF24'], // Azul, Roxo, Amarelo
+                        borderColor: 'rgba(255,255,255,0.1)',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { 
+                            position: 'bottom', 
+                            labels: { 
+                                color: 'white', 
+                                boxWidth: 15, 
+                                padding: 20,
+                                font: { size: 14 }
+                            } 
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    // --- (NOVO) LÓGICA DO MODAL DE DETALHES ---
+    function abrirModalDetalhes(idPedido, itensJson) {
+        // Define o título do modal com o ID do pedido
+        modalTituloPedido.textContent = `Detalhes do Pedido #${idPedido}`;
+        
+        let htmlItens = ''; // Variável para construir o HTML dos itens
+        try {
+            // 1. Converte a string JSON em um objeto JavaScript
+            const itens = JSON.parse(itensJson);
+
+            // 2. Verifica se existem itens
+            if (itens && itens.length > 0) {
+                // 3. Itera sobre cada item para criar seu HTML
+                htmlItens = itens.map(item => {
+                    const subtotal = (item.quantidade || 0) * (item.preco || 0);
+                    
+                    // Lógica para exibir detalhes de customização, se existirem
+                    let detalhesCustomizacao = '';
+                    if (item.customizacoes && item.customizacoes.length > 0) {
+                        const mapaPonto = { 'mal': 'Mal Passado', 'ponto': 'Ao Ponto', 'bem': 'Bem Passado' };
+                        
+                        detalhesCustomizacao = item.customizacoes.map(custo => {
+                            const pontoTexto = mapaPonto[custo.ponto] || custo.ponto;
+                            const extrasTexto = (custo.extras && custo.extras.length > 0) 
+                                ? `com ${custo.extras.join(', ')}` 
+                                : 'sem extras';
+                            return `<div class="text-xs pl-5 text-white/70">${custo.item}º - ${pontoTexto}, ${extrasTexto}</div>`;
+                        }).join('');
+                    }
+
+                    // 4. Monta o bloco HTML final para este item
+                    return `
+                        <div class="bg-white/10 p-3 rounded-lg space-y-1">
+                            <div class="flex justify-between items-baseline">
+                               <span class="font-semibold text-lg">${item.quantidade}x ${item.nome}</span>
+                               <span class="font-bold">${formatCurrency(subtotal)}</span>
+                            </div>
+                            ${detalhesCustomizacao}
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                htmlItens = '<p class="text-white/60">Não foi possível carregar os itens deste pedido.</p>';
+            }
+        } catch (e) {
+            console.error("Erro ao processar itens do pedido:", e);
+            htmlItens = '<p class="text-red-400">Erro ao ler os dados dos itens.</p>';
+        }
+
+        // 5. Insere o HTML gerado no corpo do modal e exibe o modal
+        modalCorpoPedido.innerHTML = htmlItens;
+        modalDetalhes.classList.remove('hidden');
+    }
+    
+    function fecharModalDetalhes() {
+        modalDetalhes.classList.add('hidden');
+    }
+
+
+    // --- FUNÇÃO PARA CALCULAR INTERVALOS DE DATAS ---
+    function calcularIntervaloDatas(periodo) {
+        const agora = new Date();
+        let dataInicio, dataFim;
+
+        switch(periodo) {
+            case 'hoje':
+                dataInicio = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 0, 0, 0);
+                dataFim = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 23, 59, 59);
+                break;
+            
+            case 'ontem':
+                const ontem = new Date(agora);
+                ontem.setDate(ontem.getDate() - 1);
+                dataInicio = new Date(ontem.getFullYear(), ontem.getMonth(), ontem.getDate(), 0, 0, 0);
+                dataFim = new Date(ontem.getFullYear(), ontem.getMonth(), ontem.getDate(), 23, 59, 59);
+                break;
+            
+            case '7dias':
+                dataInicio = new Date(agora);
+                dataInicio.setDate(dataInicio.getDate() - 7);
+                dataInicio.setHours(0, 0, 0, 0);
+                dataFim = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 23, 59, 59);
+                break;
+            
+            case 'mes_atual':
+                dataInicio = new Date(agora.getFullYear(), agora.getMonth(), 1, 0, 0, 0);
+                dataFim = new Date(agora.getFullYear(), agora.getMonth() + 1, 0, 23, 59, 59);
+                break;
+            
+            case 'custom':
+                if (dateRangePicker.selectedDates.length === 2) {
+                    dataInicio = dateRangePicker.selectedDates[0];
+                    dataFim = new Date(dateRangePicker.selectedDates[1]);
+                    dataFim.setHours(23, 59, 59, 999);
+                } else {
+                    // Se período customizado não foi selecionado, usa hoje
+                    dataInicio = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 0, 0, 0);
+                    dataFim = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 23, 59, 59);
+                }
+                break;
+            
+            default:
+                dataInicio = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 0, 0, 0);
+                dataFim = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 23, 59, 59);
+        }
+
+        return {
+            inicio: dataInicio.toISOString(),
+            fim: dataFim.toISOString()
+        };
+    }
+
+    // --- FUNÇÃO PRINCIPAL PARA BUSCAR E CARREGAR DADOS ---
+    async function carregarRelatorio() {
+        btnGerarRelatorio.disabled = true;
+        btnGerarRelatorio.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Gerando...`;
+
+        try {
+            // Calcula o intervalo de datas baseado no período selecionado
+            const periodo = selectPeriodo.value;
+            const { inicio, fim } = calcularIntervaloDatas(periodo);
+            
+            console.log('Buscando dados para:', { inicio, fim, periodo });
+
+            // Chama a API
+            const response = await fetch(`/api/relatorio?inicio=${encodeURIComponent(inicio)}&fim=${encodeURIComponent(fim)}`);
+            if (!response.ok) {
+                throw new Error(`Erro na rede: ${response.status} - ${response.statusText}`);
+            }
+            
+            const dados = await response.json();
+            console.log('Dados recebidos:', dados);
+
+            // Renderiza os dados recebidos
+            renderKPIs(dados.kpis);
+            renderMaisVendidos(dados.itensMaisVendidos);
+            renderTabelaPedidos(dados.historicoPedidos);
+            renderGraficos(dados.vendasPorPeriodo, dados.vendasPorPagamento, dados);
+
+        } catch (error) {
+            console.error("Falha ao buscar relatório:", error);
+            alert("Não foi possível carregar os dados do relatório. Verifique o console para mais detalhes.");
+        } finally {
+            btnGerarRelatorio.disabled = false;
+            btnGerarRelatorio.innerHTML = `<i class="fas fa-sync-alt"></i> Gerar Relatório`;
+        }
+    }
+
+    // --- EVENT LISTENERS ---
+    btnGerarRelatorio.addEventListener('click', carregarRelatorio);
+
+    // (NOVO) Listeners para o modal de detalhes
+    modalFecharPedido.addEventListener('click', fecharModalDetalhes);
+    modalDetalhes.addEventListener('click', (event) => {
+        if (event.target === modalDetalhes) {
+            fecharModalDetalhes();
+        }
+    });
+
+    // (NOVO) Listener DELEGADO para os botões de detalhes na tabela
+    document.getElementById('tabela-pedidos').addEventListener('click', function(event) {
+        const botaoDetalhes = event.target.closest('.btn-detalhes-pedido');
+        if (botaoDetalhes) {
+            const idPedido = botaoDetalhes.dataset.idPedido;
+            const itensJson = botaoDetalhes.dataset.itens;
+            abrirModalDetalhes(idPedido, itensJson);
+        }
+    });
+    
+    // --- CARGA INICIAL ---
+    carregarRelatorio(); // Gera o relatório de "Hoje" ao carregar a página
+});
+</script>
+
+</body>
+</html>

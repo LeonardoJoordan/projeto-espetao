@@ -6,7 +6,7 @@ import uuid
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
-socketio = SocketIO(app)
+socketio = SocketIO(app, async_mode='eventlet')
 
 @app.route('/cliente', methods=['GET', 'POST'])
 def tela_cliente():
@@ -402,8 +402,16 @@ def api_relatorio():
         return jsonify({"erro": "As datas de início e fim são obrigatórias"}), 400
 
     # Chama nosso especialista para buscar os dados
-    dados = gerenciador_db.obter_dados_relatorio(data_inicio_str, data_fim_str)
-    
+    # Busca os dados do relatório e as configurações do sistema
+    dados_relatorio = gerenciador_db.obter_dados_relatorio(data_inicio_str, data_fim_str)
+    configuracoes = gerenciador_db.obter_configuracoes()
+
+    if dados_relatorio:
+        # Combina os dois dicionários em uma única resposta JSON
+        dados = {**dados_relatorio, "configuracoes": configuracoes}
+    else:
+        dados = None # Mantém a lógica de erro original
+        
     if dados:
         return jsonify(dados)
     else:
@@ -506,14 +514,25 @@ def api_get_todos_acompanhamentos():
     todos_acompanhamentos = gerenciador_db.obter_todos_acompanhamentos()
     return jsonify(todos_acompanhamentos)
 
+@app.route('/salvar_configuracoes', methods=['POST'])
+def rota_salvar_configuracoes():
+    """ Rota para receber e salvar as novas taxas de pagamento. """
+    try:
+        dados = request.get_json()
+        sucesso = gerenciador_db.salvar_configuracoes(dados)
+        if sucesso:
+            return jsonify({"status": "sucesso"})
+        else:
+            return jsonify({"status": "erro", "mensagem": "Erro ao salvar no banco de dados."}), 500
+    except Exception as e:
+        print(f"Erro ao salvar configurações: {e}")
+        return jsonify({"status": "erro", "mensagem": str(e)}), 400
+
 @app.route('/')
 def index():
     # Redireciona a rota principal para a tela do cliente por padrão
     return redirect(url_for('tela_cliente'))
 
-if __name__ == '__main__':
-    # O 'debug=True' faz o servidor reiniciar automaticamente quando salvamos o arquivo.
-    socketio.run(app, debug=True, host='0.0.0.0', port=5001)
 
 
 

@@ -4,9 +4,37 @@ from flask_socketio import SocketIO
 import os
 import uuid
 from werkzeug.utils import secure_filename
+import sys
 
-app = Flask(__name__)
-socketio = SocketIO(app, async_mode='eventlet')
+# Determina o caminho base de forma universal
+if getattr(sys, 'frozen', False):
+    # Caminho para o executável (cx_Freeze, PyInstaller)
+    base_path = os.path.dirname(sys.executable)
+else:
+    # Caminho para o script .py (desenvolvimento)
+    base_path = os.path.dirname(os.path.abspath(__file__))
+
+# Constrói os caminhos para as pastas 'templates' e 'static'
+template_folder = os.path.join(base_path, 'templates')
+static_folder = os.path.join(base_path, 'static')
+
+# Inicializa o Flask com os caminhos corretos
+app = Flask(__name__, template_folder=template_folder, static_folder=static_folder)
+
+# Tenta diferentes modos até encontrar um que funcione
+socketio = None
+for mode in ['threading', 'gevent', None]:
+    try:
+        socketio = SocketIO(app, async_mode=mode, cors_allowed_origins='*')
+        print(f"SocketIO iniciado com async_mode='{mode}'")
+        break
+    except:
+        continue
+
+# Se nenhum modo funcionar, cria sem especificar
+if socketio is None:
+    socketio = SocketIO(app, cors_allowed_origins='*')
+    print("SocketIO iniciado com modo padrão")
 
 @app.route('/cliente', methods=['GET', 'POST'])
 def tela_cliente():

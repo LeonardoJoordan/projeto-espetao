@@ -34,8 +34,13 @@ class ServidorThread(threading.Thread):
     def run(self):
         try:
             print("Iniciando servidor Flask na thread...")
-            # Usamos allow_unsafe_werkzeug=True para permitir o shutdown
-            socketio.run(app, host=self.host, port=self.port, debug=False, allow_unsafe_werkzeug=True)
+            # Usa o run simples do Flask quando empacotado
+            if getattr(sys, 'frozen', False):
+                # Quando empacotado, roda o Flask diretamente
+                app.run(host=self.host, port=self.port, debug=False, threaded=True)
+            else:
+                # Em desenvolvimento, usa o socketio
+                socketio.run(app, host=self.host, port=self.port, debug=False, allow_unsafe_werkzeug=True)
         except Exception as e:
             print(f"ERRO ao iniciar o servidor: {e}")
 

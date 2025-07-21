@@ -527,6 +527,20 @@ def rota_salvar_configuracoes():
     except Exception as e:
         print(f"Erro ao salvar configurações: {e}")
         return jsonify({"status": "erro", "mensagem": str(e)}), 400
+    
+@app.route('/shutdown', methods=['POST'])
+def shutdown():
+    """Rota para desligar o servidor Flask de forma segura."""
+    func = request.environ.get('werkzeug.server.shutdown')
+    if func is None:
+        # Para servidores de produção ou quando usando socketio
+        import os
+        import signal
+        os.kill(os.getpid(), signal.SIGINT)
+        return 'Servidor sendo desligado...', 200
+    else:
+        func()
+        return 'Servidor desligado!', 200
 
 @app.route('/')
 def index():

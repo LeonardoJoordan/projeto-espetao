@@ -5,7 +5,13 @@ module.exports = {
     "./static/js/**/*.js"    // E também seus arquivos JavaScript
   ],
   theme: {
-    extend: {},
+    extend: {
+      fontFamily: {
+        sans: ['Inter', 'sans-serif'],
+        poppins: ['Poppins', 'sans-serif'],
+        roboto: ['Roboto', 'sans-serif'],
+      },
+    },
   },
   plugins: [],
 }

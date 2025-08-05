@@ -524,7 +524,7 @@ def obter_historico_produto(id_produto):
         if conn:
             conn.close()
 
-def salvar_novo_pedido(dados_do_pedido):
+def salvar_novo_pedido(dados_do_pedido, local_id):
     """
     Salva um novo pedido, lendo o custo médio de cada item no momento da venda
     e armazenando essa informação no JSON do pedido.
@@ -877,7 +877,7 @@ def chamar_cliente_pedido(id_do_pedido):
         if conn:
             conn.close()
 
-def obter_dados_relatorio(data_inicio, data_fim):
+def obter_dados_relatorio(data_inicio, data_fim, local_id=None):
     """
     Busca e calcula todos os dados para o relatório de fechamento
     dentro de um intervalo de datas, aplicando as taxas de pagamento.
@@ -939,20 +939,7 @@ def obter_dados_relatorio(data_inicio, data_fim):
         total_itens_vendidos = sum(sum(item['quantidade'] for item in json.loads(p['itens_json'])) for p in pedidos_finalizados)
         media_itens_pedido = total_itens_vendidos / pedidos_realizados if pedidos_realizados > 0 else 0
         valor_perdas = 0
-        for pa in perdas_e_ajustes:
-            # Como é perda (custo_unitario = 0), buscamos o custo médio do produto na data
-            cursor.execute("""
-                SELECT p.custo_total_do_estoque, p.estoque_atual, p.estoque_reservado
-                FROM produtos p
-                JOIN entradas_de_estoque e ON p.id = e.id_produto
-                WHERE e.quantidade_comprada = ? AND e.custo_unitario_compra = ? AND e.data_entrada BETWEEN ? AND ?
-                LIMIT 1
-            """, (pa['quantidade_comprada'], pa['custo_unitario_compra'], data_inicio, data_fim))
-            
-            produto_info = cursor.fetchone()
-            if produto_info and (produto_info[1] + produto_info[2]) > 0:
-                custo_medio = produto_info[0] / (produto_info[1] + produto_info[2])
-                valor_perdas += abs(pa['quantidade_comprada']) * custo_medio
+        
         
         # --- DADOS PARA GRÁFICOS E TABELAS ---
         vendas_por_pagamento = {'pix': 0, 'cartao_credito': 0, 'cartao_debito': 0, 'dinheiro': 0}
@@ -1434,6 +1421,74 @@ def salvar_configuracoes(novas_taxas):
         return True
     except sqlite3.Error as e:
         print(f"ERRO ao salvar configurações: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+# === NOVAS FUNÇÕES PARA GERENCIAR LOCAIS ===
+
+def adicionar_local(nome_local):
+    """Adiciona um novo local à tabela 'locais'."""
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO locais (nome) VALUES (?)", (nome_local,))
+        conn.commit()
+        print(f"Local '{nome_local}' adicionado com sucesso.")
+        return True
+    except sqlite3.IntegrityError:
+        print(f"Erro: O local '{nome_local}' já existe.")
+        return False
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao adicionar o local: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def obter_todos_locais():
+    """Busca todos os locais cadastrados, ordenados por nome."""
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, nome FROM locais ORDER BY nome")
+        locais_tuplas = cursor.fetchall()
+        
+        # Converte a lista de tuplas para uma lista de dicionários para a API
+        locais_lista = [{'id': tupla[0], 'nome': tupla[1]} for tupla in locais_tuplas]
+        
+        return locais_lista
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao obter os locais: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+def excluir_local(id_local):
+    """
+    Exclui um local da tabela.
+    Nota: Isso falhará se o local estiver sendo usado por algum pedido,
+    devido à restrição de chave estrangeira, o que protege a integridade dos dados.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM locais WHERE id = ?", (id_local,))
+        conn.commit()
+        # Verifica se alguma linha foi realmente deletada
+        if cursor.rowcount > 0:
+            print(f"Local com ID {id_local} excluído com sucesso.")
+            return True
+        else:
+            print(f"Nenhum local com ID {id_local} encontrado para excluir.")
+            return False
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao excluir o local: {e}")
         return False
     finally:
         if conn:

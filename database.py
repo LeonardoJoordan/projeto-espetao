@@ -11,6 +11,15 @@ def inicializar_banco():
         cursor = conn.cursor()
         print(f"Banco de dados '{NOME_BANCO_DADOS}' conectado com sucesso.")
 
+        # Tabela de Locais
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS locais (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT NOT NULL UNIQUE
+            )
+        ''')
+        print("Tabela 'locais' verificada/criada.")
+
         # Tabela de Categorias
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS categorias (
@@ -84,7 +93,9 @@ def inicializar_banco():
                 timestamp_finalizacao TEXT,
                 itens_json TEXT,
                 senha_diaria INTEGER NOT NULL DEFAULT 1,
-                fluxo_simples INTEGER NOT NULL DEFAULT 0 -- 1 se for simples, 0 se for complexo
+                fluxo_simples INTEGER NOT NULL DEFAULT 0, -- 1 se for simples, 0 se for complexo
+                local_id INTEGER,
+                FOREIGN KEY (local_id) REFERENCES locais (id)
             )
         ''')
         print("Tabela 'pedidos' verificada/criada.")

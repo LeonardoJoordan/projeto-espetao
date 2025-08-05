@@ -108,6 +108,13 @@
                         <input type="text" id="daterange" placeholder="Selecione as datas" class="w-full p-3 rounded-lg bg-white/20 border border-white/30 text-white">
                     </div>
 
+                    <div>
+                        <label for="filtro-local" class="block mb-2 font-semibold">Local</label>
+                        <select id="filtro-local" class="w-full p-3 rounded-lg bg-white/20 border border-white/30 text-white">
+                            <option value="todos">Todos os Locais</option>
+                            </select>
+                    </div>
+
                 </div>
 
                 <div>
@@ -584,11 +591,18 @@ document.addEventListener('DOMContentLoaded', function() {
             // Calcula o intervalo de datas baseado no período selecionado
             const periodo = selectPeriodo.value;
             const { inicio, fim } = calcularIntervaloDatas(periodo);
+            const localId = document.getElementById('filtro-local').value;
+
+            // Construímos a URL da API dinamicamente
+            let apiUrl = `/api/relatorio?inicio=${encodeURIComponent(inicio)}&fim=${encodeURIComponent(fim)}`;
+            if (localId && localId !== 'todos') {
+                apiUrl += `&local_id=${localId}`;
+            }
             
-            console.log('Buscando dados para:', { inicio, fim, periodo });
+            console.log('Buscando dados para:', { inicio, fim, periodo, localId });
 
             // Chama a API
-            const response = await fetch(`/api/relatorio?inicio=${encodeURIComponent(inicio)}&fim=${encodeURIComponent(fim)}`);
+            const response = await fetch(apiUrl);
             if (!response.ok) {
                 throw new Error(`Erro na rede: ${response.status} - ${response.statusText}`);
             }
@@ -610,6 +624,25 @@ document.addEventListener('DOMContentLoaded', function() {
         } finally {
             btnGerarRelatorio.disabled = false;
             btnGerarRelatorio.innerHTML = `<i class="fas fa-sync-alt"></i> Gerar Relatório`;
+        }
+    }
+
+    // Adicione esta nova função
+    async function popularFiltroLocais() {
+        try {
+            const response = await fetch('/api/locais');
+            const locais = await response.json();
+            const selectLocal = document.getElementById('filtro-local');
+
+            // Limpa opções antigas (exceto a primeira "Todos os Locais")
+            selectLocal.options.length = 1;
+
+            locais.forEach(local => {
+                const option = new Option(local.nome, local.id);
+                selectLocal.add(option);
+            });
+        } catch (error) {
+            console.error("Erro ao buscar locais para o filtro:", error);
         }
     }
 
@@ -688,6 +721,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // --- CARGA INICIAL ---
     carregarRelatorio(); // Gera o relatório de "Hoje" ao carregar a página
+
+    // No final do script, dentro do DOMContentLoaded, chame as duas funções
+    popularFiltroLocais();
+    carregarRelatorio();
 });
 </script>
 

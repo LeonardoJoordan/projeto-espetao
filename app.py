@@ -6,6 +6,12 @@ import uuid
 from werkzeug.utils import secure_filename
 import sys
 
+# --- INICIALIZAÇÃO DO BANCO DE DADOS ---
+# Garante que o banco e as tabelas existam antes de o servidor iniciar.
+from database import inicializar_banco
+inicializar_banco()
+# -----------------------------------------
+
 # Determina o caminho base de forma universal
 if getattr(sys, 'frozen', False):
     # Caminho para o executável (cx_Freeze, PyInstaller)
@@ -35,6 +41,27 @@ for mode in ['threading', 'gevent', None]:
 if socketio is None:
     socketio = SocketIO(app, cors_allowed_origins='*')
     print("SocketIO iniciado com modo padrão")
+
+# Variável global para armazenar o ID do local da sessão atual
+LOCAL_SESSAO_ATUAL = None
+
+@app.route('/api/definir_local_sessao', methods=['POST'])
+def definir_local_sessao():
+    """API para o painel de controle informar o local do dia."""
+    global LOCAL_SESSAO_ATUAL
+    dados = request.get_json()
+    local_id = dados.get('local_id')
+    if local_id:
+        LOCAL_SESSAO_ATUAL = int(local_id)
+        print(f"Sessão definida para o local ID: {LOCAL_SESSAO_ATUAL}")
+        return jsonify({"status": "sucesso", "local_id": LOCAL_SESSAO_ATUAL})
+    return jsonify({"status": "erro", "mensagem": "ID do local não fornecido"}), 400
+
+@app.route('/api/locais')
+def api_obter_locais():
+    """API que retorna a lista de todos os locais cadastrados."""
+    locais = gerenciador_db.obter_todos_locais()
+    return jsonify(locais)
 
 @app.route('/cliente', methods=['GET', 'POST'])
 def tela_cliente():
@@ -296,15 +323,21 @@ def salvar_pedido():
     print("-----------------------------")
 
     # 3. Chama a função "trabalhadora" para salvar o pedido no banco de dados
-    id_do_pedido_salvo = gerenciador_db.salvar_novo_pedido(dados_do_pedido)
+    id_do_pedido_salvo = gerenciador_db.salvar_novo_pedido(dados_do_pedido, LOCAL_SESSAO_ATUAL)
 
     # 4. Verifica se a operação foi bem-sucedida antes de responder
     if id_do_pedido_salvo is None:
-        # Se deu erro, retorna uma resposta de erro para o frontend
         return jsonify({
             "status": "erro",
             "mensagem": "Ocorreu um erro ao processar o pedido no servidor."
-        }), 500 # 500 é o código para "Erro Interno do Servidor"
+        }), 500
+
+    socketio.emit('novo_pedido', {'msg': 'Um novo pedido chegou!'})
+    return jsonify({
+        "status": "sucesso",
+        "mensagem": "Pedido recebido, em preparação!",
+        "senha_diaria": id_do_pedido_salvo['senha']
+    })
 
     socketio.emit('novo_pedido', {'msg': 'Um novo pedido chegou!'})
 
@@ -424,6 +457,7 @@ def api_relatorio():
     # Pega as datas da URL
     data_inicio_str = request.args.get('inicio')
     data_fim_str = request.args.get('fim')
+    local_id = request.args.get('local_id', type=int, default=None)
     
     # Se não forem fornecidas, retorna um erro
     if not data_inicio_str or not data_fim_str:
@@ -431,7 +465,7 @@ def api_relatorio():
 
     # Chama nosso especialista para buscar os dados
     # Busca os dados do relatório e as configurações do sistema
-    dados_relatorio = gerenciador_db.obter_dados_relatorio(data_inicio_str, data_fim_str)
+    dados_relatorio = gerenciador_db.obter_dados_relatorio(data_inicio_str, data_fim_str, local_id)
     configuracoes = gerenciador_db.obter_configuracoes()
 
     if dados_relatorio:
@@ -574,7 +608,3 @@ def shutdown():
 def index():
     # Redireciona a rota principal para a tela do cliente por padrão
     return redirect(url_for('tela_cliente'))
-
-
-
-

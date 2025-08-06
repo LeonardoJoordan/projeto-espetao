@@ -1493,3 +1493,29 @@ def excluir_local(id_local):
     finally:
         if conn:
             conn.close()
+
+def atualizar_categoria_produto(id_produto, nova_categoria_id):
+    """Altera a categoria de um produto específico no banco de dados."""
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # Comando SQL para atualizar a categoria_id do produto
+        cursor.execute("""
+            UPDATE produtos 
+            SET categoria_id = ? 
+            WHERE id = ?
+        """, (nova_categoria_id, id_produto))
+
+        conn.commit()
+        print(f"Produto ID {id_produto} movido para a categoria ID {nova_categoria_id}.")
+        return True
+    except sqlite3.Error as e:
+        print(f"Ocorreu um erro ao atualizar a categoria do produto: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    finally:
+        if conn:
+            conn.close()

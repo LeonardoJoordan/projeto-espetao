@@ -5,6 +5,8 @@ import os
 import uuid
 from werkzeug.utils import secure_filename
 import sys
+import threading
+import time
 
 # --- INICIALIZAÇÃO DO BANCO DE DADOS ---
 # Garante que o banco e as tabelas existam antes de o servidor iniciar.
@@ -46,16 +48,14 @@ if socketio is None:
 LOCAL_SESSAO_ATUAL = None
 
 @app.route('/api/definir_local_sessao', methods=['POST'])
-def definir_local_sessao():
-    """API para o painel de controle informar o local do dia."""
+def definir_local_sessao(local_id):
+    """Função para definir o local da sessão a partir de outro módulo."""
     global LOCAL_SESSAO_ATUAL
-    dados = request.get_json()
-    local_id = dados.get('local_id')
     if local_id:
         LOCAL_SESSAO_ATUAL = int(local_id)
-        print(f"Sessão definida para o local ID: {LOCAL_SESSAO_ATUAL}")
-        return jsonify({"status": "sucesso", "local_id": LOCAL_SESSAO_ATUAL})
-    return jsonify({"status": "erro", "mensagem": "ID do local não fornecido"}), 400
+        print(f"Sessão de trabalho definida para o local ID: {LOCAL_SESSAO_ATUAL}")
+        return True
+    return False
 
 @app.route('/api/locais')
 def api_obter_locais():
@@ -590,19 +590,23 @@ def rota_salvar_configuracoes():
         print(f"Erro ao salvar configurações: {e}")
         return jsonify({"status": "erro", "mensagem": str(e)}), 400
     
-@app.route('/shutdown', methods=['POST'])
-def shutdown():
-    """Rota para desligar o servidor Flask de forma segura."""
-    func = request.environ.get('werkzeug.server.shutdown')
-    if func is None:
-        # Para servidores de produção ou quando usando socketio
-        import os
-        import signal
-        os.kill(os.getpid(), signal.SIGINT)
-        return 'Servidor sendo desligado...', 200
+    
+@app.route('/api/produto/mudar_categoria', methods=['POST'])
+def api_mudar_categoria_produto():
+    """API para alterar a categoria de um produto via drag-and-drop."""
+    dados = request.get_json()
+    id_produto = dados.get('id_produto')
+    nova_categoria_id = dados.get('nova_categoria_id')
+
+    if not id_produto or not nova_categoria_id:
+        return jsonify({"status": "erro", "mensagem": "Dados incompletos."}), 400
+
+    sucesso = gerenciador_db.atualizar_categoria_produto(id_produto, nova_categoria_id)
+
+    if sucesso:
+        return jsonify({"status": "sucesso", "mensagem": "Categoria do produto atualizada."})
     else:
-        func()
-        return 'Servidor desligado!', 200
+        return jsonify({"status": "erro", "mensagem": "Falha ao atualizar o banco de dados."}), 500
 
 @app.route('/')
 def index():

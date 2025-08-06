@@ -15,6 +15,10 @@ import json
 # app.py agora funciona como uma "biblioteca" para o nosso programa principal
 from app import app, socketio
 import gerenciador_db
+# Adicione esta importação no topo do main.py
+import signal
+import multiprocessing
+from queue import Empty 
 
 # --- Classe para redirecionar os logs para a interface ---
 class LogHandler(QObject):
@@ -27,25 +31,38 @@ class LogHandler(QObject):
         pass
 
 # --- Classe para rodar o Flask em uma thread separada ---
-class ServidorThread(threading.Thread):
-    def __init__(self, host, port):
+class ServidorProcess(multiprocessing.Process):
+    def __init__(self, host, port, log_queue, local_id): # Adicionamos local_id
         super().__init__()
         self.daemon = True
         self.host = host
         self.port = port
+        self.log_queue = log_queue
+        self.local_id = local_id # Armazenamos o local_id
 
     def run(self):
+        sys.stdout = LogWriter(self.log_queue)
+        sys.stderr = LogWriter(self.log_queue)
         try:
-            print("Iniciando servidor Flask na thread...")
-            # Usa o run simples do Flask quando empacotado
-            if getattr(sys, 'frozen', False):
-                # Quando empacotado, roda o Flask diretamente
-                app.run(host=self.host, port=self.port, debug=False, threaded=True)
-            else:
-                # Em desenvolvimento, usa o socketio
-                socketio.run(app, host=self.host, port=self.port, debug=False, allow_unsafe_werkzeug=True)
+            # Importa a função aqui para evitar problemas de escopo
+            from app import definir_local_sessao
+
+            # Define o local ANTES de iniciar o servidor
+            definir_local_sessao(self.local_id)
+
+            print("Iniciando servidor Flask em um novo processo...")
+            socketio.run(app, host=self.host, port=self.port, debug=False, allow_unsafe_werkzeug=True)
         except Exception as e:
-            print(f"ERRO ao iniciar o servidor: {e}")
+            print(f"ERRO ao iniciar o servidor no processo filho: {e}")
+
+# Classe auxiliar para capturar logs do processo filho
+class LogWriter:
+    def __init__(self, queue):
+        self.queue = queue
+    def write(self, message):
+        self.queue.put(message)
+    def flush(self):
+        pass
 
 # Coloque esta nova classe ANTES da classe PainelControle
 class ModalGerenciarLocais(QDialog):
@@ -128,13 +145,16 @@ class PainelControle(QWidget):
     def __init__(self):
         super().__init__()
         self.servidor_rodando = False
-        self.servidor_thread = None
+        self.servidor_process = None # CORREÇÃO: Atributo correto inicializado
         self.ip_servidor = self.detectar_ip()
         self.porta = 5001
+        
+        self.log_queue = multiprocessing.Queue()
+        self.log_timer = QTimer(self)
+        self.log_timer.timeout.connect(self.processar_fila_log)
+        self.log_timer.start(100) # Checa a fila a cada 100ms
 
         self.configurar_ui()
-        self.configurar_log_handler()
-
         self.atualizar_status_ui()
 
     def configurar_ui(self):
@@ -289,9 +309,18 @@ class PainelControle(QWidget):
         finally:
             s.close()
         return ip
+    
+    def processar_fila_log(self):
+        """Verifica a fila de logs e atualiza a UI."""
+        while not self.log_queue.empty():
+            try:
+                mensagem = self.log_queue.get_nowait()
+                mensagem_str = mensagem.decode('utf-8', errors='ignore') if isinstance(mensagem, bytes) else mensagem
+                self.atualizar_log(mensagem_str)
+            except Empty:
+                break
 
     def gerenciar_servidor(self):
-        """Inicia ou para o servidor com base no estado atual."""
         sender = self.sender()
         if sender == self.btn_iniciar and not self.servidor_rodando:
             self.iniciar_servidor()
@@ -299,38 +328,39 @@ class PainelControle(QWidget):
             self.parar_servidor()
             
     def iniciar_servidor(self):
-        # Primeiro, popula a lista de locais antes de iniciar.
-        # No mundo real, isso seria feito ao abrir a tela de gerenciamento.
-        # Por simplicidade, vamos popular com um local padrão.
-        # gerenciador_db.adicionar_local("Praça Central") # Exemplo
+        local_id_selecionado = self.combo_locais.currentData()
+        if local_id_selecionado is None or local_id_selecionado == -1:
+            QMessageBox.warning(self, "Local Inválido", "Por favor, cadastre e selecione um local de trabalho antes de iniciar.")
+            return
 
-        self.servidor_thread = ServidorThread(self.ip_servidor, self.porta)
-        self.servidor_thread.start()
-        self.servidor_rodando = True
-
-        # Espera um pouco para o servidor subir antes de fazer as chamadas de API
-        QTimer.singleShot(1500, self.setup_sessao)
+        try:
+            # Passa o local_id diretamente para o novo processo
+            self.servidor_process = ServidorProcess(self.ip_servidor, self.porta, self.log_queue, local_id_selecionado)
+            self.servidor_process.start()
+            self.servidor_rodando = True
+            self.atualizar_status_ui()
+        except Exception as e:
+            QMessageBox.critical(self, "Erro Fatal", f"Não foi possível iniciar o processo do servidor: {e}")
 
     def setup_sessao(self):
         """Carrega locais e define a sessão no servidor."""
-        self.carregar_locais()
         if self.definir_local_no_servidor():
             self.atualizar_status_ui()
         else:
             self.parar_servidor()
 
     def parar_servidor(self):
-        print("Enviando comando para desligar o servidor...")
-        try:
-            # Envia uma requisição para a rota de shutdown que criaremos no Flask
-            requests.post(f'http://{self.ip_servidor}:{self.porta}/shutdown')
-        except requests.exceptions.ConnectionError:
-            # É esperado que dê erro de conexão, pois o servidor desliga
-            print("Servidor desligado com sucesso (erro de conexão esperado).")
-        finally:
-            self.servidor_rodando = False
-            self.servidor_thread = None
-            self.atualizar_status_ui()
+        print("Encerrando o processo do servidor...")
+        if self.servidor_process and self.servidor_process.is_alive():
+            self.servidor_process.terminate()
+            self.servidor_process.join()
+        
+        self.servidor_rodando = False
+        self.servidor_process = None
+        self.atualizar_status_ui()
+        print("Servidor parado com sucesso.")
+
+
     
     def checar_status_servidor(self):
         """Verifica se o servidor está respondendo."""
@@ -391,6 +421,7 @@ class PainelControle(QWidget):
 
 # --- Ponto de Entrada Principal ---
 if __name__ == '__main__':
+    signal.signal(signal.SIGINT, signal.SIG_IGN) # Ignora o sinal de interrupção na UI
     # Cria a aplicação PySide6
     app_gui = QApplication(sys.argv)
     

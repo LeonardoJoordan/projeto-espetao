@@ -232,6 +232,27 @@
 
     <script src="{{ url_for('static', filename='js/libs/sortable.min.js') }}"></script>
     <script>
+            function enviarNovaOrdem(tipo, idsOrdenados) {
+            fetch('/atualizar_ordem', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tipo: tipo, ids_ordenados: idsOrdenados }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status !== "sucesso") {
+                    console.error(`Erro ao atualizar ordem de ${tipo}:`, data.mensagem);
+                    alert(`Ocorreu um erro ao salvar a nova ordem de ${tipo}.`);
+                } else {
+                    console.log(`Ordem de ${tipo} atualizada com sucesso.`);
+                }
+            })
+            .catch((error) => {
+                console.error('Erro de rede ao enviar ordem:', error);
+                alert('Ocorreu um erro de rede. A nova ordem pode não ter sido salva.');
+            });
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
             // --- LÓGICA DA DICA DINÂMICA DE QUANTIDADE ---
             const campoQuantidade = document.getElementById('quantidade');
@@ -299,12 +320,51 @@
 
             document.querySelectorAll('.produtos-container').forEach(container => {
                 new Sortable(container, {
+                    group: 'produtos-shared',
                     animation: 150,
                     ghostClass: 'sortable-ghost',
                     onEnd: function(evt) {
-                        const produtos = Array.from(evt.to.children);
-                        const idsOrdenados = produtos.map(el => parseInt(el.dataset.id));
-                        enviarNovaOrdem('produto', idsOrdenados);
+                        const itemEl = evt.item;
+                        const toContainer = evt.to;
+
+                        if (evt.from === toContainer) {
+                            // CENÁRIO 1: Reordenando dentro da mesma categoria
+                            const produtos = Array.from(toContainer.children);
+                            const idsOrdenados = produtos.map(el => parseInt(el.dataset.id));
+                            enviarNovaOrdem('produto', idsOrdenados);
+                        } else {
+                            // CENÁRIO 2: Movendo para uma NOVA categoria (Implementação da chamada)
+                            const idProduto = parseInt(itemEl.dataset.id);
+                            const novaCategoriaId = parseInt(toContainer.closest('.categoria-bloco').dataset.categoriaId);
+
+                            // A chamada fetch para a nova API:
+                            fetch('/api/produto/mudar_categoria', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({
+                                    id_produto: idProduto,
+                                    nova_categoria_id: novaCategoriaId
+                                }),
+                            })
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.status !== 'sucesso') {
+                                    console.error('Falha ao atualizar a categoria:', data.mensagem);
+                                    alert('Ocorreu um erro ao tentar mover o produto. A página será recarregada.');
+                                    location.reload(); // Recarrega a página em caso de erro para evitar inconsistência visual
+                                } else {
+                                    console.log(`Produto ${idProduto} movido para categoria ${novaCategoriaId} com sucesso.`);
+                                    // Opcional: podemos adicionar um feedback visual de sucesso aqui no futuro.
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Erro de rede ao mudar categoria:', error);
+                                alert('Ocorreu um erro de rede. A página será recarregada.');
+                                location.reload();
+                            });
+                        }
                     }
                 });
             });

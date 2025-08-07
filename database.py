@@ -95,6 +95,7 @@ def inicializar_banco():
                 senha_diaria INTEGER NOT NULL DEFAULT 1,
                 fluxo_simples INTEGER NOT NULL DEFAULT 0, -- 1 se for simples, 0 se for complexo
                 local_id INTEGER,
+                modalidade TEXT,
                 FOREIGN KEY (local_id) REFERENCES locais (id)
             )
         ''')

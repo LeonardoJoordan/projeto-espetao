@@ -535,10 +535,10 @@ def salvar_novo_pedido(dados_do_pedido, local_id):
         cursor = conn.cursor()
 
         proxima_senha = obter_proxima_senha_diaria()
-        
+
         ids_dos_produtos = [item['id'] for item in dados_do_pedido['itens']]
-        if not ids_dos_produtos: # Impede erro se o carrinho estiver vazio
-             return None
+        if not ids_dos_produtos: 
+            return None
 
         placeholders = ','.join('?' for _ in ids_dos_produtos)
         cursor.execute(f"SELECT requer_preparo FROM produtos WHERE id IN ({placeholders})", ids_dos_produtos)
@@ -548,27 +548,26 @@ def salvar_novo_pedido(dados_do_pedido, local_id):
 
         itens_enriquecidos = []
         for item in dados_do_pedido['itens']:
-            # LÓGICA CORRIGIDA: Busca o custo_medio diretamente.
             cursor.execute("SELECT custo_medio FROM produtos WHERE id = ?", (item['id'],))
             resultado = cursor.fetchone()
-            
             custo_a_registrar = resultado[0] if resultado else 0
-
             item_com_custo = item.copy()
             item_com_custo['custo_unitario'] = custo_a_registrar
             itens_enriquecidos.append(item_com_custo)
-        
+
         itens_como_json = json.dumps(itens_enriquecidos)
         timestamp_atual = datetime.datetime.now().isoformat()
         valor_total = sum(item['preco'] * item['quantidade'] for item in dados_do_pedido['itens'])
 
+        # COMANDO SQL ATUALIZADO
         cursor.execute('''
-            INSERT INTO pedidos (nome_cliente, status, metodo_pagamento, valor_total, timestamp_criacao, itens_json, fluxo_simples, senha_diaria)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO pedidos (nome_cliente, status, metodo_pagamento, modalidade, valor_total, timestamp_criacao, itens_json, fluxo_simples, senha_diaria, local_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             dados_do_pedido['nome_cliente'], 'aguardando_pagamento',
-            dados_do_pedido['metodo_pagamento'], valor_total, timestamp_atual,
-            itens_como_json, 1 if fluxo_e_simples else 0, proxima_senha
+            dados_do_pedido['metodo_pagamento'], dados_do_pedido['modalidade'], # <-- Dado da modalidade extraído
+            valor_total, timestamp_atual, itens_como_json, 1 if fluxo_e_simples else 0, proxima_senha,
+            local_id # <-- Dado do local_id agora sendo usado
         ))
 
         id_do_pedido_salvo = cursor.lastrowid

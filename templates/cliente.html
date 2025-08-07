@@ -54,81 +54,8 @@
         .categoria-secao {              /* espaço de 30 px */
             scroll-margin-top: 30px;
         }
-        /* Estilos para o Efeito de Fogo */
-        .particle {
-            position: absolute;
-            bottom: 0;
-            left: 50%;
-            width: 8px;
-            height: 8px;
-            background: linear-gradient(to top, #ff5722, #ffc107);
-            border-radius: 50%;
-            opacity: 0;
-            animation: burn-up 0.7s ease-out forwards;
-            pointer-events: none; /* Garante que as partículas não interfiram com cliques */
-        }
 
-        @keyframes burn-up {
-            0% {
-                transform: translateY(0) scale(1);
-                opacity: 1;
-            }
-            100% {
-                transform: translateY(-60px) scale(0);
-                opacity: 0;
-            }
-        }
 
-        /* -------- EFEITO DE FOGO TURBINADO -------- */
-        .fire-container{
-            pointer-events:none;
-            position:absolute;
-            inset:0;
-            overflow:visible;
-        }
-        .flame{
-            position:absolute;
-            bottom:-5px;
-            left:50%;
-            transform:translateX(-50%);
-            transform-origin:center bottom;
-            pointer-events:none;
-        }
-        .flame-particle{
-            position:absolute;
-            width:20px;
-            height:30px;
-            background:radial-gradient(ellipse at bottom,#ff6b35,#f7931e,transparent);
-            border-radius:50% 50% 50% 50%/60% 60% 40% 40%;
-            opacity:0;
-            filter:blur(1px);
-            animation:flamerise .8s ease-out forwards;
-        }
-        .flame-core{
-            width:15px;
-            height:25px;
-            background:radial-gradient(ellipse at bottom,#fff,#ffeb3b,#ff6b35);
-            animation:flamerise .6s ease-out forwards;
-        }
-        .spark{
-            position:absolute;
-            width:3px;
-            height:3px;
-            background:#ffeb3b;
-            border-radius:50%;
-            opacity:0;
-            animation:sparkfly .8s ease-out forwards;
-            box-shadow:0 0 6px #ff6b35;
-        }
-        @keyframes flamerise{
-            0%  {transform:translateY(0) scaleY(.3) translateX(-50%);opacity:0;}
-            20% {opacity:1;}
-            100%{transform:translateY(-80px) scaleY(1.2) translateX(-50%) scaleX(.3);opacity:0;}
-        }
-        @keyframes sparkfly{
-            0%  {transform:translate(0,0);opacity:1;}
-            100%{transform:translate(var(--spark-x),var(--spark-y));opacity:0;}
-        }
         /* brilho momentâneo no botão */
         .add-button.firing{animation:glow .3s ease-out;}
         @keyframes glow{
@@ -456,7 +383,6 @@
                                 </span>
                                 <button class="add-button rounded-full w-14 h-14 flex items-center justify-center text-white text-2xl shadow-lg relative overflow-hidden">
                                     <i class="fas fa-plus z-10"></i>
-                                    <div class="fire-container absolute inset-0"></div>
                                 </button>
                             </div>
                         </div>
@@ -482,7 +408,7 @@
             <section class="p-6 border-t border-zinc-700">
                 <h3 class="text-lg font-semibold mb-3">Forma de Pagamento</h3>
                 <div id="opcoes-pagamento" class="grid grid-cols-4 gap-3">
-                     <label class="ponto-option selected" data-valor="pix">
+                     <label class="ponto-option" data-valor="pix">
                         <input type="radio" name="metodo_pagamento" value="pix" class="hidden" checked> PIX
                     </label>
                     <label class="ponto-option" data-valor="cartao_credito">
@@ -493,6 +419,18 @@
                     </label>
                     <label class="ponto-option" data-valor="dinheiro">
                         <input type="radio" name="metodo_pagamento" value="dinheiro" class="hidden"> Dinheiro
+                    </label>
+                </div>
+            </section>
+
+            <section class="p-6 border-t border-zinc-700">
+                <h3 class="text-lg font-semibold mb-3">Vai comer no local ou é para viagem?</h3>
+                <div id="opcoes-modalidade" class="grid grid-cols-2 gap-3">
+                    <label class="ponto-option" data-valor="local">
+                        <input type="radio" name="modalidade_entrega" value="local" class="hidden"> Comer no Local
+                    </label>
+                    <label class="ponto-option" data-valor="viagem">
+                        <input type="radio" name="modalidade_entrega" value="viagem" class="hidden"> Para Viagem
                     </label>
                 </div>
             </section>

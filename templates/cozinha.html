@@ -140,6 +140,24 @@ document.addEventListener('DOMContentLoaded', function() {
             return '<div class="p-4 text-red-500">Status inválido</div>';
         }
 
+        let modalidadeHtml = '';
+        if (pedido.modalidade) {
+            const isLocal = pedido.modalidade === 'local';
+            const texto = isLocal ? 'Consumo no local' : 'Para viagem';
+
+            // CORREÇÃO:
+            // Criamos um novo "bloco" (div) exatamente como o de "Valor Total",
+            // e colocamos o texto da modalidade DENTRO dele.
+            // O fundo deste bloco será preto ou vermelho translúcido, como você pediu.
+            const classeDeFundo = isLocal ? 'bg-black' : 'bg-red-500';
+
+            modalidadeHtml = `
+                <div class="text-center rounded-lg p-2 ${classeDeFundo} mt-2 border border-white">
+                    <p class="font-bold uppercase text-sm text-white">${texto}</p>
+                </div>
+            `;
+        }
+
         // ✅ 1. Criamos nosso "mapa de tradução" aqui.
         const mapaPonto = {
             'mal': 'Mal Passado',
@@ -259,8 +277,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <h2 class="text-2xl font-bold mb-3 text-center drop-shadow-lg flex-shrink-0">${pedido.nome_cliente}</h2>
                     <ul class="space-y-2 text-white overflow-y-auto scroll-custom pr-2 flex-grow">${itemsListHtml}</ul>
                     <div class="mt-auto pt-2 flex-shrink-0">
-                        <div class="text-center rounded-lg p-2 bg-black/20">
-                            <p class="text-sm opacity-80">Valor Total</p>
+                        ${modalidadeHtml} <div class="text-center rounded-lg p-2 bg-black/20 mt-2"> <p class="text-sm opacity-80">Valor Total</p>
                             <p class="text-xl font-bold">R$ ${parseFloat(pedido.valor_total).toFixed(2).replace('.', ',')}</p>
                             <p class="text-sm capitalize mt-1 opacity-90">
                                 <i class="fas ${pagamentosIcone[pedido.metodo_pagamento] || 'fas fa-question-circle'} mr-1.5"></i>

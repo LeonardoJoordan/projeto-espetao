@@ -78,7 +78,7 @@ export function limparPedido() {
  * @param {string} metodoPagamento - O método de pagamento escolhido ('pix', 'cartao', 'dinheiro').
  * @returns {Promise<object>} - Uma promessa que resolve com a resposta do servidor se bem-sucedido.
  */
-export async function salvarPedido(metodoPagamento) {
+export async function salvarPedido(metodoPagamento, modalidade) { // <-- NOVO PARÂMETRO
     if (pedidoAtual.length === 0) {
         alert("Seu carrinho está vazio!");
         return Promise.reject("Carrinho vazio");
@@ -87,7 +87,8 @@ export async function salvarPedido(metodoPagamento) {
     console.log("Enviando para o servidor:", {
         nome_cliente: nomeClienteAtual,
         itens: pedidoAtual,
-        metodo_pagamento: metodoPagamento
+        metodo_pagamento: metodoPagamento,
+        modalidade: modalidade // <-- NOVO DADO
     });
 
     try {
@@ -97,7 +98,8 @@ export async function salvarPedido(metodoPagamento) {
             body: JSON.stringify({
                 nome_cliente: nomeClienteAtual,
                 itens: pedidoAtual,
-                metodo_pagamento: metodoPagamento
+                metodo_pagamento: metodoPagamento,
+                modalidade: modalidade // <-- NOVO DADO NO PACOTE
             })
         });
 
@@ -107,16 +109,14 @@ export async function salvarPedido(metodoPagamento) {
 
         const result = await response.json();
         alert(`Pedido #${result.senha_diaria} recebido com sucesso!`);
-        
-        // Após salvar com sucesso, recarrega a página para um novo pedido
+
         location.reload();
-        
+
         return result;
 
     } catch (error) {
         console.error("Falha ao enviar o pedido:", error);
         alert("Não foi possível registrar o pedido. Tente novamente.");
-        // Rejeita a promessa para que o código que chamou saiba que deu erro.
         return Promise.reject(error);
     }
 }

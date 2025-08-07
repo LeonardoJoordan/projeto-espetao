@@ -626,7 +626,8 @@ if (modalConfirmacao) {
         // Selecionar método de pagamento
         const pontoOption = target.closest('.ponto-option');
         if (pontoOption) {
-            pontoOption.closest('#opcoes-pagamento').querySelectorAll('.ponto-option').forEach(opt => opt.classList.remove('selected'));
+            const container = pontoOption.parentElement; 
+            container.querySelectorAll('.ponto-option').forEach(opt => opt.classList.remove('selected'));
             pontoOption.classList.add('selected');
             pontoOption.querySelector('input').checked = true;
             return;
@@ -652,13 +653,29 @@ if (modalConfirmacao) {
 
         // Confirmar e Enviar o Pedido para o Servidor
         if (target.id === 'btn-confirmar-pedido') {
-            // Desabilita o botão imediatamente para evitar cliques duplos
+            const metodoPagamentoInput = document.querySelector('input[name="metodo_pagamento"]:checked');
+            const modalidadeEntregaInput = document.querySelector('input[name="modalidade_entrega"]:checked');
+
+            // 1. LÓGICA DE VALIDAÇÃO
+            if (!metodoPagamentoInput) {
+                alert('Por favor, selecione uma forma de pagamento.');
+                return;
+            }
+            if (!modalidadeEntregaInput) {
+                alert('Por favor, selecione se o consumo é no local ou para viagem.');
+                return;
+            }
+
+            // Desabilita o botão para evitar cliques duplos
             target.disabled = true;
 
-            const metodoPagamento = document.querySelector('input[name="metodo_pagamento"]:checked').value;
-            
+            // 2. CAPTURA DOS DADOS
+            const metodoPagamento = metodoPagamentoInput.value;
+            const modalidadeEntrega = modalidadeEntregaInput.value;
+
             try {
-                await salvarPedido(metodoPagamento);
+                // 3. ENVIO DOS DADOS (NOTE O NOVO ARGUMENTO)
+                await salvarPedido(metodoPagamento, modalidadeEntrega);
                 // Se o pedido for salvo com sucesso, a página será recarregada
                 // pela função salvarPedido, então não precisamos reativar o botão.
             } catch (error) {

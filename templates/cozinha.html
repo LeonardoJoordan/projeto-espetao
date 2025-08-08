@@ -267,29 +267,29 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
-        return `
-            <div class="card-fundo absolute inset-0 bg-gradient-to-br ${config.color}"></div>
-            <div class="relative z-10 flex flex-col h-full justify-between">
-                <button class="${config.btnClass} w-full ${config.btnColor} text-white font-bold py-3 text-base flex items-center justify-center gap-2">
-                    <i class="fas ${config.icon}"></i> ${config.btnText}
-                </button>
-                <div class="p-4 flex-grow flex flex-col min-h-0">
-                    <h2 class="text-2xl font-bold mb-3 text-center drop-shadow-lg flex-shrink-0">${pedido.nome_cliente}</h2>
-                    <ul class="space-y-2 text-white overflow-y-auto scroll-custom pr-2 flex-grow">${itemsListHtml}</ul>
-                    <div class="mt-auto pt-2 flex-shrink-0">
-                        ${modalidadeHtml} <div class="text-center rounded-lg p-2 bg-black/20 mt-2"> <p class="text-sm opacity-80">Valor Total</p>
-                            <p class="text-xl font-bold">R$ ${parseFloat(pedido.valor_total).toFixed(2).replace('.', ',')}</p>
-                            <p class="text-sm capitalize mt-1 opacity-90">
-                                <i class="fas ${pagamentosIcone[pedido.metodo_pagamento] || 'fas fa-question-circle'} mr-1.5"></i>
-                                ${pedido.metodo_pagamento}
-                            </p>
-                        </div>
+    return `
+        <div class="card-fundo absolute inset-0 bg-gradient-to-br ${config.color}"></div>
+        <div class="relative z-10 flex flex-col h-full">
+            ${acaoPrincipalHtml}
+            <div class="p-4 flex-grow flex flex-col min-h-0 overflow-hidden">
+                <h2 class="text-2xl font-bold mb-3 text-center drop-shadow-lg flex-shrink-0">${pedido.nome_cliente}</h2>
+                <ul class="space-y-2 text-white overflow-y-auto scroll-custom pr-2 flex-grow">${itemsListHtml}</ul>
+                <div class="mt-auto pt-2 flex-shrink-0">
+                    ${modalidadeHtml}
+                    <div class="text-center rounded-lg p-2 bg-black/20 mt-2">
+                        <p class="text-sm opacity-80">Valor Total</p>
+                        <p class="text-xl font-bold">R$ ${parseFloat(pedido.valor_total).toFixed(2).replace('.', ',')}</p>
+                        <p class="text-sm capitalize mt-1 opacity-90">
+                            <i class="fas ${pagamentosIcone[pedido.metodo_pagamento] || 'fas fa-question-circle'} mr-1.5"></i>
+                            ${pedido.metodo_pagamento}
+                        </p>
                     </div>
                 </div>
-                <button class="btn-cancelar-pedido w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 text-sm flex items-center justify-center gap-2">
-                    <i class="fas fa-times-circle"></i> Cancelar
-                </button>
-            </div>`;
+            </div>
+            <button class="btn-cancelar-pedido w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 text-sm flex items-center justify-center gap-2 flex-shrink-0">
+                <i class="fas fa-times-circle"></i> Cancelar
+            </button>
+        </div>`;
     }
 
     // --- FUNÇÃO PRINCIPAL PARA ATUALIZAR O LAYOUT ---
@@ -308,7 +308,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const cardContainer = sectionNode.querySelector('.linha-pedidos');
             backlogPedidos.forEach(pedido => {
                 const card = templates.querySelector('#card-template > div').cloneNode(true);
-                card.classList.add('h-full');
+                card.classList.add('h-[90vh]');
                 card.dataset.id = pedido.id;
                 card.dataset.status = pedido.status;
                 card.innerHTML = buildCardContent(pedido, isSplitView);
@@ -323,7 +323,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const cardContainer = sectionNode.querySelector('.linha-pedidos');
             productionPedidos.forEach(pedido => {
                 const card = templates.querySelector('#card-template > div').cloneNode(true);
-                card.classList.add('h-full');
+                card.classList.add('h-[90vh]');
                 card.dataset.id = pedido.id;
                 card.dataset.status = pedido.status;
                 card.dataset.timestampInicio = pedido.timestamp_inicio_preparo || '';
@@ -346,7 +346,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!pedido) return;
 
         const card = templates.querySelector('#card-template > div').cloneNode(true);
-        card.classList.add('h-full');
+        card.classList.add('h-[85vh]');
         card.dataset.id = pedido.id;
         card.dataset.status = pedido.status;
         card.innerHTML = buildCardContent(pedido, false);

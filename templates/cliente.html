@@ -359,7 +359,9 @@
                             data-preco="{{ produto.preco_venda }}"
                             data-categoria-nome="{{ categoria.nome }}"
                             data-estoque="{{ produto.estoque }}"
-                            data-requer-preparo="{{ produto.requer_preparo }}">
+                            data-requer-preparo="{{ produto.requer_preparo }}"
+                            data-categoria-ordem="{{ produto.categoria_ordem }}"
+                            data-produto-ordem="{{ produto.produto_ordem }}">
 
                             {% if produto.foto_url %}
                                 <img src="{{ url_for('static', filename='images/produtos/' + produto.foto_url) }}" alt="Foto de {{ produto.nome }}" class="w-24 h-24 bg-zinc-700 rounded-md flex-shrink-0 object-cover">

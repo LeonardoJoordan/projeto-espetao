@@ -783,12 +783,20 @@ video {
   height: 24rem;
 }
 
+.h-\[90vh\] {
+  height: 90vh;
+}
+
 .h-full {
   height: 100%;
 }
 
 .h-screen {
   height: 100vh;
+}
+
+.h-\[85vh\] {
+  height: 85vh;
 }
 
 .max-h-\[80vh\] {

@@ -155,12 +155,16 @@ function abrirPopupSimples(productCard) {
             mainContainer.classList.remove('content-blurred');
         } else if (target.id === 'btn-adicionar-simples') {
             const novoItem = {
-                id: idProduto,
-                nome: nomeProduto,
-                preco: precoProduto,
+                id: parseInt(productCard.dataset.id),
+                nome: productCard.dataset.nome,
+                preco: parseFloat(productCard.dataset.preco),
                 quantidade: quantidade,
-                requer_preparo: parseInt(productCard.dataset.requerPreparo)
+                requer_preparo: parseInt(productCard.dataset.requerPreparo),
+                // CAMPOS ADICIONADOS:
+                categoria_ordem: parseInt(productCard.dataset.categoriaOrdem),
+                produto_ordem: parseInt(productCard.dataset.produtoOrdem)
             };
+            console.log('Objeto do item SIMPLES criado:', novoItem);
             adicionarItemAoPedido(novoItem);
             atualizarBotaoPrincipal();
             modalSimples.classList.add('hidden');
@@ -360,14 +364,17 @@ async function abrirPopupCustomizacao(productCard) { // Adicionamos 'async' aqui
                 const customizacaoDoItem = { ponto: ponto, acompanhamentos: acompanhamentos };
 
                 const novoItem = {
-                    id: idProduto,
-                    nome: nomeProduto,
-                    preco: precoProduto,
+                    id: parseInt(productCard.dataset.id),
+                    nome: productCard.dataset.nome,
+                    preco: parseFloat(productCard.dataset.preco),
                     quantidade: 1, // Cada item customizado é individual
                     customizacao: customizacaoDoItem,
-                    requer_preparo: parseInt(productCard.dataset.requerPreparo)
+                    requer_preparo: parseInt(productCard.dataset.requerPreparo),
+                    // CAMPOS ADICIONADOS:
+                    categoria_ordem: parseInt(productCard.dataset.categoriaOrdem),
+                    produto_ordem: parseInt(productCard.dataset.produtoOrdem)
                 };
-
+                console.log('Objeto do item CUSTOMIZADO criado:', novoItem);
                 adicionarItemAoPedido(novoItem);
             });
 
@@ -387,11 +394,11 @@ function abrirPopupConfirmacao() {
     const listaContainer = document.getElementById('lista-itens-confirmacao');
     const totalDisplay = document.getElementById('total-confirmacao');
     
-    // Agora usamos a função importada para formatar o valor total
+    // Acessa diretamente o pedidoAtual, que já está sempre ordenado.
     const valorTotal = pedidoAtual.reduce((acc, item) => acc + (item.preco * item.quantidade), 0);
     totalDisplay.textContent = formatCurrency(valorTotal);
 
-    listaContainer.innerHTML = pedidoAtual.map((item, index) => {
+    listaContainer.innerHTML = pedidoAtual.map(item => {
         let detalhesItem = '';
         if (item.customizacao) {
             const mapaPonto = { 'mal': 'Mal Passado', 'ponto': 'Ao Ponto', 'bem': 'Bem Passado' };
@@ -415,7 +422,7 @@ function abrirPopupConfirmacao() {
                 <div>${detalhesItem}</div>
                 <div class="flex items-center gap-4">
                     <span class="font-semibold w-24 text-right">${subtotalFormatado}</span>
-                    <button class="btn-remover-item text-red-500 hover:text-red-400" data-index="${index}" title="Remover Item">
+                    <button class="btn-remover-item text-red-500 hover:text-red-400" data-uid="${item.uid}" title="Remover Item">
                         <i class="fas fa-trash-alt"></i>
                     </button>
                 </div>
@@ -636,8 +643,8 @@ if (modalConfirmacao) {
         // Remover um item do pedido
         const botaoRemover = target.closest('.btn-remover-item');
         if (botaoRemover) {
-            const indexParaRemover = parseInt(botaoRemover.dataset.index);
-            removerItemDoPedido(indexParaRemover);
+            const uidParaRemover = parseFloat(botaoRemover.dataset.uid); // UIDs são números
+            removerItemDoPedido(uidParaRemover);
 
             // Se o carrinho ficar vazio, fecha o popup e atualiza o botão principal
             if(pedidoAtual.length === 0) {

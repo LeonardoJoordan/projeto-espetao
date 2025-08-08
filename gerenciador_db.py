@@ -2,6 +2,7 @@ import sqlite3
 import datetime
 import json # Adicione esta importação no topo do seu arquivo, junto com as outras
 from datetime import timedelta, timezone # Adicione esta importação também
+import random
 
 NOME_BANCO_DADOS = 'espetao.db'
 
@@ -154,7 +155,9 @@ def obter_todos_produtos():
 
         # A query agora busca p.custo_medio em vez de p.custo_total_do_estoque
         cursor.execute('''
-            SELECT p.id, p.nome, p.descricao, p.foto_url, p.preco_venda, p.estoque_atual, p.custo_medio, c.nome as categoria_nome, p.categoria_id, p.requer_preparo
+            SELECT p.id, p.nome, p.descricao, p.foto_url, p.preco_venda, p.estoque_atual, 
+                p.custo_medio, c.nome as categoria_nome, p.categoria_id, p.requer_preparo,
+                c.ordem as categoria_ordem, p.ordem as produto_ordem
             FROM produtos p
             LEFT JOIN categorias c ON p.categoria_id = c.id
             WHERE p.estoque_atual > 0
@@ -165,7 +168,7 @@ def obter_todos_produtos():
         produtos_lista = []
         for tupla in produtos_tuplas:
             # Desempacota os valores, incluindo o novo custo_medio
-            id_produto, nome, descricao, foto_url, preco_venda, estoque, custo_medio, categoria, categoria_id, requer_preparo = tupla
+            id_produto, nome, descricao, foto_url, preco_venda, estoque, custo_medio, categoria, categoria_id, requer_preparo, categoria_ordem, produto_ordem = tupla
             
             # O lucro é simplesmente a diferença entre o preço de venda e o custo médio já armazenado
             lucro = preco_venda - custo_medio
@@ -187,7 +190,9 @@ def obter_todos_produtos():
                 'id': id_produto, 'nome': nome, 'descricao': descricao, 'foto_url': foto_url,
                 'preco_venda': preco_venda, 'estoque': estoque, 'custo_medio': custo_medio,
                 'lucro': lucro, 'categoria': categoria, 'categoria_id': categoria_id,
-                'ultimo_preco_compra': ultimo_preco_compra, 'requer_preparo': requer_preparo
+                'ultimo_preco_compra': ultimo_preco_compra, 'requer_preparo': requer_preparo,
+                'categoria_ordem': categoria_ordem, # <-- Ordem da categoria adicionada
+                'produto_ordem': produto_ordem      # <-- Ordem do produto adicionada
             })
         
         return produtos_lista
@@ -524,6 +529,47 @@ def obter_historico_produto(id_produto):
         if conn:
             conn.close()
 
+def _normalizar_e_ordenar_itens(itens_recebidos, cursor):
+    """
+    Garante que uma lista de itens de pedido esteja ordenada pela chave canônica.
+    Chave: categoria_ordem ASC, produto_ordem ASC, id ASC, uid ASC.
+    Esta função também enriquece itens que não possuem os campos de ordenação,
+    buscando-os no banco de dados (para compatibilidade com dados legados).
+    """
+    itens_enriquecidos = []
+    for item in itens_recebidos:
+        # Verifica se os campos de ordenação existem. Se não, busca no DB.
+        if 'categoria_ordem' not in item or 'produto_ordem' not in item:
+            cursor.execute("""
+                SELECT c.ordem, p.ordem
+                FROM produtos p
+                JOIN categorias c ON p.categoria_id = c.id
+                WHERE p.id = ?
+            """, (item['id'],))
+            resultado_ordem = cursor.fetchone()
+            if resultado_ordem:
+                item['categoria_ordem'] = resultado_ordem[0]
+                item['produto_ordem'] = resultado_ordem[1]
+            else: # Fallback para o caso de um produto não ser encontrado
+                item['categoria_ordem'] = 999
+                item['produto_ordem'] = 999
+
+        # Garante que o item tenha um uid para desempate
+        if 'uid' not in item:
+            item['uid'] = datetime.datetime.now().timestamp() + random.random()
+
+        itens_enriquecidos.append(item)
+
+    # Ordena a lista enriquecida usando uma função lambda como chave de múltiplos níveis
+    itens_enriquecidos.sort(key=lambda x: (
+        x.get('categoria_ordem', 999),
+        x.get('produto_ordem', 999),
+        x.get('id', 0),
+        x.get('uid', 0)
+    ))
+
+    return itens_enriquecidos
+
 def salvar_novo_pedido(dados_do_pedido, local_id):
     """
     Salva um novo pedido, lendo o custo médio de cada item no momento da venda
@@ -546,16 +592,20 @@ def salvar_novo_pedido(dados_do_pedido, local_id):
 
         fluxo_e_simples = all(resultado[0] == 0 for resultado in resultados_preparo)
 
-        itens_enriquecidos = []
-        for item in dados_do_pedido['itens']:
+        # Primeiro, normaliza e ordena a lista de itens recebida
+        itens_ordenados = _normalizar_e_ordenar_itens(dados_do_pedido['itens'], cursor)
+
+        # Depois, enriquece a lista JÁ ORDENADA com os dados de custo
+        itens_finais_para_salvar = []
+        for item in itens_ordenados:
             cursor.execute("SELECT custo_medio FROM produtos WHERE id = ?", (item['id'],))
             resultado = cursor.fetchone()
             custo_a_registrar = resultado[0] if resultado else 0
             item_com_custo = item.copy()
             item_com_custo['custo_unitario'] = custo_a_registrar
-            itens_enriquecidos.append(item_com_custo)
+            itens_finais_para_salvar.append(item_com_custo)
 
-        itens_como_json = json.dumps(itens_enriquecidos)
+        itens_como_json = json.dumps(itens_finais_para_salvar)
         timestamp_atual = datetime.datetime.now().isoformat()
         valor_total = sum(item['preco'] * item['quantidade'] for item in dados_do_pedido['itens'])
 
@@ -593,6 +643,8 @@ def salvar_novo_pedido(dados_do_pedido, local_id):
     finally:
         if conn:
             conn.close()
+
+    
 
 def confirmar_pagamento_pedido(id_do_pedido):
     """
@@ -1518,3 +1570,14 @@ def atualizar_categoria_produto(id_produto, nova_categoria_id):
     finally:
         if conn:
             conn.close()
+
+def _normalizar_e_ordenar_itens(itens_recebidos, cursor):
+    """
+    Garante que uma lista de itens de pedido esteja ordenada pela chave canônica.
+    Chave: categoria_ordem ASC, produto_ordem ASC, id ASC, uid ASC.
+    Esta função não existe no arquivo original e precisará ser criada.
+    O cursor é necessário para buscar dados de ordenação de produtos legados, se necessário.
+    """
+    # Lógica a ser implementada na Tarefa 2
+    print("Aviso: _normalizar_e_ordenar_itens ainda não implementada.")
+    return itens_recebidos # Retorna a lista original por enquanto

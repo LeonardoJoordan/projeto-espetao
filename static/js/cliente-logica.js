@@ -30,7 +30,11 @@ export function setNomeCliente(nome) {
  * @param {object} item - O objeto do item a ser adicionado.
  */
 export function adicionarItemAoPedido(item) {
-    // Se o item não tem customização, verificamos se já existe um igual no carrinho.
+    // Garante que o item tenha um UID antes de ser adicionado, para estabilidade na ordenação.
+    if (!item.uid) {
+        item.uid = Date.now() + Math.random();
+    }
+    // A lógica para agrupar itens ou adicionar novos permanece a mesma.
     if (!item.customizacao) {
         const itemExistente = pedidoAtual.find(i => i.id === item.id && !i.customizacao);
         if (itemExistente) {
@@ -39,19 +43,47 @@ export function adicionarItemAoPedido(item) {
             pedidoAtual.push(item);
         }
     } else {
-        // Se for customizado, é sempre um novo item no carrinho.
         pedidoAtual.push(item);
     }
-    console.log("Pedido atualizado:", pedidoAtual);
+
+    console.log("Pedido atualizado (ordem de inserção):", pedidoAtual);
+    normalizeAndSortPedido(); // Garante que a lista esteja sempre ordenada após uma adição.
+}
+
+/**
+ * Reordena o array `pedidoAtual` de forma "in-place" (modificando o original)
+ * seguindo a chave de ordenação canônica do sistema.
+ * Chave: categoria_ordem ASC, produto_ordem ASC, id ASC, uid ASC.
+ */
+function normalizeAndSortPedido() {
+    pedidoAtual.sort((a, b) => {
+        // Nível 1: Ordem da Categoria
+        if (a.categoria_ordem !== b.categoria_ordem) {
+            return a.categoria_ordem - b.categoria_ordem;
+        }
+        // Nível 2: Ordem do Produto dentro da Categoria
+        if (a.produto_ordem !== b.produto_ordem) {
+            return a.produto_ordem - b.produto_ordem;
+        }
+        // Nível 3: ID do Produto (para agrupar itens idênticos customizados)
+        if (a.id !== b.id) {
+            return a.id - b.id;
+        }
+        // Nível 4: UID (desempate final para manter a ordem de inserção estável)
+        return a.uid - b.uid;
+    });
+    console.log("Pedido foi normalizado e reordenado.");
 }
 
 /**
  * Remove um item do pedido com base no seu índice no array.
  * @param {number} index - O índice do item a ser removido.
  */
-export function removerItemDoPedido(index) {
-    if (index > -1 && index < pedidoAtual.length) {
-        pedidoAtual.splice(index, 1);
+export function removerItemDoPedido(uid) {
+    const indexParaRemover = pedidoAtual.findIndex(item => item.uid === uid);
+    if (indexParaRemover > -1) {
+        pedidoAtual.splice(indexParaRemover, 1);
+        normalizeAndSortPedido(); // Garante que a lista esteja sempre ordenada após uma remoção.
         console.log("Item removido. Pedido atual:", pedidoAtual);
     }
 }
@@ -97,9 +129,9 @@ export async function salvarPedido(metodoPagamento, modalidade) { // <-- NOVO PA
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 nome_cliente: nomeClienteAtual,
-                itens: pedidoAtual,
+                itens: pedidoAtual, // A lista já está sempre ordenada
                 metodo_pagamento: metodoPagamento,
-                modalidade: modalidade // <-- NOVO DADO NO PACOTE
+                modalidade: modalidade
             })
         });
 
@@ -134,3 +166,4 @@ export function formatCurrency(value) {
     if (typeof value !== 'number') value = 0;
     return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
+

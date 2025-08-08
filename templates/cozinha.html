@@ -190,10 +190,39 @@ document.addEventListener('DOMContentLoaded', function() {
                 </button>`;
         }
 
+        // Lógica de contagem (N) e rastreamento (k) - permanece a mesma.
+        const totaisPorProduto = {};
+        pedido.itens.forEach(item => {
+            if (item.requer_preparo === 1) {
+                totaisPorProduto[item.id] = (totaisPorProduto[item.id] || 0) + 1;
+            }
+        });
+        const contadoresPorProduto = {};
+
+        // Gera o HTML com a nova lógica de título unificado.
         const itemsListHtml = pedido.itens.map(item => {
-            
+            let tituloHtml; // Usaremos esta variável para construir o HTML do título.
+
+            if (item.requer_preparo === 1 && totaisPorProduto[item.id] > 1) {
+                contadoresPorProduto[item.id] = (contadoresPorProduto[item.id] || 0) + 1;
+                const k = contadoresPorProduto[item.id];
+                const N = totaisPorProduto[item.id];
+
+                // Estrutura aninhada: um span pai agrupa os dois internos.
+                tituloHtml = `
+                    <span>
+                        <span class="font-semibold text-amber-300 mr-2 whitespace-nowrap">${k}/${N}</span>
+                        <span>${item.nome}</span>
+                    </span>
+                `;
+            } else {
+                // Estrutura padrão para os outros itens.
+                tituloHtml = `<span>${item.quantidade}x ${item.nome}</span>`;
+            }
+
             const pontoTraduzido = item.customizacao ? (mapaPonto[item.customizacao.ponto] || item.customizacao.ponto) : '';
 
+            // Monta o HTML do item, usando a variável tituloItem em um único span.
             let itemHtml = `
                 <li class="item-pedido text-base flex flex-col bg-white/20 p-3 rounded-lg"
                     data-produto-id="${item.id}" 
@@ -201,16 +230,14 @@ document.addEventListener('DOMContentLoaded', function() {
                     data-timestamp-inicio-item="${item.timestamp_inicio_item || ''}">
                     <div class="flex items-center font-bold">
                         <i class="fas fa-drumstick-bite mr-2 opacity-80"></i>
-                        <span>${item.quantidade}x ${item.nome}</span>
+                        ${tituloHtml}
                     </div>
             `;
 
-            // Nova lógica para exibir os detalhes da customização
+                // O restante da lógica para customizações e timers continua idêntico.
             if (item.customizacao) {
-                
                 if (item.customizacao.acompanhamentos && item.customizacao.acompanhamentos.length > 0) {
                     const acompanhamentosTexto = item.customizacao.acompanhamentos.join('<br>Com ');
-                    
                     itemHtml += `
                         <div class="text-sm pl-6 opacity-90 mt-1 font-semibold text-white/90">
                             Com ${acompanhamentosTexto}

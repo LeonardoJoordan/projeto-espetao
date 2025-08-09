@@ -56,23 +56,61 @@ export function adicionarItemAoPedido(item) {
  * Chave: categoria_ordem ASC, produto_ordem ASC, id ASC, uid ASC.
  */
 function normalizeAndSortPedido() {
+    // Mapa de ordem para o ponto da carne.
+    const pontoOrder = { 'mal': 0, 'ponto': 1, 'bem': 2 };
+
+    // Helper para normalizar a lista de acompanhamentos de um item.
+    const getExtrasKey = (item) => {
+        const extras = item.customizacao?.acompanhamentos || [];
+        if (extras.length === 0) return { count: 0, key: '' };
+
+        const normalized = [...new Set(extras.map(e => e.trim().toLowerCase()))];
+        normalized.sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
+        return {
+            count: normalized.length,
+            key: normalized.join('|')
+        };
+    };
+
     pedidoAtual.sort((a, b) => {
-        // Nível 1: Ordem da Categoria
+        // Nível 1: Ordem da Categoria (sem alteração)
         if (a.categoria_ordem !== b.categoria_ordem) {
             return a.categoria_ordem - b.categoria_ordem;
         }
-        // Nível 2: Ordem do Produto dentro da Categoria
+        // Nível 2: Ordem do Produto (sem alteração)
         if (a.produto_ordem !== b.produto_ordem) {
             return a.produto_ordem - b.produto_ordem;
         }
-        // Nível 3: ID do Produto (para agrupar itens idênticos customizados)
+        // Nível 3: ID do Produto (sem alteração)
         if (a.id !== b.id) {
             return a.id - b.id;
         }
-        // Nível 4: UID (desempate final para manter a ordem de inserção estável)
+
+        // --- NOVOS NÍVEIS DE ORDENAÇÃO ---
+
+        // Nível 4: Ponto da Carne (mal < ponto < bem)
+        const pa = pontoOrder[a.customizacao?.ponto] ?? Infinity;
+        const pb = pontoOrder[b.customizacao?.ponto] ?? Infinity;
+        if (pa !== pb) {
+            return pa - pb;
+        }
+
+        // Nível 5: Acompanhamentos (qtd descrescente -> alfabético)
+        const extrasA = getExtrasKey(a);
+        const extrasB = getExtrasKey(b);
+
+        if (extrasA.count !== extrasB.count) {
+            return extrasB.count - extrasA.count; // Ordena por mais acompanhamentos primeiro
+        }
+        if (extrasA.key !== extrasB.key) {
+            return extrasA.key.localeCompare(extrasB.key, 'pt-BR');
+        }
+
+        // Nível 6: UID (desempate final, sem alteração)
         return a.uid - b.uid;
     });
-    console.log("Pedido foi normalizado e reordenado.");
+    console.log("Pedido foi normalizado com a nova lógica de ordenação (ponto e extras).");
 }
 
 /**

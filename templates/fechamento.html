@@ -264,10 +264,64 @@
             </div>
 
             <div id="tab-content-insights" class="tab-content space-y-8 hidden">
-                <div class="glass-container rounded-2xl p-6">
-                    <h2 class="text-2xl font-bold">Insights & Comparativos</h2>
-                    <p class="text-white/70 mt-2">Funcionalidade a ser implementada.</p>
-                </div>
+
+                <section class="glass-container rounded-2xl p-6">
+                    <h2 class="text-2xl font-bold mb-4">Filtros da Comparação</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6 items-end">
+                        
+                        <div class="lg:col-span-2">
+                            <label for="daterange-periodo-a" class="block mb-2 font-semibold">Período A</label>
+                            <input type="text" id="daterange-periodo-a" placeholder="Selecione o primeiro intervalo" class="w-full p-3 rounded-lg bg-white/20 border border-white/30 text-white">
+                        </div>
+
+                        <div class="lg:col-span-2">
+                            <label for="daterange-periodo-b" class="block mb-2 font-semibold">Período B (para comparar)</label>
+                            <input type="text" id="daterange-periodo-b" placeholder="Selecione o segundo intervalo" class="w-full p-3 rounded-lg bg-white/20 border border-white/30 text-white">
+                        </div>
+
+                        <div class="w-full">
+                             <button id="btn-comparar" class="w-full bg-green-500 hover:bg-green-600 font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 whitespace-nowrap">
+                                <i class="fas fa-balance-scale"></i>
+                                Comparar
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="resultados-comparativos" class="hidden glass-container rounded-2xl p-6">
+                    <h2 class="text-2xl font-bold mb-6">Resultados da Comparação</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
+                        
+                        <div class="bg-white/5 rounded-lg p-4">
+                            <h3 class="text-lg font-semibold text-white/80">Faturamento</h3>
+                            <p id="comp-faturamento-delta" class="text-3xl font-bold my-2 text-green-400">+0.00%</p>
+                            <div class="text-sm text-white/60">
+                                <p>Período A: <span id="comp-faturamento-a">R$ 0,00</span></p>
+                                <p>Período B: <span id="comp-faturamento-b">R$ 0,00</span></p>
+                            </div>
+                        </div>
+
+                        <div class="bg-white/5 rounded-lg p-4">
+                            <h3 class="text-lg font-semibold text-white/80">Qtd. de Vendas</h3>
+                            <p id="comp-vendas-delta" class="text-3xl font-bold my-2 text-red-400">-0</p>
+                            <div class="text-sm text-white/60">
+                                <p>Período A: <span id="comp-vendas-a">0</span></p>
+                                <p>Período B: <span id="comp-vendas-b">0</span></p>
+                            </div>
+                        </div>
+
+                        <div class="bg-white/5 rounded-lg p-4">
+                            <h3 class="text-lg font-semibold text-white/80">Ticket Médio</h3>
+                            <p id="comp-ticket-delta" class="text-3xl font-bold my-2 text-green-400">+0.00%</p>
+                            <div class="text-sm text-white/60">
+                                <p>Período A: <span id="comp-ticket-a">R$ 0,00</span></p>
+                                <p>Período B: <span id="comp-ticket-b">R$ 0,00</span></p>
+                            </div>
+                        </div>
+
+                    </div>
+                    </section>
+
             </div>
         </div>
 
@@ -377,6 +431,53 @@ document.addEventListener('DOMContentLoaded', function() {
     selectPeriodo.addEventListener('change', function() {
         divPeriodoCustomizado.classList.toggle('hidden', this.value !== 'custom');
     });
+
+    // --- LÓGICA DA ABA INSIGHTS ---
+    const dateRangePickerA = flatpickr("#daterange-periodo-a", {
+        mode: "range", dateFormat: "Y-m-d", locale: dateRangePicker.config.locale
+    });
+    const dateRangePickerB = flatpickr("#daterange-periodo-b", {
+        mode: "range", dateFormat: "Y-m-d", locale: dateRangePicker.config.locale
+    });
+
+    function renderResultadosComparativos(dados) {
+        const resultadosContainer = document.getElementById('resultados-comparativos');
+        if (!dados || !dados.kpis) {
+            resultadosContainer.classList.add('hidden');
+            return;
+        }
+
+        const kpis = dados.kpis;
+        
+        // Função auxiliar para formatar e colorir os deltas
+        const formatarDelta = (valor, sufixo = '%') => {
+            const ehPositivo = valor >= 0;
+            const cor = ehPositivo ? 'text-green-400' : 'text-red-400';
+            const sinal = ehPositivo ? '+' : '';
+            // Para valores numéricos, removemos as casas decimais
+            const valorFormatado = sufixo === '%' ? valor.toFixed(2) : Math.round(valor);
+            
+            return `<p class="text-3xl font-bold my-2 ${cor}">${sinal}${valorFormatado}${sufixo}</p>`;
+        };
+
+        // Preenche Faturamento
+        document.getElementById('comp-faturamento-a').textContent = formatCurrency(kpis.faturamento.A);
+        document.getElementById('comp-faturamento-b').textContent = formatCurrency(kpis.faturamento.B);
+        document.getElementById('comp-faturamento-delta').innerHTML = formatarDelta(kpis.faturamento.delta_pct);
+
+        // Preenche Vendas
+        document.getElementById('comp-vendas-a').textContent = kpis.qtd_vendas.A;
+        document.getElementById('comp-vendas-b').textContent = kpis.qtd_vendas.B;
+        document.getElementById('comp-vendas-delta').innerHTML = formatarDelta(kpis.qtd_vendas.delta_abs, '');
+
+        // Preenche Ticket Médio
+        document.getElementById('comp-ticket-a').textContent = formatCurrency(kpis.ticket_medio.A);
+        document.getElementById('comp-ticket-b').textContent = formatCurrency(kpis.ticket_medio.B);
+        document.getElementById('comp-ticket-delta').innerHTML = formatarDelta(kpis.ticket_medio.delta_pct);
+
+        // Mostra o container de resultados
+        resultadosContainer.classList.remove('hidden');
+    }
 
     // --- FUNÇÕES DE RENDERIZAÇÃO ---
     function formatCurrency(value) {
@@ -796,6 +897,43 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    const btnComparar = document.getElementById('btn-comparar');
+
+    async function carregarDadosComparativos() {
+        if (dateRangePickerA.selectedDates.length < 2 || dateRangePickerB.selectedDates.length < 2) {
+            alert('Por favor, selecione um intervalo de datas completo para os dois períodos.');
+            return;
+        }
+        
+        btnComparar.disabled = true;
+        btnComparar.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Comparando...`;
+
+        // Formata as datas para o formato YYYY-MM-DD
+        const periodoA_inicio = dateRangePickerA.formatDate(dateRangePickerA.selectedDates[0], 'Y-m-d');
+        const periodoA_fim = dateRangePickerA.formatDate(dateRangePickerA.selectedDates[1], 'Y-m-d');
+        const periodoB_inicio = dateRangePickerB.formatDate(dateRangePickerB.selectedDates[0], 'Y-m-d');
+        const periodoB_fim = dateRangePickerB.formatDate(dateRangePickerB.selectedDates[1], 'Y-m-d');
+
+        try {
+            const apiUrl = `/api/insights/comparativos?periodoA_inicio=${periodoA_inicio}&periodoA_fim=${periodoA_fim}&periodoB_inicio=${periodoB_inicio}&periodoB_fim=${periodoB_fim}`;
+            
+            const response = await fetch(apiUrl);
+            if (!response.ok) throw new Error('Falha ao buscar dados comparativos.');
+            
+            const dados = await response.json();
+            renderResultadosComparativos(dados);
+
+        } catch (error) {
+            console.error("Erro ao carregar comparação:", error);
+            alert("Não foi possível carregar os dados da comparação.");
+        } finally {
+            btnComparar.disabled = false;
+            btnComparar.innerHTML = `<i class="fas fa-balance-scale"></i> Comparar`;
+        }
+    }
+
+    btnComparar.addEventListener('click', carregarDadosComparativos);
+
     // --- LÓGICA DO FORMULÁRIO DE TAXAS ---
     const btnAbrirTaxas = document.getElementById('btn-abrir-taxas');
     const formContainerTaxas = document.getElementById('form-container-taxas');
@@ -849,9 +987,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // --- CARGA INICIAL ---
-    carregarDadosOperacionais(); // Gera o relatório de "Hoje" (página 1) ao carregar a página
-
-    // No final do script, dentro do DOMContentLoaded, chame as duas funções
+    // A ordem correta é popular os filtros PRIMEIRO, e depois carregar os dados UMA VEZ.
     popularFiltroLocais();
     carregarDadosOperacionais();
 });

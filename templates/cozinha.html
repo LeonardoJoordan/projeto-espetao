@@ -223,10 +223,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const pontoTraduzido = item.customizacao ? (mapaPonto[item.customizacao.ponto] || item.customizacao.ponto) : '';
 
             // Monta o HTML do item, usando a variável tituloItem em um único span.
+            const k = contadoresPorProduto[item.id] || 0; // Pega o k (posição) atual do item
             let itemHtml = `
                 <li class="item-pedido text-base flex flex-col bg-white/20 p-3 rounded-lg"
                     data-produto-id="${item.id}" 
                     data-ponto="${item.customizacao ? item.customizacao.ponto : 'padrao'}"
+                    data-k="${k}" 
                     data-timestamp-inicio-item="${item.timestamp_inicio_item || ''}">
                     <div class="flex items-center font-bold">
                         <i class="fas fa-drumstick-bite mr-2 opacity-80"></i>
@@ -411,7 +413,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (confirm('Deseja reiniciar o tempo de preparo para este item?')) {
                 try {
                     // Chama a nova rota da API que criamos
-                    fetch(`/pedido/${pedidoId}/item/${produtoId}/reiniciar`, { method: 'POST' });
+                    const k = itemElemento.dataset.k; // Lê a posição 'k' do item
+                    fetch(`/pedido/${pedidoId}/item/${produtoId}/reiniciar?k=${k}`, { method: 'POST' });
                     // Não precisamos fazer mais nada aqui. O backend vai emitir um evento
                     // e a tela irá se atualizar sozinha.
                 } catch (error) {
@@ -558,7 +561,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // --- LÓGICA DE CONTROLE DOS TIMERS (NOVO) ---
-    const timersAtivos = {}; // Guarda os intervalos dos timers para podermos pará-los
+    const timersAtivos = new WeakMap(); // Guarda os timers por elemento para evitar colisões e vazamentos.
 
     function formatarTempo(segundos) {
         if (isNaN(segundos) || segundos < 0) return "00:00";
@@ -595,20 +598,23 @@ async function iniciarTimerParaItem(elementoItem) {
         const elBarra = elementoItem.querySelector('.barra-progresso-preenchimento');
         if (!elTempo || !elBarra) return;
 
-        // Limpa qualquer timer antigo para este item (segurança)
-        const timerId = `${produtoId}-${ponto}`;
-        if (timersAtivos[timerId]) {
-            clearInterval(timersAtivos[timerId]);
+        // Limpa qualquer timer antigo associado a ESTE elemento <li> específico.
+        if (timersAtivos.has(elementoItem)) {
+            clearInterval(timersAtivos.get(elementoItem));
         }
 
         // 4. Inicia o intervalo, que vai rodar a cada segundo.
-        function atualizarTimer() {
+        const intervalId = setInterval(function atualizarTimer() {
             if (tempoRestanteSegundos <= 0) {
                 elTempo.textContent = "00:00";
                 elBarra.style.width = '100%';
                 elBarra.classList.remove('bg-red-500', 'bg-yellow-500');
                 elBarra.classList.add('bg-green-500');
-                clearInterval(timersAtivos[timerId]);
+                // Limpa o timer específico deste elemento.
+                if (timersAtivos.has(elementoItem)) {
+                    clearInterval(timersAtivos.get(elementoItem));
+                    timersAtivos.delete(elementoItem); // Remove a referência do WeakMap.
+                }
                 return;
             }
 
@@ -619,12 +625,12 @@ async function iniciarTimerParaItem(elementoItem) {
             // Muda a cor da barra conforme o tempo passa
             if(porcentagem < 25) elBarra.classList.add('bg-yellow-500');
             else elBarra.classList.add('bg-red-500');
-            
-            tempoRestanteSegundos--;
-        }
 
-        atualizarTimer(); // Executa uma vez imediatamente
-        timersAtivos[timerId] = setInterval(atualizarTimer, 1000);
+            tempoRestanteSegundos--;
+        }, 1000);
+
+        // Associa o ID do novo intervalo diretamente ao elemento <li>.
+        timersAtivos.set(elementoItem, intervalId);
 
     } catch (error) {
         console.error(`Erro ao buscar ou calcular o tempo para ${produtoId}/${ponto}:`, error);

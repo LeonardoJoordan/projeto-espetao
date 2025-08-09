@@ -732,9 +732,9 @@ def iniciar_preparo_pedido(id_do_pedido):
         if conn:
             conn.close()
 
-def reiniciar_preparo_item(pedido_id, produto_id):
+def reiniciar_preparo_item(pedido_id, produto_id, k_posicao):
     """
-    Encontra um item específico dentro do itens_json de um pedido e
+    Encontra o k-ésimo item de um produto dentro de um pedido e
     atualiza seu timestamp_inicio_item para o horário atual.
     """
     conn = None
@@ -742,53 +742,48 @@ def reiniciar_preparo_item(pedido_id, produto_id):
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # 1. Busca o JSON de itens atual do pedido.
         cursor.execute("SELECT itens_json FROM pedidos WHERE id = ?", (pedido_id,))
         resultado = cursor.fetchone()
 
         if not resultado:
-            print(f"ERRO: Pedido #{pedido_id} não encontrado ao tentar reiniciar item.")
+            print(f"ERRO: Pedido #{pedido_id} não encontrado ao reiniciar item.")
             return False
 
         itens_atuais = json.loads(resultado[0])
         timestamp_novo = datetime.datetime.now().isoformat()
-        item_encontrado = False
-        itens_modificados = []
 
-        # 2. Itera sobre os itens para encontrar o item a ser reiniciado.
-        for item in itens_atuais:
-            # Reinicia apenas o primeiro item que encontrar com o ID correspondente e que ainda não foi reiniciado
-            if str(item.get('id')) == str(produto_id) and not item_encontrado:
-                if 'timestamp_inicio_item' in item:
-                    item['timestamp_inicio_item'] = timestamp_novo
-                    item_encontrado = True # Marca que já reiniciamos um item
-            
-            itens_modificados.append(item)
-            
-        if not item_encontrado:
-            print(f"AVISO: Item #{produto_id} não encontrado no pedido #{pedido_id} para reiniciar.")
+        # Filtra apenas os itens que correspondem ao produto e que requerem preparo.
+        # A ordem é preservada da forma como os itens estão no pedido.
+        itens_alvo_do_grupo = [
+            item for item in itens_atuais 
+            if str(item.get('id')) == str(produto_id) and item.get('requer_preparo') == 1
+        ]
+
+        # Valida se a posição 'k' é válida para o grupo encontrado.
+        if not (1 <= k_posicao <= len(itens_alvo_do_grupo)):
+            print(f"AVISO: Posição k={k_posicao} inválida para o item {produto_id} no pedido {pedido_id}. (Grupo tem {len(itens_alvo_do_grupo)} itens)")
             return False
 
-        novo_itens_json = json.dumps(itens_modificados)
+        # Pega a referência exata do item a ser modificado (lembrando que k é base-1 e lista é base-0).
+        item_para_reiniciar = itens_alvo_do_grupo[k_posicao - 1]
 
-        # 3. Atualiza o pedido com o novo JSON modificado.
-        cursor.execute(
-            "UPDATE pedidos SET itens_json = ? WHERE id = ?",
-            (novo_itens_json, pedido_id)
-        )
+        # Atualiza o timestamp diretamente na referência do item dentro da lista original.
+        item_para_reiniciar['timestamp_inicio_item'] = timestamp_novo
 
+        novo_itens_json = json.dumps(itens_atuais)
+
+        cursor.execute("UPDATE pedidos SET itens_json = ? WHERE id = ?", (novo_itens_json, pedido_id))
         conn.commit()
-        print(f"SUCESSO: Item #{produto_id} do pedido #{pedido_id} reiniciado às {timestamp_novo}.")
+
+        print(f"SUCESSO: {k_posicao}º item do produto #{produto_id} no pedido #{pedido_id} reiniciado.")
         return True
 
-    except sqlite3.Error as e:
-        print(f"ERRO ao reiniciar item do pedido #{pedido_id}: {e}")
-        if conn:
-            conn.rollback()
+    except (sqlite3.Error, IndexError) as e:
+        print(f"ERRO ao reiniciar item {produto_id} (k={k_posicao}) do pedido #{pedido_id}: {e}")
+        if conn: conn.rollback()
         return False
     finally:
-        if conn:
-            conn.close()
+        if conn: conn.close()
 
 def entregar_pedido(id_do_pedido):
     """

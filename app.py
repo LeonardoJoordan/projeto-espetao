@@ -529,9 +529,13 @@ def api_get_tempo_preparo(produto_id, ponto):
 @app.route('/pedido/<int:pedido_id>/item/<int:produto_id>/reiniciar', methods=['POST'])
 def rota_reiniciar_item(pedido_id, produto_id):
     """
-    Rota para reiniciar o tempo de preparo de um item específico.
+    Rota para reiniciar o tempo de preparo de um item específico,
+    identificado pela sua posição 'k' no grupo.
     """
-    sucesso = gerenciador_db.reiniciar_preparo_item(pedido_id, produto_id)
+    # Captura o parâmetro 'k' da URL. Se não vier, assume 1 por segurança.
+    k_posicao = request.args.get('k', default=1, type=int)
+
+    sucesso = gerenciador_db.reiniciar_preparo_item(pedido_id, produto_id, k_posicao)
     if sucesso:
         # Emite um evento para que a cozinha recarregue e recalcule os timers
         socketio.emit('novo_pedido', {'msg': f'Item {produto_id} do pedido {pedido_id} reiniciado!'})

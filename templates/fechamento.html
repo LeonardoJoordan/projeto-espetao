@@ -136,6 +136,141 @@
             </div>
         </section>
 
+        <section class="mb-8">
+            <div class="border-b border-white/20">
+                <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+                    <button class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-lg text-blue-400 border-blue-400" data-tab="operacional">
+                        Operacional
+                    </button>
+                    <button class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-lg border-transparent text-white/50 hover:text-white/75 hover:border-white/30" data-tab="insights">
+                        Insights
+                    </button>
+                </nav>
+            </div>
+        </section>
+
+        <div id="tab-content-container">
+            <div id="tab-content-operacional" class="tab-content space-y-8">
+                <section class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="kpi-card faturamento glass-container rounded-2xl p-5 text-center">
+                            <p class="text-sm text-white/80 uppercase">Faturamento Bruto</p>
+                            <p id="kpi-faturamento" class="text-3xl font-extrabold mt-2">R$ 0,00</p>
+                        </div>
+                        <div class="kpi-card lucro glass-container rounded-2xl p-5 text-center">
+                            <p class="text-sm text-white/80 uppercase">Lucro Estimado</p>
+                            <p id="kpi-lucro" class="text-3xl font-extrabold mt-2">R$ 0,00</p>
+                        </div>
+                        <div class="kpi-card perdas glass-container rounded-2xl p-5 text-center">
+                            <p class="text-sm text-white/80 uppercase">Perdas e Ajustes</p>
+                            <p id="kpi-perdas" class="text-3xl font-extrabold mt-2">R$ 0,00</p>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="kpi-card pedidos glass-container rounded-2xl p-5 text-center">
+                            <p class="text-sm text-white/80 uppercase">Pedidos Realizados</p>
+                            <p id="kpi-pedidos" class="text-3xl font-extrabold mt-2">0</p>
+                        </div>
+                        <div class="kpi-card ticket glass-container rounded-2xl p-5 text-center">
+                            <p class="text-sm text-white/80 uppercase">Ticket Médio</p>
+                            <p id="kpi-ticket" class="text-3xl font-extrabold mt-2">R$ 0,00</p>
+                        </div>
+                        <div class="kpi-card media-itens glass-container rounded-2xl p-5 text-center">
+                            <p class="text-sm text-white/80 uppercase">Média de Itens / Pedido</p>
+                            <p id="kpi-media-itens" class="text-3xl font-extrabold mt-2">0.0</p>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div class="lg:col-span-2 glass-container rounded-2xl p-6 flex flex-col h-96">
+                        <div class="flex justify-between items-center mb-4 flex-shrink-0">
+                            <h3 id="titulo-grafico-vendas" class="text-xl font-bold">Vendas por Período</h3>
+                            <div>
+                                <label for="metrica-grafico" class="text-sm mr-2">Analisar Métrica:</label>
+                                <select id="metrica-grafico" class="p-2 rounded-lg bg-white/20 border border-white/30 text-white text-sm">
+                                    <option value="faturamento">Faturamento</option>
+                                    <option value="lucro">Lucro</option>
+                                    <option value="pedidos">Pedidos</option>
+                                    <option value="ticket_medio">Ticket Médio</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="relative flex-grow">
+                            <canvas id="grafico-vendas"></canvas>
+                        </div>
+                    </div>
+                    <div class="glass-container rounded-2xl p-6 flex flex-col h-96">
+                        <h3 class="text-xl font-bold mb-4 flex-shrink-0">Vendas por Pagamento</h3>
+                        <div class="relative flex-grow">
+                            <canvas id="grafico-pagamentos"></canvas>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div class="lg:col-span-1 flex flex-col gap-8">
+                        <div class="glass-container rounded-2xl p-6 flex flex-col">
+                            <h3 class="text-xl font-bold mb-4">Itens Mais Vendidos</h3>
+                            <div id="lista-mais-vendidos" class="flex-grow overflow-y-auto custom-scrollbar pr-2 space-y-3">
+                            </div>
+                        </div>
+
+                        <div class="glass-container rounded-2xl p-6 flex flex-col">
+                            <h3 class="text-xl font-bold mb-4">Balanço de Estoque</h3>
+                            <div class="flex-grow overflow-y-auto custom-scrollbar pr-2">
+                                <table class="w-full text-left text-sm">
+                                    <thead class="sticky top-0 bg-white/10">
+                                        <tr>
+                                            <th class="p-2">Produto</th>
+                                            <th class="p-2 text-center">Inicial</th>
+                                            <th class="p-2 text-center">Entradas</th>
+                                            <th class="p-2 text-center">Saídas</th>
+                                            <th class="p-2 text-center">Final</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tabela-estoque">
+                                        </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="lg:col-span-2 glass-container rounded-2xl p-6 flex flex-col">
+                        <h3 class="text-xl font-bold mb-4">Histórico de Pedidos</h3>
+                        <div class="flex-grow overflow-y-auto custom-scrollbar pr-2">
+                            <table class="w-full text-left">
+                                <thead class="sticky top-0 bg-white/10">
+                                    <tr>
+                                        <th class="p-3">ID</th>
+                                        <th class="p-3">Cliente</th>
+                                        <th class="p-3">Horário</th>
+                                        <th class="p-3">Valor</th>
+                                        <th class="p-3">Pagamento</th>
+                                        <th class="p-3">Detalhes</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tabela-pedidos">
+                                </tbody>
+                            </table>
+                        </div>
+                        <div id="paginacao-controles" class="flex justify-between items-center pt-4 mt-4 border-t border-white/10">
+                            <button id="btn-pagina-anterior" class="p-2 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed">&lt; Anterior</button>
+                            <span id="paginacao-info" class="text-sm font-semibold">Página 0 de 0</span>
+                            <button id="btn-pagina-proxima" class="p-2 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed">Próxima &gt;</button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <div id="tab-content-insights" class="tab-content space-y-8 hidden">
+                <div class="glass-container rounded-2xl p-6">
+                    <h2 class="text-2xl font-bold">Insights & Comparativos</h2>
+                    <p class="text-white/70 mt-2">Funcionalidade a ser implementada.</p>
+                </div>
+            </div>
+        </div>
+
         <section id="form-container-taxas" class="hidden glass-container rounded-2xl p-6">
             <h3 class="text-xl font-bold mb-4">Configurar Taxas de Pagamento (%)</h3>
             <form id="form-taxas" class="grid grid-cols-1 md:grid-cols-4 gap-6 items-end">
@@ -160,89 +295,9 @@
             </form>
         </section>
 
-        <section class="space-y-6">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="kpi-card faturamento glass-container rounded-2xl p-5 text-center">
-                    <p class="text-sm text-white/80 uppercase">Faturamento Bruto</p>
-                    <p id="kpi-faturamento" class="text-3xl font-extrabold mt-2">R$ 0,00</p>
-                </div>
-                <div class="kpi-card lucro glass-container rounded-2xl p-5 text-center">
-                    <p class="text-sm text-white/80 uppercase">Lucro Estimado</p>
-                    <p id="kpi-lucro" class="text-3xl font-extrabold mt-2">R$ 0,00</p>
-                </div>
-                <div class="kpi-card perdas glass-container rounded-2xl p-5 text-center">
-                    <p class="text-sm text-white/80 uppercase">Perdas e Ajustes</p>
-                    <p id="kpi-perdas" class="text-3xl font-extrabold mt-2">R$ 0,00</p>
-                </div>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="kpi-card pedidos glass-container rounded-2xl p-5 text-center">
-                    <p class="text-sm text-white/80 uppercase">Pedidos Realizados</p>
-                    <p id="kpi-pedidos" class="text-3xl font-extrabold mt-2">0</p>
-                </div>
-                <div class="kpi-card ticket glass-container rounded-2xl p-5 text-center">
-                    <p class="text-sm text-white/80 uppercase">Ticket Médio</p>
-                    <p id="kpi-ticket" class="text-3xl font-extrabold mt-2">R$ 0,00</p>
-                </div>
-                <div class="kpi-card media-itens glass-container rounded-2xl p-5 text-center">
-                    <p class="text-sm text-white/80 uppercase">Média de Itens / Pedido</p>
-                    <p id="kpi-media-itens" class="text-3xl font-extrabold mt-2">0.0</p>
-                </div>
-            </div>
-        </section>
+        
 
-        <section class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div class="lg:col-span-2 glass-container rounded-2xl p-6 flex flex-col h-96">
-                <div class="flex justify-between items-center mb-4 flex-shrink-0">
-                    <h3 id="titulo-grafico-vendas" class="text-xl font-bold">Vendas por Período</h3>
-                    <div>
-                        <label for="metrica-grafico" class="text-sm mr-2">Analisar Métrica:</label>
-                        <select id="metrica-grafico" class="p-2 rounded-lg bg-white/20 border border-white/30 text-white text-sm">
-                            <option value="faturamento">Faturamento</option>
-                            <option value="lucro">Lucro</option>
-                            <option value="pedidos">Pedidos</option>
-                            <option value="ticket_medio">Ticket Médio</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="relative flex-grow">
-                    <canvas id="grafico-vendas"></canvas>
-                </div>
-            </div>
-            <div class="glass-container rounded-2xl p-6 flex flex-col h-96">
-                <h3 class="text-xl font-bold mb-4 flex-shrink-0">Vendas por Pagamento</h3>
-                <div class="relative flex-grow">
-                    <canvas id="grafico-pagamentos"></canvas>
-                </div>
-            </div>
-        </section>
-
-        <section class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div class="lg:col-span-1 glass-container rounded-2xl p-6 flex flex-col">
-                <h3 class="text-xl font-bold mb-4">Itens Mais Vendidos</h3>
-                <div id="lista-mais-vendidos" class="flex-grow overflow-y-auto custom-scrollbar pr-2 space-y-3">
-                    </div>
-            </div>
-            <div class="lg:col-span-2 glass-container rounded-2xl p-6 flex flex-col">
-                <h3 class="text-xl font-bold mb-4">Histórico de Pedidos</h3>
-                <div class="flex-grow overflow-y-auto custom-scrollbar pr-2">
-                    <table class="w-full text-left">
-                        <thead class="sticky top-0 bg-white/10">
-                            <tr>
-                                <th class="p-3">ID</th>
-                                <th class="p-3">Cliente</th>
-                                <th class="p-3">Horário</th>
-                                <th class="p-3">Valor</th>
-                                <th class="p-3">Pagamento</th>
-                                <th class="p-3">Detalhes</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tabela-pedidos">
-                            </tbody>
-                    </table>
-                </div>
-            </div>
-        </section>
+        
     </main>
     <div id="modal-detalhes-pedido" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
         <div class="glass-container rounded-2xl p-6 w-full max-w-lg text-white max-h-[80vh] flex flex-col">
@@ -258,12 +313,37 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // --- LÓGICA DAS ABAS ---
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    tabButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            const tabName = button.dataset.tab;
+
+            // Atualiza a aparência dos botões
+            tabButtons.forEach(btn => {
+                const isSelected = btn.dataset.tab === tabName;
+                btn.classList.toggle('text-blue-400', isSelected);
+                btn.classList.toggle('border-blue-400', isSelected);
+                btn.classList.toggle('text-white/50', !isSelected);
+                btn.classList.toggle('hover:text-white/75', !isSelected);
+                btn.classList.toggle('border-transparent', !isSelected);
+                btn.classList.toggle('hover:border-white/30', !isSelected);
+            });
+
+            // Mostra/esconde o conteúdo
+            tabContents.forEach(content => {
+                content.classList.toggle('hidden', content.id !== `tab-content-${tabName}`);
+            });
+        });
+    });
     // --- ELEMENTOS DO DOM ---
     const selectPeriodo = document.getElementById('periodo');
     const selectMetrica = document.getElementById('metrica-grafico');
     selectMetrica.addEventListener('change', function() {
         // Se já temos dados carregados, recarrega o relatório com a nova métrica
-        carregarRelatorio();
+        carregarDadosOperacionais();
     });
     const divPeriodoCustomizado = document.getElementById('periodo-customizado');
     const btnGerarRelatorio = document.getElementById('gerar-relatorio');
@@ -359,6 +439,48 @@ document.addEventListener('DOMContentLoaded', function() {
                     </button>
                 </td>
             </tr>`).join('');
+    }
+
+    function renderTabelaEstoque(estoque) {
+        const tbody = document.getElementById('tabela-estoque');
+        tbody.innerHTML = '';
+        if (!estoque || estoque.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-white/60">Nenhuma movimentação de estoque no período.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = estoque.map(item => `
+            <tr class="border-b border-white/10">
+                <td class="p-2 font-semibold">${item.nome}</td>
+                <td class="p-2 text-center">${item.inicial}</td>
+                <td class="p-2 text-center text-green-400">+${item.entradas}</td>
+                <td class="p-2 text-center text-red-400">-${item.saidas}</td>
+                <td class="p-2 text-center font-bold">${item.final}</td>
+            </tr>
+        `).join('');
+    }
+
+    function renderControlesPaginacao(historico) {
+        const { page, limit, total } = historico;
+        const totalPages = Math.ceil(total / limit);
+
+        const info = document.getElementById('paginacao-info');
+        const btnAnterior = document.getElementById('btn-pagina-anterior');
+        const btnProxima = document.getElementById('btn-pagina-proxima');
+
+        info.textContent = `Página ${page} de ${totalPages}`;
+
+        // Habilita/desabilita botões
+        btnAnterior.disabled = (page <= 1);
+        btnProxima.disabled = (page >= totalPages);
+
+        // Define a ação de clique para os botões
+        // Usamos .onclick para substituir qualquer listener anterior e evitar duplicação
+        btnAnterior.onclick = () => {
+            if (page > 1) carregarDadosOperacionais(page - 1);
+        };
+        btnProxima.onclick = () => {
+            if (page < totalPages) carregarDadosOperacionais(page + 1);
+        };
     }
 
     function renderGraficos(vendasData, pagamentosData, dadosCompletos) {
@@ -583,44 +705,51 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // --- FUNÇÃO PRINCIPAL PARA BUSCAR E CARREGAR DADOS ---
-    async function carregarRelatorio() {
+    async function carregarDadosOperacionais(page = 1) {
         btnGerarRelatorio.disabled = true;
         btnGerarRelatorio.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Gerando...`;
 
-        try {
-            // Calcula o intervalo de datas baseado no período selecionado
-            const periodo = selectPeriodo.value;
-            const { inicio, fim } = calcularIntervaloDatas(periodo);
-            const localId = document.getElementById('filtro-local').value;
+        // Manteremos a lógica de cálculo de datas que já funciona
+        const periodo = selectPeriodo.value;
+        const { inicio, fim } = calcularIntervaloDatas(periodo);
+        const localId = document.getElementById('filtro-local').value;
+        const limit = 50; // Definimos um limite fixo por página por enquanto
 
-            // Construímos a URL da API dinamicamente
-            let apiUrl = `/api/relatorio?inicio=${encodeURIComponent(inicio)}&fim=${encodeURIComponent(fim)}`;
+        try {
+            // Monta a URL para a NOVA rota, incluindo os parâmetros de paginação
+            let apiUrl = `/api/fechamento_dia?inicio=${encodeURIComponent(inicio)}&fim=${encodeURIComponent(fim)}&page=${page}&limit=${limit}`;
             if (localId && localId !== 'todos') {
                 apiUrl += `&local_id=${localId}`;
             }
             
-            console.log('Buscando dados para:', { inicio, fim, periodo, localId });
+            console.log('Buscando dados operacionais para:', { inicio, fim, periodo, localId, page, limit });
 
-            // Chama a API
             const response = await fetch(apiUrl);
             if (!response.ok) {
                 throw new Error(`Erro na rede: ${response.status} - ${response.statusText}`);
             }
             
             const dados = await response.json();
-            // Popula o formulário de taxas com os dados recebidos do backend
-            popularFormularioTaxas(dados.configuracoes);
-            console.log('Dados recebidos:', dados);
+            console.log('Dados operacionais recebidos:', dados);
 
-            // Renderiza os dados recebidos
+            // Popula o formulário de taxas (lógica existente, pode ser removida no futuro se não for mais necessário aqui)
+            if(dados.configuracoes) popularFormularioTaxas(dados.configuracoes);
+
+            // Renderiza os dados usando a nova estrutura de resposta
             renderKPIs(dados.kpis);
-            renderMaisVendidos(dados.itensMaisVendidos);
-            renderTabelaPedidos(dados.historicoPedidos);
-            renderGraficos(dados.vendasPorPeriodo, dados.vendasPorPagamento, dados);
+            renderMaisVendidos(dados.itens_top); // Agora vem de 'itens_top'
+            
+            // ATENÇÃO: A função renderGraficos precisa ser ajustada, faremos isso depois.
+            // Por enquanto, vamos adaptá-la para não quebrar.
+            // renderGraficos(dados.vendasPorPeriodo, dados.vendasPorPagamento, dados);
+            
+            renderTabelaPedidos(dados.historico_pedidos.items); // CORREÇÃO: Passamos apenas a lista de itens
+            renderTabelaEstoque(dados.estoque); // NOVA FUNÇÃO DE RENDER
+            renderControlesPaginacao(dados.historico_pedidos); // NOVA FUNÇÃO DE RENDER
 
         } catch (error) {
-            console.error("Falha ao buscar relatório:", error);
-            alert("Não foi possível carregar os dados do relatório. Verifique o console para mais detalhes.");
+            console.error("Falha ao buscar relatório operacional:", error);
+            alert("Não foi possível carregar os dados operacionais. Verifique o console para mais detalhes.");
         } finally {
             btnGerarRelatorio.disabled = false;
             btnGerarRelatorio.innerHTML = `<i class="fas fa-sync-alt"></i> Gerar Relatório`;
@@ -647,7 +776,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // --- EVENT LISTENERS ---
-    btnGerarRelatorio.addEventListener('click', carregarRelatorio);
+    btnGerarRelatorio.addEventListener('click', () => carregarDadosOperacionais(1)); // Sempre busca a primeira página ao clicar
 
     // (NOVO) Listeners para o modal de detalhes
     modalFecharPedido.addEventListener('click', fecharModalDetalhes);
@@ -708,7 +837,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             alert('Taxas salvas com sucesso! O relatório será gerado com os novos valores.');
             formContainerTaxas.classList.add('hidden'); // Esconde o form após salvar
-            carregarRelatorio(); // Recarrega o relatório com as novas taxas
+            carregarDadosOperacionais(); // Recarrega o relatório com as novas taxas
 
         } catch (error) {
             console.error('Erro ao salvar taxas:', error);
@@ -720,11 +849,11 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // --- CARGA INICIAL ---
-    carregarRelatorio(); // Gera o relatório de "Hoje" ao carregar a página
+    carregarDadosOperacionais(); // Gera o relatório de "Hoje" (página 1) ao carregar a página
 
     // No final do script, dentro do DOMContentLoaded, chame as duas funções
     popularFiltroLocais();
-    carregarRelatorio();
+    carregarDadosOperacionais();
 });
 </script>
 

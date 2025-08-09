@@ -1514,6 +1514,104 @@ def obter_todos_locais():
         if conn:
             conn.close()
 
+def obter_pedidos_finalizados_periodo(inicio, fim, local_id):
+    """
+    Busca no banco de dados todos os pedidos com status 'finalizado'
+    dentro de um intervalo de datas e, opcionalmente, filtrando por local.
+
+    Args:
+        inicio (str): Timestamp ISO 8601 do início do período.
+        fim (str): Timestamp ISO 8601 do fim do período.
+        local_id (str ou int): O ID do local ou a string 'todos'.
+
+    Returns:
+        list: Uma lista de dicionários, onde cada dicionário é um pedido.
+              Retorna uma lista vazia em caso de erro.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        conn.row_factory = sqlite3.Row  # Isso faz o fetch retornar dicionários
+        cursor = conn.cursor()
+
+        # Constrói a query base
+        query = """
+            SELECT * FROM pedidos
+            WHERE status = 'finalizado' AND timestamp_finalizacao BETWEEN ? AND ?
+        """
+        params = [inicio, fim]
+
+        # Adiciona o filtro de local dinamicamente se não for 'todos'
+        if local_id != 'todos':
+            query += " AND local_id = ?"
+            params.append(int(local_id))
+        
+        # Adiciona ordenação para consistência
+        query += " ORDER BY timestamp_finalizacao ASC"
+
+        cursor.execute(query, params)
+        resultados = cursor.fetchall()
+
+        # Converte os resultados (Row objects) para dicionários Python puros
+        pedidos_finalizados = [dict(row) for row in resultados]
+        
+        return pedidos_finalizados
+
+    except sqlite3.Error as e:
+        print(f"ERRO ao obter pedidos finalizados por período: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+def obter_mapa_produtos_analytics():
+    """
+    Busca todos os produtos e cria um mapa de consulta rápida para o módulo de analytics.
+    Otimizado para evitar múltiplas consultas ao banco de dados.
+
+    Returns:
+        dict: Um dicionário onde a chave é o ID do produto e o valor é um
+              dicionário com detalhes do produto, como {'nome': ..., 'categoria': ..., 'custo_medio': ...}.
+              Retorna um dicionário vazio em caso de erro.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # A consulta agora também busca o custo_medio de cada produto
+        query = """
+            SELECT
+                p.id,
+                p.nome,
+                p.custo_medio,
+                c.nome as categoria_nome
+            FROM produtos p
+            LEFT JOIN categorias c ON p.categoria_id = c.id
+        """
+        cursor.execute(query)
+        resultados = cursor.fetchall()
+
+        # Transforma a lista de resultados em um dicionário para busca rápida (mapa)
+        mapa_produtos = {
+            row['id']: {
+                'nome': row['nome'],
+                'categoria': row['categoria_nome'],
+                'custo_medio': row['custo_medio']
+            }
+            for row in resultados
+        }
+        
+        return mapa_produtos
+
+    except sqlite3.Error as e:
+        print(f"ERRO ao criar mapa de produtos para analytics: {e}")
+        return {}
+    finally:
+        if conn:
+            conn.close()
+
 def excluir_local(id_local):
     """
     Exclui um local da tabela.
@@ -1562,6 +1660,115 @@ def atualizar_categoria_produto(id_produto, nova_categoria_id):
         if conn:
             conn.rollback()
         return False
+    finally:
+        if conn:
+            conn.close()
+
+def obter_entradas_estoque_por_produto(data_fim):
+    """
+    Calcula o total de movimentações de entrada (compras, ajustes positivos/negativos)
+    para cada produto até uma data específica.
+
+    Args:
+        data_fim (str): Timestamp ISO 8601 do fim do período de contagem.
+
+    Returns:
+        dict: Um dicionário no formato {id_produto: total_movimentado}.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+        query = """
+            SELECT id_produto, SUM(quantidade_comprada)
+            FROM entradas_de_estoque
+            WHERE data_entrada <= ?
+            GROUP BY id_produto
+        """
+        cursor.execute(query, (data_fim,))
+        # Converte a lista de tuplas em um dicionário para fácil acesso
+        return {row[0]: row[1] for row in cursor.fetchall()}
+
+    except sqlite3.Error as e:
+        print(f"ERRO ao obter entradas de estoque agregadas: {e}")
+        return {}
+    finally:
+        if conn:
+            conn.close()
+
+def obter_saidas_venda_por_produto(data_fim):
+    """
+    Calcula o total de saídas por venda para cada produto, analisando
+    os pedidos finalizados até uma data específica.
+
+    Args:
+        data_fim (str): Timestamp ISO 8601 do fim do período de contagem.
+
+    Returns:
+        dict: Um dicionário no formato {id_produto: total_vendido}.
+    """
+    saidas_por_produto = {}
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+        query = """
+            SELECT itens_json FROM pedidos
+            WHERE status = 'finalizado' AND timestamp_finalizacao <= ?
+        """
+        cursor.execute(query, (data_fim,))
+        
+        for row in cursor.fetchall():
+            try:
+                itens_do_pedido = json.loads(row[0])
+                for item in itens_do_pedido:
+                    produto_id = item['id']
+                    quantidade = item.get('quantidade', 0)
+                    saidas_por_produto[produto_id] = saidas_por_produto.get(produto_id, 0) + quantidade
+            except (json.JSONDecodeError, TypeError):
+                # Ignora pedidos com JSON malformado, como planejado
+                continue
+        
+        return saidas_por_produto
+
+    except sqlite3.Error as e:
+        print(f"ERRO ao obter saídas por venda agregadas: {e}")
+        return {}
+    finally:
+        if conn:
+            conn.close()
+
+def obter_perdas_periodo(inicio, fim):
+    """
+    Busca todos os registros de perdas (movimentações negativas com custo zero)
+    dentro de um período.
+
+    Args:
+        inicio (str): Timestamp ISO 8601 do início do período.
+        fim (str): Timestamp ISO 8601 do fim do período.
+
+    Returns:
+        list: Uma lista de dicionários, onde cada um representa uma perda.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        query = """
+            SELECT id_produto, quantidade_comprada
+            FROM entradas_de_estoque
+            WHERE quantidade_comprada < 0
+              AND custo_unitario_compra = 0
+              AND data_entrada BETWEEN ? AND ?
+        """
+        cursor.execute(query, (inicio, fim))
+        # Retorna a lista de perdas já no formato de dicionário
+        return [dict(row) for row in cursor.fetchall()]
+
+    except sqlite3.Error as e:
+        print(f"ERRO ao obter perdas do período: {e}")
+        return []
     finally:
         if conn:
             conn.close()

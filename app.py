@@ -7,6 +7,7 @@ from werkzeug.utils import secure_filename
 import sys
 import threading
 import time
+import analytics
 
 # --- INICIALIZAÇÃO DO BANCO DE DADOS ---
 # Garante que o banco e as tabelas existam antes de o servidor iniciar.
@@ -611,6 +612,90 @@ def api_mudar_categoria_produto():
         return jsonify({"status": "sucesso", "mensagem": "Categoria do produto atualizada."})
     else:
         return jsonify({"status": "erro", "mensagem": "Falha ao atualizar o banco de dados."}), 500
+
+@app.route('/api/fechamento_dia')
+def api_fechamento_dia():
+    """
+    Nova rota para servir os dados operacionais do dia/período.
+    """
+    # 1. Extrai os parâmetros da URL, com valores padrão para paginação
+    data_inicio_str = request.args.get('inicio')
+    data_fim_str = request.args.get('fim')
+    local_id = request.args.get('local_id', default='todos')
+    page = request.args.get('page', default=1, type=int)
+    limit = request.args.get('limit', default=50, type=int)
+
+    # 2. Validação básica dos parâmetros de data
+    if not data_inicio_str or not data_fim_str:
+        return jsonify({"erro": "Os parâmetros 'inicio' e 'fim' são obrigatórios."}), 400
+
+    # 3. Chama a nova função "trabalhadora" no módulo de analytics
+    dados_fechamento = analytics.fechamento_operacional(
+        inicio=data_inicio_str,
+        fim=data_fim_str,
+        local_id=local_id,
+        page=page,
+        limit=limit
+    )
+
+    # 4. Retorna os dados processados como JSON
+    return jsonify(dados_fechamento)
+
+@app.route('/api/insights/comparativos')
+def api_insights_comparativos():
+    """
+    Nova rota para servir dados comparativos entre dois períodos.
+    """
+    # 1. Extrai os parâmetros obrigatórios dos períodos
+    periodoA_inicio = request.args.get('periodoA_inicio')
+    periodoA_fim = request.args.get('periodoA_fim')
+    periodoB_inicio = request.args.get('periodoB_inicio')
+    periodoB_fim = request.args.get('periodoB_fim')
+
+    # Validação básica
+    if not all([periodoA_inicio, periodoA_fim, periodoB_inicio, periodoB_fim]):
+        return jsonify({"erro": "Os quatro parâmetros de data (periodoA_inicio, etc.) são obrigatórios."}), 400
+
+    # 2. Coleta todos os outros parâmetros como filtros opcionais
+    filtros = {
+        'granularidade': request.args.get('granularidade', 'custom'),
+        'local_id': request.args.get('local_id', 'todos')
+        # Outros filtros como 'categoria_id' podem ser adicionados aqui no futuro
+    }
+
+    # 3. Chama a função especialista em analytics
+    dados_comparativos = analytics.insights_comparativos(
+        periodoA_inicio, periodoA_fim,
+        periodoB_inicio, periodoB_fim,
+        filtros
+    )
+
+    # 4. Retorna o resultado
+    return jsonify(dados_comparativos)
+
+@app.route('/api/insights/heatmap')
+def api_insights_heatmap():
+    """
+    Nova rota para servir dados para o heatmap de atividade.
+    """
+    # 1. Extrai os parâmetros de data
+    inicio = request.args.get('inicio')
+    fim = request.args.get('fim')
+
+    # Validação básica
+    if not all([inicio, fim]):
+        return jsonify({"erro": "Os parâmetros 'inicio' e 'fim' são obrigatórios."}), 400
+
+    # 2. Coleta filtros opcionais
+    filtros = {
+        'local_id': request.args.get('local_id', 'todos')
+    }
+
+    # 3. Chama a função especialista em analytics
+    dados_heatmap = analytics.insights_heatmap(inicio, fim, filtros)
+
+    # 4. Retorna o resultado
+    return jsonify(dados_heatmap)
 
 @app.route('/')
 def index():

@@ -233,19 +233,17 @@
                     </div>
                 </div>
                 <!-- Aba: Balanço -->
-                <div id="advanced-tab-balanco" class="advanced-tab-content hidden space-y-8">
-                     <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                        <div class="glass-container rounded-2xl p-6 flex flex-col h-96">
+                <div id="advanced-tab-balanco" class="advanced-tab-content hidden">
+                    <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                        <div class="glass-container rounded-2xl p-6">
                             <h3 class="text-xl font-bold mb-4">Itens Mais Vendidos</h3>
-                            <div class="text-center pt-10 text-white/50">Conteúdo aqui...</div>
+                            <div id="container-itens-top" class="overflow-auto custom-scrollbar max-h-96">
+                                </div>
                         </div>
-                        <div class="glass-container rounded-2xl p-6 flex flex-col h-96">
-                            <h3 class="text-xl font-bold mb-4">Itens Menos Vendidos</h3>
-                            <div class="text-center pt-10 text-white/50">Conteúdo aqui...</div>
-                        </div>
-                        <div class="glass-container rounded-2xl p-6 flex flex-col h-96">
+                        <div class="glass-container rounded-2xl p-6">
                             <h3 class="text-xl font-bold mb-4">Balanço de Estoque</h3>
-                            <div class="text-center pt-10 text-white/50">Conteúdo aqui...</div>
+                            <div id="container-balanco-estoque" class="overflow-auto custom-scrollbar max-h-96">
+                                </div>
                         </div>
                     </div>
                 </div>
@@ -253,7 +251,10 @@
                 <div id="advanced-tab-pedidos" class="advanced-tab-content hidden space-y-8">
                     <div class="glass-container rounded-2xl p-6">
                         <h3 class="text-xl font-bold mb-4">Histórico de Pedidos</h3>
-                        <div class="text-center pt-10 text-white/50">Tabela de pedidos aqui...</div>
+                        <div id="container-historico-pedidos" class="overflow-x-auto custom-scrollbar">
+                            </div>
+                        <div id="paginacao-pedidos" class="flex justify-between items-center mt-4">
+                            </div>
                     </div>
                 </div>
             </div>
@@ -416,22 +417,229 @@ document.addEventListener('DOMContentLoaded', function() {
     function initOuUpdateChart(chartVar, canvasId, type, data, options) { if (chartVar) { chartVar.destroy(); } const ctx = document.getElementById(canvasId).getContext('2d'); return new Chart(ctx, { type, data, options }); }
 
     // 4. Lógica Principal de Carregamento
+
+    // Função auxiliar para converter snake_case para camelCase
+    function toCamelCase(s) {
+        return s.replace(/([-_][a-z])/ig, ($1) => {
+            return $1.toUpperCase().replace('-', '').replace('_', '');
+        });
+    }
+
+    // O Adapter: nosso tradutor de payload
+    function adaptarRespostaFechamentoV2(data) {
+        console.debug('[FechamentoV2] Adaptando payload recebido:', data);
+        const raw = data || {};
+
+        // Mapeia chaves de um objeto para camelCase
+        const mapKeys = (obj) => {
+            if (typeof obj !== 'object' || obj === null) return obj;
+            return Object.keys(obj).reduce((acc, key) => {
+                acc[toCamelCase(key)] = obj[key];
+                return acc;
+            }, {});
+        };
+
+        // Adapta um array de objetos
+        const mapArray = (arr) => (arr || []).map(item => mapKeys(item));
+
+        // Ponto da correção: Aceita tanto o nome antigo (camelCase) quanto o novo (snake_case)
+        const rawHistorico = raw.historicoPedidos || raw.historico_pedidos || {};
+        const rawItensTop = raw.itensTop || raw.itens_top || [];
+        const rawEstoque = raw.estoque || raw.estoque || [];
+
+        return {
+            kpis: mapKeys(raw.kpis),
+            vendasPorPagamento: raw.vendasPorPagamento, 
+            vendasPorPeriodo: raw.vendasPorPeriodo,   
+            itensTop: mapArray(rawItensTop),
+            estoque: mapArray(rawEstoque),
+            historicoPedidos: {
+                ...mapKeys(rawHistorico), // Mapeia a raiz do histórico (page, limit, etc.)
+                items: mapArray(rawHistorico.items) // Mapeia os itens internos para camelCase
+            }
+        };
+    }
+
+    // Função para renderizar a aba "Balanço"
+    function preencherBalanco(itensTop, estoque) {
+        const containerItens = document.getElementById('container-itens-top');
+        const containerEstoque = document.getElementById('container-balanco-estoque');
+
+        // Renderiza Itens Mais Vendidos
+        if (!itensTop || itensTop.length === 0) {
+            containerItens.innerHTML = '<p class="text-white/50 text-center py-4">Sem itens para exibir.</p>';
+        } else {
+            const tableHead = `
+                <thead class="bg-white/10">
+                    <tr>
+                        <th class="px-4 py-2 text-left">Produto</th>
+                        <th class="px-4 py-2 text-center">Qtd</th>
+                        <th class="px-4 py-2 text-right">Receita</th>
+                        <th class="px-4 py-2 text-right">Lucro</th>
+                    </tr>
+                </thead>`;
+            const tableBody = itensTop.map(item => `
+                <tr class="border-b border-white/10">
+                    <td class="px-4 py-2">${item.nome}</td>
+                    <td class="px-4 py-2 text-center">${item.quantidade}</td>
+                    <td class="px-4 py-2 text-right">R$ ${formatarMoeda(item.receita)}</td>
+                    <td class="px-4 py-2 text-right">R$ ${formatarMoeda(item.lucro)}</td>
+                </tr>`).join('');
+            containerItens.innerHTML = `<table class="w-full text-sm">${tableHead}<tbody>${tableBody}</tbody></table>`;
+        }
+
+        // Renderiza Balanço de Estoque
+        if (!estoque || estoque.length === 0) {
+            containerEstoque.innerHTML = '<p class="text-white/50 text-center py-4">Sem movimentação de estoque no período.</p>';
+        } else {
+            const tableHead = `
+                <thead class="bg-white/10">
+                    <tr>
+                        <th class="px-4 py-2 text-left">Produto</th>
+                        <th class="px-4 py-2 text-center">Inicial</th>
+                        <th class="px-4 py-2 text-center">Entradas</th>
+                        <th class="px-4 py-2 text-center">Saídas</th>
+                        <th class="px-4 py-2 text-center">Final</th>
+                    </tr>
+                </thead>`;
+            const tableBody = estoque.map(item => `
+                <tr class="border-b border-white/10">
+                    <td class="px-4 py-2">${item.nome}</td>
+                    <td class="px-4 py-2 text-center">${item.inicial}</td>
+                    <td class="px-4 py-2 text-center text-green-400">${item.entradas}</td>
+                    <td class="px-4 py-2 text-center text-red-400">${item.saidas}</td>
+                    <td class="px-4 py-2 text-center font-bold">${item.final}</td>
+                </tr>`).join('');
+            containerEstoque.innerHTML = `<table class="w-full text-sm">${tableHead}<tbody>${tableBody}</tbody></table>`;
+        }
+    }
+
+    // Função para renderizar a aba "Pedidos" com botão de detalhes
+    function preencherPedidos(historicoPedidos) {
+        const container = document.getElementById('container-historico-pedidos');
+        // Removemos a paginação por enquanto
+        document.getElementById('paginacao-pedidos').innerHTML = '';
+        const dados = historicoPedidos || { items: [] };
+
+        if (!dados.items || dados.items.length === 0) {
+            container.innerHTML = '<p class="text-white/50 text-center py-4">Nenhum pedido encontrado para o período.</p>';
+            return;
+        }
+
+        const tableHead = `
+            <thead class="bg-white/10 sticky top-0">
+                <tr>
+                    <th class="p-3 text-center">Senha</th>
+                    <th class="p-3 text-left">Cliente</th>
+                    <th class="p-3 text-left">Horário</th>
+                    <th class="p-3 text-right">Valor Total</th>
+                    <th class="p-3 text-center">Detalhes</th>
+                </tr>
+            </thead>`;
+            
+        const tableBody = dados.items.map(p => {
+            const dataHora = new Date(p.horario).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            return `
+                <tr class="border-b border-white/10 hover:bg-white/5">
+                    <td class="p-3 text-center font-bold text-lg">${p.senhaDiaria}</td>
+                    <td class="p-3 text-left">${p.nomeCliente || 'N/A'}</td>
+                    <td class="p-3 text-left">${dataHora}</td>
+                    <td class="p-3 text-right font-semibold">R$ ${formatarMoeda(p.valorTotal)}</td>
+                    <td class="p-3 text-center">
+                        <button class="btn-detalhes-pedido text-blue-400 hover:text-blue-300 text-xl"
+                                data-id-pedido="${p.id}" 
+                                data-itens='${p.itensJson}'>
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </td>
+                </tr>`;
+        }).join('');
+        
+        container.innerHTML = `<table class="w-full text-sm whitespace-nowrap">${tableHead}<tbody>${tableBody}</tbody></table>`;
+    }
+
+    // --- LÓGICA DO MODAL DE DETALHES ---
+
+    const modalDetalhes = document.getElementById('modal-detalhes-pedido');
+    const modalTituloPedido = document.getElementById('modal-titulo-pedido');
+    const modalCorpoPedido = document.getElementById('modal-corpo-pedido');
+    const modalFecharPedido = document.getElementById('modal-fechar-pedido');
+
+    function abrirModalDetalhes(idPedido, itensJson) {
+        modalTituloPedido.textContent = `Detalhes do Pedido #${idPedido}`;
+        let htmlItens = '';
+        try {
+            const itens = JSON.parse(itensJson || '[]');
+            if (itens && itens.length > 0) {
+                htmlItens = itens.map(item => {
+                    const subtotal = (item.quantidade || 0) * (item.preco || 0);
+                    return `
+                        <div class="bg-white/10 p-3 rounded-lg">
+                            <div class="flex justify-between items-baseline">
+                               <span class="font-semibold text-lg">${item.quantidade}x ${item.nome}</span>
+                               <span class="font-bold">R$ ${formatarMoeda(subtotal)}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                htmlItens = '<p class="text-white/60">Não foi possível carregar os itens deste pedido.</p>';
+            }
+        } catch (e) {
+            console.error("Erro ao processar itens do pedido:", e);
+            htmlItens = '<p class="text-red-400">Erro ao ler os dados dos itens.</p>';
+        }
+        modalCorpoPedido.innerHTML = htmlItens;
+        modalDetalhes.classList.remove('hidden');
+    }
+
+    function fecharModalDetalhes() {
+        modalDetalhes.classList.add('hidden');
+    }
+
+    // Event listeners para o modal
+    modalFecharPedido.addEventListener('click', fecharModalDetalhes);
+    modalDetalhes.addEventListener('click', (event) => {
+        if (event.target === modalDetalhes) { // Fecha se clicar no fundo escuro
+            fecharModalDetalhes();
+        }
+    });
+
+    document.getElementById('container-historico-pedidos').addEventListener('click', function(event) {
+        const botaoDetalhes = event.target.closest('.btn-detalhes-pedido');
+        if (botaoDetalhes) {
+            const idPedido = botaoDetalhes.dataset.idPedido;
+            const itensJson = botaoDetalhes.dataset.itens;
+            abrirModalDetalhes(idPedido, itensJson);
+        }
+    });
+
     async function carregarFechamentoDia() {
         const datasSelecionadas = datePickerSimples.selectedDates;
         if (datasSelecionadas.length === 0) { alert("Por favor, selecione uma data."); return; }
         setLoadingState(btnAnalisar, true);
         const data = datasSelecionadas[0];
-        const inicio = new Date(data.setHours(0, 0, 0, 0)).toISOString();
+        const inicio = new Date(data.setHours(0, 0, 0, 0)).toISOString(); 
         const fim = new Date(data.setHours(23, 59, 59, 999)).toISOString();
         const url = `${API_FECHAMENTO_V2}?inicio=${inicio}&fim=${fim}&local_id=todos`;
 
         try {
             const response = await fetch(url);
             if (!response.ok) throw new Error(`O servidor respondeu com um erro: ${response.status}`);
-            const dados = await response.json();
-            preencherKPIs(dados.kpis);
-            chartVendas = initOuUpdateChart(chartVendas, 'grafico-vendas', 'bar', { labels: dados.vendasPorPeriodo.labels, datasets: [{ label: 'Faturamento', data: dados.vendasPorPeriodo.data, backgroundColor: 'rgba(52, 211, 153, 0.7)', borderColor: '#34D399', borderWidth: 2, borderRadius: 5, }] }, chartDefaultOptions);
-            chartPagamentos = initOuUpdateChart(chartPagamentos, 'grafico-pagamentos', 'doughnut', { labels: dados.vendasPorPagamento.labels.map(l => l.replace(/_/g, ' ').replace(/(^\w{1})|(\s+\w{1})/g, letra => letra.toUpperCase())), datasets: [{ label: 'Formas de Pagamento', data: dados.vendasPorPagamento.data, backgroundColor: ['#60A5FA', '#FBBF24', '#A78BFA', '#34D399'], borderColor: 'rgba(255, 255, 255, 0.1)', borderWidth: 2, }] }, { ...chartDefaultOptions, scales: {} });
+            const dadosApi = await response.json();
+            
+            // PASSO 1: Usar o adapter
+            const d = adaptarRespostaFechamentoV2(dadosApi);
+
+            // PASSO 2: Usar os dados adaptados (d) para tudo
+            preencherKPIs(d.kpis);
+            preencherBalanco(d.itensTop, d.estoque);
+            preencherPedidos(d.historicoPedidos);
+
+            // Atualiza Gráficos (já usavam a estrutura correta)
+            chartVendas = initOuUpdateChart(chartVendas, 'grafico-vendas', 'bar', { labels: d.vendasPorPeriodo.labels, datasets: [{ label: 'Faturamento', data: d.vendasPorPeriodo.data, backgroundColor: 'rgba(52, 211, 153, 0.7)', borderColor: '#34D399', borderWidth: 2, borderRadius: 5, }] }, chartDefaultOptions);
+            chartPagamentos = initOuUpdateChart(chartPagamentos, 'grafico-pagamentos', 'doughnut', { labels: d.vendasPorPagamento.labels.map(l => l.replace(/_/g, ' ').replace(/(^\w{1})|(\s+\w{1})/g, letra => letra.toUpperCase())), datasets: [{ label: 'Formas de Pagamento', data: d.vendasPorPagamento.data, backgroundColor: ['#60A5FA', '#FBBF24', '#A78BFA', '#34D399'], borderColor: 'rgba(255, 255, 255, 0.1)', borderWidth: 2, }] }, { ...chartDefaultOptions, scales: {} });
+
         } catch (error) {
             console.error("Falha ao carregar dados do fechamento:", error);
             alert(`Não foi possível carregar os dados do relatório. Detalhes: ${error.message}`);
@@ -476,6 +684,17 @@ document.addEventListener('DOMContentLoaded', function() {
     carregarFechamentoDia();
 });
 </script>
+
+<div id="modal-detalhes-pedido" class="fixed inset-0 bg-black bg-opacity-70 backdrop-blur-sm flex items-center justify-center p-4 hidden z-50">
+    <div class="glass-container rounded-2xl p-6 w-full max-w-lg text-white max-h-[80vh] flex flex-col">
+        <div class="flex justify-between items-center border-b border-white/20 pb-3 mb-4 flex-shrink-0">
+            <h2 id="modal-titulo-pedido" class="text-2xl font-bold">Detalhes do Pedido</h2>
+            <button id="modal-fechar-pedido" class="text-2xl hover:text-red-500 transition-colors">&times;</button>
+        </div>
+        <div id="modal-corpo-pedido" class="overflow-y-auto custom-scrollbar pr-2 space-y-3">
+            </div>
+    </div>
+</div>
 
 </body>
 </html>

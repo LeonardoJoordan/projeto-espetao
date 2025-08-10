@@ -1783,3 +1783,37 @@ def _normalizar_e_ordenar_itens(itens_recebidos, cursor):
     # Lógica a ser implementada na Tarefa 2
     print("Aviso: _normalizar_e_ordenar_itens ainda não implementada.")
     return itens_recebidos # Retorna a lista original por enquanto
+
+def obter_entradas_positivas_periodo(inicio, fim):
+    """
+    Busca o total de entradas de estoque (somente quantidades positivas, i.e., compras)
+    para cada produto dentro de um período específico.
+
+    Args:
+        inicio (str): Timestamp ISO 8601 do início do período.
+        fim (str): Timestamp ISO 8601 do fim do período.
+
+    Returns:
+        dict: Um dicionário no formato {id_produto: total_comprado}.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+        query = """
+            SELECT id_produto, SUM(quantidade_comprada)
+            FROM entradas_de_estoque
+            WHERE data_entrada BETWEEN ? AND ?
+              AND quantidade_comprada > 0
+            GROUP BY id_produto
+        """
+        cursor.execute(query, (inicio, fim))
+        # Converte a lista de tuplas em um dicionário para fácil acesso
+        return {row[0]: row[1] for row in cursor.fetchall()}
+
+    except sqlite3.Error as e:
+        print(f"ERRO ao obter entradas positivas do período: {e}")
+        return {}
+    finally:
+        if conn:
+            conn.close()

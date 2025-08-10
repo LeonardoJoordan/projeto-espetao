@@ -269,6 +269,7 @@ def fechamento_operacional_v2(inicio, fim, local_id, page, limit):
     mapa_produtos = gerenciador_db.obter_mapa_produtos_analytics()
     lista_de_perdas = gerenciador_db.obter_perdas_periodo(inicio, fim)
     configuracoes = gerenciador_db.obter_configuracoes()
+    entradas_do_dia_map = gerenciador_db.obter_entradas_positivas_periodo(inicio, fim)
     
     # Pré-busca de todas as movimentações para o cálculo de estoque
     entradas_ate_inicio = gerenciador_db.obter_entradas_estoque_por_produto(inicio)
@@ -339,17 +340,28 @@ def fechamento_operacional_v2(inicio, fim, local_id, page, limit):
     # === PASSO 3: CALCULAR BALANÇO DE ESTOQUE ===
     lista_estoque = []
     for pid, pinfo in mapa_produtos.items():
+        # Saldo acumulado até o início do dia de trabalho
         estoque_inicial = entradas_ate_inicio.get(pid, 0) - saidas_ate_inicio.get(pid, 0)
-        entradas_periodo = entradas_ate_fim.get(pid, 0) - entradas_ate_inicio.get(pid, 0)
-        saidas_periodo = saidas_ate_fim.get(pid, 0) - saidas_ate_inicio.get(pid, 0)
-        estoque_final = estoque_inicial + entradas_periodo - saidas_periodo
+        
+        # Apenas as compras/reposições feitas no período
+        entradas_dia = entradas_do_dia_map.get(pid, 0)
 
-        if estoque_inicial != 0 or entradas_periodo != 0 or saidas_periodo != 0 or estoque_final != 0:
+        # Saldo disponível para venda no dia
+        estoque_do_dia = estoque_inicial + entradas_dia
+
+        # Saídas por vendas finalizadas no período
+        saidas_dia = saidas_ate_fim.get(pid, 0) - saidas_ate_inicio.get(pid, 0)
+
+        # Saldo ao final do dia de trabalho
+        estoque_final = estoque_do_dia - saidas_dia
+
+        if estoque_inicial != 0 or entradas_dia != 0 or saidas_dia != 0 or estoque_final != 0:
             lista_estoque.append({
                 "nome": pinfo['nome'],
                 "inicial": estoque_inicial,
-                "entradas": entradas_periodo,
-                "saidas": saidas_periodo,
+                "entradas": entradas_dia,
+                "estoque_do_dia": estoque_do_dia, # Novo campo
+                "saidas": saidas_dia,
                 "final": estoque_final
             })
     

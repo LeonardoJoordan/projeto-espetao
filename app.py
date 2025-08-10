@@ -8,6 +8,8 @@ import sys
 import threading
 import time
 import analytics
+import pytz
+from datetime import datetime, timedelta
 
 # --- INICIALIZAÇÃO DO BANCO DE DADOS ---
 # Garante que o banco e as tabelas existam antes de o servidor iniciar.
@@ -704,11 +706,30 @@ def api_fechamento_dia_v2():
     """
     try:
         # 1. Validação e normalização dos parâmetros da query
+        date_str = request.args.get('data')
         inicio_str = request.args.get('inicio')
         fim_str = request.args.get('fim')
-        if not inicio_str or not fim_str:
-            return jsonify({"erro": "Os parâmetros 'inicio' e 'fim' são obrigatórios."}), 400
 
+        if date_str:
+            # Prioridade para o parâmetro 'data'
+            try:
+                tz_sp = pytz.timezone('America/Sao_Paulo')
+                dia_selecionado = datetime.strptime(date_str, '%Y-%m-%d')
+                
+                # O dia de trabalho começa às 05:00 do dia D
+                inicio_local = tz_sp.localize(dia_selecionado.replace(hour=5, minute=0, second=0, microsecond=0))
+                # E termina 1 microssegundo antes das 05:00 do dia D+1
+                fim_local = inicio_local + timedelta(days=1, microseconds=-1)
+                
+                # Converte para UTC para as queries no banco
+                inicio_str = inicio_local.astimezone(pytz.utc).isoformat()
+                fim_str = fim_local.astimezone(pytz.utc).isoformat()
+            except (ValueError, TypeError):
+                return jsonify({"erro": "Formato de data inválido. Use AAAA-MM-DD."}), 400
+        elif not inicio_str or not fim_str:
+            return jsonify({"erro": "Os parâmetros 'inicio' e 'fim' (ou 'data') são obrigatórios."}), 400
+        
+        # Leitura dos outros parâmetros
         page = request.args.get('page', default=1, type=int)
         limit = request.args.get('limit', default=50, type=int)
         local_id = request.args.get('local_id', default='todos')

@@ -35,8 +35,20 @@ class FechamentoSerializer:
                 "horario": item.get('timestamp_finalizacao', ''), # Supondo que o DB retorna ISO UTC
                 "valor_total": item.get('valor_total', 0),
                 "metodo_pagamento": item.get('metodo_pagamento', ''),
-                "itens_json": item.get('itens_json', '[]') or '[]' # Garante que não seja None, e sim "[]"
+                "itens_json": item.get('itens_json', '[]') or '[]',
+                 "senha_diaria": item.get('senha_diaria', 0) # Garante que não seja None, e sim "[]"
             } for item in itens_paginados
+        ]
+
+        itens_estoque_formatados = [
+            {
+                "nome": item.get('nome', ''),
+                "inicial": item.get('inicial', 0),
+                "entradas": item.get('entradas', 0),
+                "estoqueDoDia": item.get('estoque_do_dia', 0), # Novo campo
+                "saidas": item.get('saidas', 0),
+                "final": item.get('final', 0)
+            } for item in dados_brutos.get('estoque', [])
         ]
 
         resultado = {
@@ -55,7 +67,7 @@ class FechamentoSerializer:
                 "limit": paginacao.get('limit', 50),
                 "total": paginacao.get('total', 0)
             },
-            "estoque": dados_brutos.get('estoque', []),
+            "estoque": itens_estoque_formatados,
             "vendasPorPeriodo": dados_brutos.get('vendasPorPeriodo', {"labels": [], "data": []}),
             "vendasPorPagamento": dados_brutos.get('vendasPorPagamento', {"labels": [], "data": []}),
             "configuracoes": dados_brutos.get('configuracoes', {"taxa_credito": 0, "taxa_debito": 0, "taxa_pix": 0})

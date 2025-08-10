@@ -3,14 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fechamento de Caixa - Espetão do Léo</title>
+    <title>Fechamento de Caixa</title>
+
     <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind-output.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/fontawesome.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/flatpickr.min.css') }}">
-
-    <script src="{{ url_for('static', filename='js/libs/chart.min.js') }}"></script>
+    
     <script src="{{ url_for('static', filename='js/libs/flatpickr.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/libs/chart.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/libs/l10n/pt.js') }}"></script>
+    
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -20,9 +23,22 @@
         .glass-container {
             background: rgba(255, 255, 255, 0.1);
             backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.2);
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
         }
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.5); }
+        
+        /* Estilos para botões da Sidebar */
+        .sidebar-btn.active {
+            background-color: rgba(255, 255, 255, 0.2);
+            font-weight: 600;
+        }
+
+        /* Estilos para os cards de KPI */
         .kpi-card {
             transition: all 0.3s ease;
             border-bottom: 4px solid transparent;
@@ -36,960 +52,428 @@
         .kpi-card.pedidos { border-color: #FBBF24; }
         .kpi-card.ticket { border-color: #A78BFA; }
         .kpi-card.perdas { border-color: #F87171; }
-        .kpi-card.media-itens { border-color: #2DD4BF; }
 
+        /* Estilos para abas do relatório avançado */
+        .advanced-tab-btn.active {
+            border-color: #60A5FA;
+            color: #60A5FA;
+        }
+        
+        /* Estilos para o Flatpickr */
         .flatpickr-calendar {
             background: #2d3748;
             border-radius: 0.5rem;
             border: 1px solid rgba(255, 255, 255, 0.2);
         }
         .flatpickr-day { color: #cbd5e0; }
-        .flatpickr-day.selected { background: #60A5FA; border-color: #60A5FA; }
+        .flatpickr-day.selected, .flatpickr-day.startRange, .flatpickr-day.endRange { background: #60A5FA; border-color: #60A5FA; }
         .flatpickr-day:hover { background: #4a5568; }
-        .flatpickr-weekday, .flatpickr-monthDropdown-month, .numInput, .cur-month { color: white !important; }
-        .flatpickr-prev-month, .flatpickr-next-month { fill: white !important; }
-
-        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.5); }
-        
-        select {
-            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
-            background-position: right 0.5rem center;
-            background-repeat: no-repeat;
-            background-size: 1.5em 1.5em;
-            padding-right: 2.5rem;
-            -webkit-appearance: none;
-            -moz-appearance: none;
-            appearance: none;
-        }
-        
-        select option {
-            background-color: #2d3748 !important;
-            color: white !important;
-            padding: 8px !important;
-        }
-        
-        select option:hover {
-            background-color: #4a5568 !important;
-        }
+        .flatpickr-weekday, .flatpickr-monthDropdown-month, .numInput, .cur-month, .flatpickr-time input { color: white !important; }
+        .arrowUp:after { border-bottom-color: white !important; }
+        .arrowDown:after { border-top-color: white !important; }
+        .flatpickr-prev-month svg, .flatpickr-next-month svg { fill: white !important; }
     </style>
 </head>
 <body class="p-4 md:p-8 text-white">
 
-    <header class="mb-8 glass-container rounded-2xl p-6 max-w-7xl mx-auto">
-        <div class="flex items-center justify-center">
-            <i class="fas fa-chart-line text-white text-3xl mr-4"></i>
-            <h1 class="text-4xl font-bold text-white text-center">Fechamento de Caixa e Relatórios</h1>
+<!-- WRAPPER DO LAYOUT: GRID 2 COLUNAS -->
+<div id="app-grid" class="relative grid gap-6 lg:grid-cols-[18rem,1fr]">
+
+  <!-- SIDEBAR (off-canvas em mobile, fixa em lg+) -->
+  <aside id="sidebar"
+         class="glass-container fixed inset-y-0 left-0 z-40 w-72 p-4 overflow-y-auto custom-scrollbar
+                transform -translate-x-full transition-transform lg:static lg:translate-x-0 rounded-2xl">
+    
+    <nav class="flex flex-col space-y-2">
+        <a href="#relatorio-simples" class="sidebar-btn flex items-center p-3 rounded-lg text-white hover:bg-white/10 transition-colors duration-200 active">
+            <i class="fas fa-chart-bar fa-fw w-6 mr-3"></i>
+            <span>Relatório simples</span>
+        </a>
+        <a href="#relatorio-avancado" class="sidebar-btn flex items-center p-3 rounded-lg text-white hover:bg-white/10 transition-colors duration-200">
+            <i class="fas fa-chart-area fa-fw w-6 mr-3"></i>
+            <span>Relatório avançado</span>
+        </a>
+        <a href="#insights" class="sidebar-btn flex items-center p-3 rounded-lg text-white hover:bg-white/10 transition-colors duration-200">
+            <i class="fas fa-lightbulb fa-fw w-6 mr-3"></i>
+            <span>Insights avançados</span>
+        </a>
+    </nav>
+
+  </aside>
+
+  <!-- BACKDROP da sidebar (somente mobile) -->
+  <div id="sidebar-backdrop" class="fixed inset-0 z-30 bg-black/50 hidden lg:hidden"></div>
+
+  <!-- COLUNA DE CONTEÚDO -->
+  <main id="content-main" class="space-y-8 min-h-screen min-w-0">
+    <header class="glass-container rounded-2xl p-6 space-y-6">
+        <div class="flex items-center justify-center relative">
+            <button id="btn-toggle-sidebar"
+                    class="lg:hidden inline-flex items-center justify-center w-10 h-10 mr-3 rounded-xl bg-white/10 hover:bg-white/20 absolute left-0"
+                    aria-label="Abrir menu">
+              <i class="fas fa-bars"></i>
+            </button>
+            <div class="flex items-center justify-center text-center">
+                 <i class="fas fa-chart-line text-white text-2xl md:text-3xl mr-4"></i>
+                 <h1 class="text-2xl md:text-4xl font-bold text-white">Fechamento e Relatórios</h1>
+            </div>
         </div>
-        <p class="text-center text-white/80 mt-2">Analise o desempenho do seu negócio com dados detalhados.</p>
+        
+        <!-- SELETOR DE DATA ÚNICA -->
+        <div id="single-date-selector-container">
+            <div class="flex items-center justify-center gap-4">
+                <label for="report-date" class="font-semibold text-lg">Data:</label>
+                <input type="text" id="report-date" placeholder="Selecione uma data" class="bg-white/20 border border-white/30 rounded-lg p-2 text-white text-center w-48 cursor-pointer">
+                <button id="btn-analisar" class="bg-blue-500 hover:bg-blue-600 font-bold py-2 px-6 rounded-lg transition-colors flex items-center justify-center gap-2">
+                <i class="fa fa-search"></i>
+                <span>Analisar</span>
+            </button>            
+            </div>
+        </div>
+        
+        <!-- SELETOR DE COMPARAÇÃO DE PERÍODOS -->
+        <div id="comparison-date-selector-container" class="hidden">
+            <div class="flex flex-wrap items-center justify-center gap-x-6 gap-y-4">
+                <label for="periodo-a" class="font-semibold text-lg">Datas:</label>
+                <div class="flex items-center gap-2">
+                    <input type="text" id="periodo-a" placeholder="1ª data ou período" class="bg-white/20 border border-white/30 rounded-lg p-2 text-white text-center w-56 cursor-pointer">
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="text" id="periodo-b" placeholder="2ª data ou período" class="bg-white/20 border border-white/30 rounded-lg p-2 text-white text-center w-56 cursor-pointer">
+                </div>
+                <button id="btn-comparar" class="bg-blue-500 hover:bg-blue-600 font-bold py-2 px-6 rounded-lg transition-colors flex items-center justify-center gap-2">
+                    <i class="fa fa-exchange"></i>
+                    <span>Comparar</span>
+                </button>
+            </div>
+        </div>
     </header>
+    
+    <!-- Container para os conteúdos das seções -->
+    <div id="main-content-area">
 
-    <main class="max-w-7xl mx-auto space-y-8">
-        <section class="glass-container rounded-2xl p-6">
-            <div class="flex flex-col lg:flex-row justify-between items-end gap-6">
-
-                <div class="flex flex-col md:flex-row gap-6 items-end w-full lg:w-auto">
-                    
-                    <div>
-                        <label for="periodo" class="block mb-2 font-semibold">Período</label>
-                        <select id="periodo" class="w-full p-3 rounded-lg bg-white/20 border border-white/30 text-white">
-                            <option value="hoje">Hoje</option>
-                            <option value="ontem">Ontem</option>
-                            <option value="7dias">Últimos 7 dias</option>
-                            <option value="mes_atual">Este Mês</option>
-                            <option value="custom">Período Customizado</option>
-                        </select>
-                    </div>
-
-                    <div id="periodo-customizado" class="hidden">
-                        <label for="daterange" class="block mb-2 font-semibold">Selecione o Intervalo</label>
-                        <input type="text" id="daterange" placeholder="Selecione as datas" class="w-full p-3 rounded-lg bg-white/20 border border-white/30 text-white">
-                    </div>
-
-                    <div>
-                        <label for="filtro-local" class="block mb-2 font-semibold">Local</label>
-                        <select id="filtro-local" class="w-full p-3 rounded-lg bg-white/20 border border-white/30 text-white">
-                            <option value="todos">Todos os Locais</option>
-                            </select>
-                    </div>
-
+        <!-- SEÇÃO: RELATÓRIO SIMPLES -->
+        <section id="content-relatorio-simples" class="main-content-section space-y-6">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+                <div class="kpi-card faturamento glass-container rounded-2xl p-5 text-center">
+                    <p class="text-sm text-white/80 uppercase">Faturamento Bruto</p>
+                    <p class="text-3xl font-extrabold mt-2">R$ <span id="kpi-faturamento-valor" data-state="idle">1.234,56</span></p>
                 </div>
-
-                <div>
-                    <div class="flex gap-2">
-                        <div class="flex gap-2">
-                            <button id="btn-abrir-taxas" type="button" class="flex-shrink-0 bg-gray-600 hover:bg-gray-700 font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 whitespace-nowrap">
-                                <i class="fas fa-cog"></i>
-                                Configurar Taxas de Pagamento
-                            </button>
-                            
-                            <button id="gerar-relatorio" class="flex-shrink-0 bg-blue-500 hover:bg-blue-600 font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 whitespace-nowrap">
-                                <i class="fas fa-sync-alt"></i>
-                                Gerar Relatório
-                            </button>
-                        </div>
-                    </div>
+                <div class="kpi-card lucro glass-container rounded-2xl p-5 text-center">
+                    <p class="text-sm text-white/80 uppercase">Lucro Estimado</p>
+                    <p class="text-3xl font-extrabold mt-2">R$ <span id="kpi-lucro-valor" data-state="idle">567,89</span></p>
                 </div>
-
+                <div class="kpi-card perdas glass-container rounded-2xl p-5 text-center">
+                    <p class="text-sm text-white/80 uppercase">Perdas e Ajustes</p>
+                    <p class="text-3xl font-extrabold mt-2">-R$ <span id="kpi-perdas-valor" data-state="idle">50,00</span></p>
+                </div>
+                <div class="kpi-card pedidos glass-container rounded-2xl p-5 text-center">
+                    <p class="text-sm text-white/80 uppercase">Pedidos</p>
+                    <p id="kpi-pedidos" class="text-3xl font-extrabold mt-2"><span id="kpi-pedidos-valor" data-state="idle">42</span></p>
+                </div>
+                <div class="kpi-card ticket glass-container rounded-2xl p-5 text-center">
+                    <p class="text-sm text-white/80 uppercase">Ticket Médio</p>
+                    <p class="text-3xl font-extrabold mt-2">R$ <span id="kpi-ticket-valor" data-state="idle">29,39</span></p>
+                </div>
             </div>
         </section>
 
-        <section class="mb-8">
+        <!-- SEÇÃO: RELATÓRIO AVANÇADO -->
+        <section id="content-relatorio-avancado" class="main-content-section hidden space-y-6">
+            <!-- Abas internas do relatório avançado -->
             <div class="border-b border-white/20">
                 <nav class="-mb-px flex space-x-8" aria-label="Tabs">
-                    <button class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-lg text-blue-400 border-blue-400" data-tab="operacional">
-                        Operacional
+                    <button class="advanced-tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-lg border-transparent active" data-tab-target="#advanced-tab-relatorio">
+                        Relatório
                     </button>
-                    <button class="tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-lg border-transparent text-white/50 hover:text-white/75 hover:border-white/30" data-tab="insights">
-                        Insights
+                    <button class="advanced-tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-lg border-transparent text-white/50 hover:text-white/75 hover:border-white/30" data-tab-target="#advanced-tab-balanco">
+                        Balanço
+                    </button>
+                    <button class="advanced-tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-lg border-transparent text-white/50 hover:text-white/75 hover:border-white/30" data-tab-target="#advanced-tab-pedidos">
+                        Pedidos
                     </button>
                 </nav>
             </div>
-        </section>
 
-        <div id="tab-content-container">
-            <div id="tab-content-operacional" class="tab-content space-y-8">
-                <section class="space-y-6">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div class="kpi-card faturamento glass-container rounded-2xl p-5 text-center">
-                            <p class="text-sm text-white/80 uppercase">Faturamento Bruto</p>
-                            <p id="kpi-faturamento" class="text-3xl font-extrabold mt-2">R$ 0,00</p>
+            <!-- Conteúdo das abas avançadas -->
+            <div id="advanced-tabs-content">
+                <!-- Aba: Relatório -->
+                <div id="advanced-tab-relatorio" class="advanced-tab-content space-y-8">
+                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+                        <div class="glass-container rounded-xl p-3 text-center">
+                            <p class="text-xs text-white/70 uppercase">Faturamento</p>
+                            <p class="text-xl font-bold">R$ 1.234,56</p>
                         </div>
-                        <div class="kpi-card lucro glass-container rounded-2xl p-5 text-center">
-                            <p class="text-sm text-white/80 uppercase">Lucro Estimado</p>
-                            <p id="kpi-lucro" class="text-3xl font-extrabold mt-2">R$ 0,00</p>
+                        <div class="glass-container rounded-xl p-3 text-center">
+                            <p class="text-xs text-white/70 uppercase">Lucro</p>
+                            <p class="text-xl font-bold">R$ 567,89</p>
                         </div>
-                        <div class="kpi-card perdas glass-container rounded-2xl p-5 text-center">
-                            <p class="text-sm text-white/80 uppercase">Perdas e Ajustes</p>
-                            <p id="kpi-perdas" class="text-3xl font-extrabold mt-2">R$ 0,00</p>
+                        <div class="glass-container rounded-xl p-3 text-center">
+                            <p class="text-xs text-white/70 uppercase">Perdas</p>
+                            <p class="text-xl font-bold">-R$ 50,00</p>
                         </div>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div class="kpi-card pedidos glass-container rounded-2xl p-5 text-center">
-                            <p class="text-sm text-white/80 uppercase">Pedidos Realizados</p>
-                            <p id="kpi-pedidos" class="text-3xl font-extrabold mt-2">0</p>
+                        <div class="glass-container rounded-xl p-3 text-center">
+                            <p class="text-xs text-white/70 uppercase">Pedidos</p>
+                            <p class="text-xl font-bold">42</p>
                         </div>
-                        <div class="kpi-card ticket glass-container rounded-2xl p-5 text-center">
-                            <p class="text-sm text-white/80 uppercase">Ticket Médio</p>
-                            <p id="kpi-ticket" class="text-3xl font-extrabold mt-2">R$ 0,00</p>
-                        </div>
-                        <div class="kpi-card media-itens glass-container rounded-2xl p-5 text-center">
-                            <p class="text-sm text-white/80 uppercase">Média de Itens / Pedido</p>
-                            <p id="kpi-media-itens" class="text-3xl font-extrabold mt-2">0.0</p>
+                        <div class="glass-container rounded-xl p-3 text-center">
+                            <p class="text-xs text-white/70 uppercase">Ticket Médio</p>
+                            <p class="text-xl font-bold">R$ 29,39</p>
                         </div>
                     </div>
-                </section>
-
-                <section class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    <div class="lg:col-span-2 glass-container rounded-2xl p-6 flex flex-col h-96">
-                        <div class="flex justify-between items-center mb-4 flex-shrink-0">
-                            <h3 id="titulo-grafico-vendas" class="text-xl font-bold">Vendas por Período</h3>
-                            <div>
-                                <label for="metrica-grafico" class="text-sm mr-2">Analisar Métrica:</label>
-                                <select id="metrica-grafico" class="p-2 rounded-lg bg-white/20 border border-white/30 text-white text-sm">
-                                    <option value="faturamento">Faturamento</option>
-                                    <option value="lucro">Lucro</option>
-                                    <option value="pedidos">Pedidos</option>
-                                    <option value="ticket_medio">Ticket Médio</option>
-                                </select>
-                            </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                        <div class="lg:col-span-3 glass-container rounded-2xl p-6 flex flex-col h-96">
+                            <h3 class="text-xl font-bold mb-4">Vendas por Período</h3>
+                            <div class="relative flex-grow min-w-0"><canvas id="grafico-vendas"></canvas></div>
                         </div>
-                        <div class="relative flex-grow">
-                            <canvas id="grafico-vendas"></canvas>
+                        <div class="lg:col-span-2 glass-container rounded-2xl p-6 flex flex-col h-96">
+                            <h3 class="text-xl font-bold mb-4">Vendas por Pagamento</h3>
+                            <div class="relative flex-grow min-w-0"><canvas id="grafico-pagamentos"></canvas></div>
                         </div>
                     </div>
-                    <div class="glass-container rounded-2xl p-6 flex flex-col h-96">
-                        <h3 class="text-xl font-bold mb-4 flex-shrink-0">Vendas por Pagamento</h3>
-                        <div class="relative flex-grow">
-                            <canvas id="grafico-pagamentos"></canvas>
-                        </div>
-                    </div>
-                </section>
-
-                <section class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    <div class="lg:col-span-1 flex flex-col gap-8">
-                        <div class="glass-container rounded-2xl p-6 flex flex-col">
+                </div>
+                <!-- Aba: Balanço -->
+                <div id="advanced-tab-balanco" class="advanced-tab-content hidden space-y-8">
+                     <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        <div class="glass-container rounded-2xl p-6 flex flex-col h-96">
                             <h3 class="text-xl font-bold mb-4">Itens Mais Vendidos</h3>
-                            <div id="lista-mais-vendidos" class="flex-grow overflow-y-auto custom-scrollbar pr-2 space-y-3">
-                            </div>
+                            <div class="text-center pt-10 text-white/50">Conteúdo aqui...</div>
                         </div>
-
-                        <div class="glass-container rounded-2xl p-6 flex flex-col">
+                        <div class="glass-container rounded-2xl p-6 flex flex-col h-96">
+                            <h3 class="text-xl font-bold mb-4">Itens Menos Vendidos</h3>
+                            <div class="text-center pt-10 text-white/50">Conteúdo aqui...</div>
+                        </div>
+                        <div class="glass-container rounded-2xl p-6 flex flex-col h-96">
                             <h3 class="text-xl font-bold mb-4">Balanço de Estoque</h3>
-                            <div class="flex-grow overflow-y-auto custom-scrollbar pr-2">
-                                <table class="w-full text-left text-sm">
-                                    <thead class="sticky top-0 bg-white/10">
-                                        <tr>
-                                            <th class="p-2">Produto</th>
-                                            <th class="p-2 text-center">Inicial</th>
-                                            <th class="p-2 text-center">Entradas</th>
-                                            <th class="p-2 text-center">Saídas</th>
-                                            <th class="p-2 text-center">Final</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="tabela-estoque">
-                                        </tbody>
-                                </table>
-                            </div>
+                            <div class="text-center pt-10 text-white/50">Conteúdo aqui...</div>
                         </div>
                     </div>
-
-                    <div class="lg:col-span-2 glass-container rounded-2xl p-6 flex flex-col">
+                </div>
+                <!-- Aba: Pedidos -->
+                <div id="advanced-tab-pedidos" class="advanced-tab-content hidden space-y-8">
+                    <div class="glass-container rounded-2xl p-6">
                         <h3 class="text-xl font-bold mb-4">Histórico de Pedidos</h3>
-                        <div class="flex-grow overflow-y-auto custom-scrollbar pr-2">
-                            <table class="w-full text-left">
-                                <thead class="sticky top-0 bg-white/10">
-                                    <tr>
-                                        <th class="p-3">ID</th>
-                                        <th class="p-3">Cliente</th>
-                                        <th class="p-3">Horário</th>
-                                        <th class="p-3">Valor</th>
-                                        <th class="p-3">Pagamento</th>
-                                        <th class="p-3">Detalhes</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="tabela-pedidos">
-                                </tbody>
-                            </table>
-                        </div>
-                        <div id="paginacao-controles" class="flex justify-between items-center pt-4 mt-4 border-t border-white/10">
-                            <button id="btn-pagina-anterior" class="p-2 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed">&lt; Anterior</button>
-                            <span id="paginacao-info" class="text-sm font-semibold">Página 0 de 0</span>
-                            <button id="btn-pagina-proxima" class="p-2 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed">Próxima &gt;</button>
-                        </div>
+                        <div class="text-center pt-10 text-white/50">Tabela de pedidos aqui...</div>
                     </div>
-                </section>
+                </div>
             </div>
-
-            <div id="tab-content-insights" class="tab-content space-y-8 hidden">
-
-                <section class="glass-container rounded-2xl p-6">
-                    <h2 class="text-2xl font-bold mb-4">Filtros da Comparação</h2>
-                    <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6 items-end">
-                        
-                        <div class="lg:col-span-2">
-                            <label for="daterange-periodo-a" class="block mb-2 font-semibold">Período A</label>
-                            <input type="text" id="daterange-periodo-a" placeholder="Selecione o primeiro intervalo" class="w-full p-3 rounded-lg bg-white/20 border border-white/30 text-white">
-                        </div>
-
-                        <div class="lg:col-span-2">
-                            <label for="daterange-periodo-b" class="block mb-2 font-semibold">Período B (para comparar)</label>
-                            <input type="text" id="daterange-periodo-b" placeholder="Selecione o segundo intervalo" class="w-full p-3 rounded-lg bg-white/20 border border-white/30 text-white">
-                        </div>
-
-                        <div class="w-full">
-                             <button id="btn-comparar" class="w-full bg-green-500 hover:bg-green-600 font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 whitespace-nowrap">
-                                <i class="fas fa-balance-scale"></i>
-                                Comparar
-                            </button>
-                        </div>
-                    </div>
-                </section>
-
-                <section id="resultados-comparativos" class="hidden glass-container rounded-2xl p-6">
-                    <h2 class="text-2xl font-bold mb-6">Resultados da Comparação</h2>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
-                        
-                        <div class="bg-white/5 rounded-lg p-4">
-                            <h3 class="text-lg font-semibold text-white/80">Faturamento</h3>
-                            <p id="comp-faturamento-delta" class="text-3xl font-bold my-2 text-green-400">+0.00%</p>
-                            <div class="text-sm text-white/60">
-                                <p>Período A: <span id="comp-faturamento-a">R$ 0,00</span></p>
-                                <p>Período B: <span id="comp-faturamento-b">R$ 0,00</span></p>
-                            </div>
-                        </div>
-
-                        <div class="bg-white/5 rounded-lg p-4">
-                            <h3 class="text-lg font-semibold text-white/80">Qtd. de Vendas</h3>
-                            <p id="comp-vendas-delta" class="text-3xl font-bold my-2 text-red-400">-0</p>
-                            <div class="text-sm text-white/60">
-                                <p>Período A: <span id="comp-vendas-a">0</span></p>
-                                <p>Período B: <span id="comp-vendas-b">0</span></p>
-                            </div>
-                        </div>
-
-                        <div class="bg-white/5 rounded-lg p-4">
-                            <h3 class="text-lg font-semibold text-white/80">Ticket Médio</h3>
-                            <p id="comp-ticket-delta" class="text-3xl font-bold my-2 text-green-400">+0.00%</p>
-                            <div class="text-sm text-white/60">
-                                <p>Período A: <span id="comp-ticket-a">R$ 0,00</span></p>
-                                <p>Período B: <span id="comp-ticket-b">R$ 0,00</span></p>
-                            </div>
-                        </div>
-
-                    </div>
-                    </section>
-
-            </div>
-        </div>
-
-        <section id="form-container-taxas" class="hidden glass-container rounded-2xl p-6">
-            <h3 class="text-xl font-bold mb-4">Configurar Taxas de Pagamento (%)</h3>
-            <form id="form-taxas" class="grid grid-cols-1 md:grid-cols-4 gap-6 items-end">
-                <div>
-                    <label for="taxa_credito" class="block mb-2 font-semibold">Cartão de Crédito</label>
-                    <input type="number" step="0.01" id="taxa_credito" name="taxa_credito" placeholder="Ex: 3.19" class="w-full p-3 rounded-lg bg-white/20 border border-white/30 text-white">
-                </div>
-                 <div>
-                    <label for="taxa_debito" class="block mb-2 font-semibold">Cartão de Débito</label>
-                    <input type="number" step="0.01" id="taxa_debito" name="taxa_debito" placeholder="Ex: 1.89" class="w-full p-3 rounded-lg bg-white/20 border border-white/30 text-white">
-                </div>
-                <div>
-                    <label for="taxa_pix" class="block mb-2 font-semibold">PIX</label>
-                    <input type="number" step="0.01" id="taxa_pix" name="taxa_pix" placeholder="Ex: 0.0" class="w-full p-3 rounded-lg bg-white/20 border border-white/30 text-white">
-                </div>
-                <div class="md:col-start-4">
-                    <button type="submit" class="w-full bg-green-500 hover:bg-green-600 font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2">
-                        <i class="fas fa-save"></i>
-                        Salvar Taxas
-                    </button>
-                </div>
-            </form>
         </section>
 
-        
-
-        
-    </main>
-    <div id="modal-detalhes-pedido" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
-        <div class="glass-container rounded-2xl p-6 w-full max-w-lg text-white max-h-[80vh] flex flex-col">
-            <div class="flex justify-between items-center border-b border-white/20 pb-3 mb-4 flex-shrink-0">
-                <h2 id="modal-titulo-pedido" class="text-2xl font-bold">Detalhes do Pedido</h2>
-                <button id="modal-fechar-pedido" class="text-2xl hover:text-red-500">&times;</button>
-            </div>
-    
-            <div id="modal-corpo-pedido" class="overflow-y-auto custom-scrollbar pr-2 space-y-2">
+        <!-- SEÇÃO: INSIGHTS AVANÇADOS -->
+        <section id="content-insights" class="main-content-section hidden space-y-8">
+            <!-- Seção de Resultados da Comparação -->
+            <div id="comparison-results" class="hidden glass-container rounded-2xl p-6">
+                <h3 class="text-xl font-bold mb-6 text-center">Resultados da Comparação</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="bg-white/10 p-5 rounded-xl text-center">
+                        <p class="text-sm uppercase text-white/80">Faturamento</p>
+                        <p id="comp-faturamento-delta" class="text-3xl font-extrabold my-2 text-green-400">+15.2%</p>
+                        <p class="text-xs text-white/60">
+                            <span id="comp-faturamento-a">R$ 1.200,00</span> (A) vs <span id="comp-faturamento-b">R$ 1.041,68</span> (B)
+                        </p>
+                    </div>
+                    <div class="bg-white/10 p-5 rounded-xl text-center">
+                        <p class="text-sm uppercase text-white/80">Qtd. Vendas</p>
+                        <p id="comp-vendas-delta" class="text-3xl font-extrabold my-2 text-red-400">-5</p>
+                        <p class="text-xs text-white/60">
+                            <span id="comp-vendas-a">45</span> (A) vs <span id="comp-vendas-b">50</span> (B)
+                        </p>
+                    </div>
+                    <div class="bg-white/10 p-5 rounded-xl text-center">
+                        <p class="text-sm uppercase text-white/80">Ticket Médio</p>
+                        <p id="comp-ticket-delta" class="text-3xl font-extrabold my-2 text-green-400">+26.7%</p>
+                        <p class="text-xs text-white/60">
+                            <span id="comp-ticket-a">R$ 26,67</span> (A) vs <span id="comp-ticket-b">R$ 21,04</span> (B)
+                        </p>
+                    </div>
                 </div>
-        </div>
+            </div>
+            <div id="comparison-placeholder" class="glass-container rounded-2xl p-6 min-h-[50vh] flex items-center justify-center">
+                <p class="text-center text-white/70">Selecione dois períodos acima e clique em "Comparar" para ver os resultados.</p>
+            </div>
+        </section>
+
     </div>
+  </main>
+</div>
+
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // --- LÓGICA DAS ABAS ---
-    const tabButtons = document.querySelectorAll('.tab-btn');
-    const tabContents = document.querySelectorAll('.tab-content');
-
-    tabButtons.forEach(button => {
-        button.addEventListener('click', () => {
-            const tabName = button.dataset.tab;
-
-            // Atualiza a aparência dos botões
-            tabButtons.forEach(btn => {
-                const isSelected = btn.dataset.tab === tabName;
-                btn.classList.toggle('text-blue-400', isSelected);
-                btn.classList.toggle('border-blue-400', isSelected);
-                btn.classList.toggle('text-white/50', !isSelected);
-                btn.classList.toggle('hover:text-white/75', !isSelected);
-                btn.classList.toggle('border-transparent', !isSelected);
-                btn.classList.toggle('hover:border-white/30', !isSelected);
-            });
-
-            // Mostra/esconde o conteúdo
-            tabContents.forEach(content => {
-                content.classList.toggle('hidden', content.id !== `tab-content-${tabName}`);
-            });
+    // --- LÓGICA DE UI (SIDEBAR, ABAS) ---
+    // (Esta parte permanece a mesma da Etapa 2)
+    const sidebar = document.getElementById('sidebar');
+    const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+    const btnToggleSidebar = document.getElementById('btn-toggle-sidebar');
+    const bodyEl = document.body;
+    function abrirSidebar() { sidebar.classList.remove('-translate-x-full'); sidebarBackdrop.classList.remove('hidden'); if (window.innerWidth < 1024) { bodyEl.classList.add('overflow-hidden'); } }
+    function fecharSidebar() { sidebar.classList.add('-translate-x-full'); sidebarBackdrop.classList.add('hidden'); bodyEl.classList.remove('overflow-hidden'); }
+    btnToggleSidebar?.addEventListener('click', (e) => { e.stopPropagation(); if (sidebar.classList.contains('-translate-x-full')) { abrirSidebar(); } else { fecharSidebar(); } });
+    sidebarBackdrop?.addEventListener('click', fecharSidebar);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !sidebar.classList.contains('-translate-x-full')) { fecharSidebar(); } });
+    const sidebarButtons = document.querySelectorAll('.sidebar-btn');
+    const mainContentSections = document.querySelectorAll('.main-content-section');
+    const singleDateSelector = document.getElementById('single-date-selector-container');
+    const comparisonDateSelector = document.getElementById('comparison-date-selector-container');
+    sidebarButtons.forEach(button => {
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
+            sidebarButtons.forEach(btn => btn.classList.remove('active')); this.classList.add('active');
+            const targetId = this.getAttribute('href').substring(1);
+            mainContentSections.forEach(section => section.classList.toggle('hidden', section.id !== `content-${targetId}`));
+            const isInsights = targetId === 'insights';
+            singleDateSelector.classList.toggle('hidden', isInsights);
+            comparisonDateSelector.classList.toggle('hidden', !isInsights);
+            if (window.innerWidth < 1024) { fecharSidebar(); }
         });
     });
-    // --- ELEMENTOS DO DOM ---
-    const selectPeriodo = document.getElementById('periodo');
-    const selectMetrica = document.getElementById('metrica-grafico');
-    selectMetrica.addEventListener('change', function() {
-        // Se já temos dados carregados, recarrega o relatório com a nova métrica
-        carregarDadosOperacionais();
-    });
-    const divPeriodoCustomizado = document.getElementById('periodo-customizado');
-    const btnGerarRelatorio = document.getElementById('gerar-relatorio');
-    const modalDetalhes = document.getElementById('modal-detalhes-pedido');
-    const modalTituloPedido = document.getElementById('modal-titulo-pedido');
-    const modalCorpoPedido = document.getElementById('modal-corpo-pedido');
-    const modalFecharPedido = document.getElementById('modal-fechar-pedido');
-
-    // --- INSTÂNCIAS DE GRÁFICOS E PICKER ---
-    let graficoVendas, graficoPagamentos;
-    const dateRangePicker = flatpickr("#daterange", {
-        mode: "range",
-        dateFormat: "Y-m-d H:i:S",
-        enableTime: true,
-        time_24hr: true,
-        locale: {
-            firstDayOfWeek: 1,
-            weekdays: {
-                shorthand: ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'],
-                longhand: ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado']
-            },
-            months: {
-                shorthand: ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'],
-                longhand: ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
-            },
-            time_24hr: true
-        }
-    });
-
-    // --- LÓGICA DE UI ---
-    selectPeriodo.addEventListener('change', function() {
-        divPeriodoCustomizado.classList.toggle('hidden', this.value !== 'custom');
-    });
-
-    // --- LÓGICA DA ABA INSIGHTS ---
-    const dateRangePickerA = flatpickr("#daterange-periodo-a", {
-        mode: "range", dateFormat: "Y-m-d", locale: dateRangePicker.config.locale
-    });
-    const dateRangePickerB = flatpickr("#daterange-periodo-b", {
-        mode: "range", dateFormat: "Y-m-d", locale: dateRangePicker.config.locale
-    });
-
-    function renderResultadosComparativos(dados) {
-        const resultadosContainer = document.getElementById('resultados-comparativos');
-        if (!dados || !dados.kpis) {
-            resultadosContainer.classList.add('hidden');
-            return;
-        }
-
-        const kpis = dados.kpis;
-        
-        // Função auxiliar para formatar e colorir os deltas
-        const formatarDelta = (valor, sufixo = '%') => {
-            const ehPositivo = valor >= 0;
-            const cor = ehPositivo ? 'text-green-400' : 'text-red-400';
-            const sinal = ehPositivo ? '+' : '';
-            // Para valores numéricos, removemos as casas decimais
-            const valorFormatado = sufixo === '%' ? valor.toFixed(2) : Math.round(valor);
-            
-            return `<p class="text-3xl font-bold my-2 ${cor}">${sinal}${valorFormatado}${sufixo}</p>`;
-        };
-
-        // Preenche Faturamento
-        document.getElementById('comp-faturamento-a').textContent = formatCurrency(kpis.faturamento.A);
-        document.getElementById('comp-faturamento-b').textContent = formatCurrency(kpis.faturamento.B);
-        document.getElementById('comp-faturamento-delta').innerHTML = formatarDelta(kpis.faturamento.delta_pct);
-
-        // Preenche Vendas
-        document.getElementById('comp-vendas-a').textContent = kpis.qtd_vendas.A;
-        document.getElementById('comp-vendas-b').textContent = kpis.qtd_vendas.B;
-        document.getElementById('comp-vendas-delta').innerHTML = formatarDelta(kpis.qtd_vendas.delta_abs, '');
-
-        // Preenche Ticket Médio
-        document.getElementById('comp-ticket-a').textContent = formatCurrency(kpis.ticket_medio.A);
-        document.getElementById('comp-ticket-b').textContent = formatCurrency(kpis.ticket_medio.B);
-        document.getElementById('comp-ticket-delta').innerHTML = formatarDelta(kpis.ticket_medio.delta_pct);
-
-        // Mostra o container de resultados
-        resultadosContainer.classList.remove('hidden');
-    }
-
-    // --- FUNÇÕES DE RENDERIZAÇÃO ---
-    function formatCurrency(value) {
-        if (typeof value !== 'number') value = 0;
-        return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-    }
-
-    function renderKPIs(data) {
-        document.getElementById('kpi-faturamento').textContent = formatCurrency(data.faturamentoBruto);
-        document.getElementById('kpi-lucro').textContent = formatCurrency(data.lucroEstimado);
-        document.getElementById('kpi-pedidos').textContent = data.pedidosRealizados || 0;
-        document.getElementById('kpi-ticket').textContent = formatCurrency(data.ticketMedio);
-        document.getElementById('kpi-perdas').textContent = formatCurrency(data.perdasAjustes);
-        document.getElementById('kpi-media-itens').textContent = (data.mediaItensPedido || 0).toFixed(1);
-    }
-
-    function renderMaisVendidos(itens) {
-        const container = document.getElementById('lista-mais-vendidos');
-        container.innerHTML = '';
-        if (!itens || itens.length === 0) {
-            container.innerHTML = '<p class="text-white/60 text-center">Nenhum item vendido no período.</p>';
-            return;
-        }
-        itens.forEach(item => {
-            const itemHtml = `
-                <div class="bg-white/5 p-3 rounded-lg">
-                    <div class="flex justify-between items-center mb-1">
-                        <span class="font-semibold">${item.nome}</span>
-                        <span class="text-sm font-bold bg-blue-500/50 px-2 py-1 rounded-full">${item.quantidade} un</span>
-                    </div>
-                    <div class="text-xs text-white/70">
-                        <span>Receita: ${formatCurrency(item.receita)}</span> | 
-                        <span class="font-semibold text-green-400">Lucro: ${formatCurrency(item.lucro)}</span>
-                    </div>
-                </div>`;
-            container.innerHTML += itemHtml;
+    const advancedTabButtons = document.querySelectorAll('.advanced-tab-btn');
+    const advancedTabContents = document.querySelectorAll('.advanced-tab-content');
+    advancedTabButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            advancedTabButtons.forEach(btn => { btn.classList.remove('active'); btn.classList.add('text-white/50', 'hover:text-white/75', 'hover:border-white/30'); });
+            this.classList.add('active'); this.classList.remove('text-white/50', 'hover:text-white/75', 'hover:border-white/30');
+            const targetId = this.getAttribute('data-tab-target');
+            advancedTabContents.forEach(content => { content.classList.toggle('hidden', content.id !== targetId.substring(1)); });
         });
-    }
+    });
 
-    function renderTabelaPedidos(pedidos) {
-        const tbody = document.getElementById('tabela-pedidos');
-        tbody.innerHTML = '';
-        if (!pedidos || pedidos.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-white/60">Nenhum pedido no período.</td></tr>';
-            return;
-        }
-        // Usamos .map() para criar o HTML de forma mais limpa e o .join('') no final
-        tbody.innerHTML = pedidos.map(pedido => `
-            <tr class="border-b border-white/10 hover:bg-white/5">
-                <td class="p-3">#${pedido.id}</td>
-                <td class="p-3">${pedido.nome_cliente}</td>
-                <td class="p-3">${pedido.horario || ''}</td>
-                <td class="p-3 font-semibold">${formatCurrency(pedido.valor_total)}</td>
-                <td class="p-3">${pedido.metodo_pagamento}</td>
-                <td class="p-3">
-                    <button class="btn-detalhes-pedido text-blue-400 hover:text-blue-300"
-                            data-id-pedido="${pedido.id}" 
-                            data-itens='${pedido.itens_json}'>
-                        <i class="fas fa-eye"></i>
-                    </button>
-                </td>
-            </tr>`).join('');
-    }
-
-    function renderTabelaEstoque(estoque) {
-        const tbody = document.getElementById('tabela-estoque');
-        tbody.innerHTML = '';
-        if (!estoque || estoque.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="p-4 text-center text-white/60">Nenhuma movimentação de estoque no período.</td></tr>';
-            return;
-        }
-        tbody.innerHTML = estoque.map(item => `
-            <tr class="border-b border-white/10">
-                <td class="p-2 font-semibold">${item.nome}</td>
-                <td class="p-2 text-center">${item.inicial}</td>
-                <td class="p-2 text-center text-green-400">+${item.entradas}</td>
-                <td class="p-2 text-center text-red-400">-${item.saidas}</td>
-                <td class="p-2 text-center font-bold">${item.final}</td>
-            </tr>
-        `).join('');
-    }
-
-    function renderControlesPaginacao(historico) {
-        const { page, limit, total } = historico;
-        const totalPages = Math.ceil(total / limit);
-
-        const info = document.getElementById('paginacao-info');
-        const btnAnterior = document.getElementById('btn-pagina-anterior');
-        const btnProxima = document.getElementById('btn-pagina-proxima');
-
-        info.textContent = `Página ${page} de ${totalPages}`;
-
-        // Habilita/desabilita botões
-        btnAnterior.disabled = (page <= 1);
-        btnProxima.disabled = (page >= totalPages);
-
-        // Define a ação de clique para os botões
-        // Usamos .onclick para substituir qualquer listener anterior e evitar duplicação
-        btnAnterior.onclick = () => {
-            if (page > 1) carregarDadosOperacionais(page - 1);
-        };
-        btnProxima.onclick = () => {
-            if (page < totalPages) carregarDadosOperacionais(page + 1);
-        };
-    }
-
-    function renderGraficos(vendasData, pagamentosData, dadosCompletos) {
-        const metricaSelecionada = selectMetrica.value;
-        const ctxVendas = document.getElementById('grafico-vendas').getContext('2d');
-        if(graficoVendas) graficoVendas.destroy();
-
-        if (vendasData && vendasData.data.length > 0) {
-            let dadosGrafico, labelGrafico, tituloGrafico, corPrincipal, corGradiente;
-            
-            // Lógica para selecionar dados e estilo com base na métrica
-            switch(metricaSelecionada) {
-                case 'lucro':
-                    dadosGrafico = vendasData.data.map(valor => valor * (dadosCompletos.kpis.lucroEstimado / dadosCompletos.kpis.faturamentoBruto || 0.5));
-                    labelGrafico = 'Lucro Estimado';
-                    tituloGrafico = 'Lucro por Período';
-                    corPrincipal = '#2DD4BF';
-                    corGradiente = 'rgba(45, 212, 191, 0.1)';
-                    break;
-                case 'pedidos':
-                    dadosGrafico = vendasData.data.map(valor => Math.ceil(valor / (dadosCompletos.kpis.ticketMedio || 1)));
-                    labelGrafico = 'Nº de Pedidos';
-                    tituloGrafico = 'Pedidos por Período';
-                    corPrincipal = '#FBBF24';
-                    corGradiente = 'rgba(251, 191, 36, 0.1)';
-                    break;
-                default: // Faturamento
-                    dadosGrafico = vendasData.data;
-                    labelGrafico = 'Faturamento';
-                    tituloGrafico = 'Faturamento por Período';
-                    corPrincipal = '#60A5FA';
-                    corGradiente = 'rgba(96, 165, 250, 0.1)';
-                    break;
-            }
-
-            document.getElementById('titulo-grafico-vendas').textContent = tituloGrafico;
-
-            const gradient = ctxVendas.createLinearGradient(0, 0, 0, ctxVendas.canvas.clientHeight);
-            gradient.addColorStop(0, corGradiente.replace('0.1', '0.5'));
-            gradient.addColorStop(1, corGradiente.replace('0.1', '0'));
-            
-            graficoVendas = new Chart(ctxVendas, {
-                type: 'line', // <-- A grande mudança está aqui!
-                data: {
-                    labels: vendasData.labels,
-                    datasets: [{
-                        label: labelGrafico,
-                        data: dadosGrafico,
-                        borderColor: corPrincipal,
-                        backgroundColor: gradient,
-                        fill: true,
-                        tension: 0.4,
-                        pointBackgroundColor: corPrincipal,
-                        pointRadius: 3,
-                        pointHoverRadius: 6
-                    }]
-                },
-                options: {
-                    responsive: true, maintainAspectRatio: false,
-                    plugins: { legend: { display: false }, tooltip: { /* ... */ } },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: { color: 'white', callback: function(value) { return metricaSelecionada === 'pedidos' ? Math.round(value) : formatCurrency(value); } },
-                            grid: { color: 'rgba(255, 255, 255, 0.1)' }
-                        },
-                        x: {
-                            ticks: { color: 'white', autoSkip: true, maxTicksLimit: 20 },
-                            grid: { display: false }
-                        }
-                    }
-                }
-            });
-        } else {
-            document.getElementById('titulo-grafico-vendas').textContent = 'Sem dados de vendas para o período';
-        }
-
-        // Gráfico de Pagamentos (Pizza) - permanece o mesmo
-        const ctxPagamentos = document.getElementById('grafico-pagamentos').getContext('2d');
-        if(graficoPagamentos) graficoPagamentos.destroy();
-        if (pagamentosData && pagamentosData.data.some(d => d > 0)) {
-            graficoPagamentos = new Chart(ctxPagamentos, {
-                type: 'doughnut',
-                data: {
-                    labels: pagamentosData.labels,
-                    datasets: [{
-                        data: pagamentosData.data,
-                        backgroundColor: ['#60A5FA', '#A78BFA', '#FBBF24'], // Azul, Roxo, Amarelo
-                        borderColor: 'rgba(255,255,255,0.1)',
-                        borderWidth: 2
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: { 
-                            position: 'bottom', 
-                            labels: { 
-                                color: 'white', 
-                                boxWidth: 15, 
-                                padding: 20,
-                                font: { size: 14 }
-                            } 
-                        }
-                    }
-                }
-            });
-        }
-    }
-
-    // --- (NOVO) LÓGICA DO MODAL DE DETALHES ---
-    function abrirModalDetalhes(idPedido, itensJson) {
-        // Define o título do modal com o ID do pedido
-        modalTituloPedido.textContent = `Detalhes do Pedido #${idPedido}`;
-        
-        let htmlItens = ''; // Variável para construir o HTML dos itens
-        try {
-            // 1. Converte a string JSON em um objeto JavaScript
-            const itens = JSON.parse(itensJson);
-
-            // 2. Verifica se existem itens
-            if (itens && itens.length > 0) {
-                // 3. Itera sobre cada item para criar seu HTML
-                htmlItens = itens.map(item => {
-                    const subtotal = (item.quantidade || 0) * (item.preco || 0);
-                    
-                    // Lógica para exibir detalhes de customização, se existirem
-                    let detalhesCustomizacao = '';
-                    if (item.customizacoes && item.customizacoes.length > 0) {
-                        const mapaPonto = { 'mal': 'Mal Passado', 'ponto': 'Ao Ponto', 'bem': 'Bem Passado' };
-                        
-                        detalhesCustomizacao = item.customizacoes.map(custo => {
-                            const pontoTexto = mapaPonto[custo.ponto] || custo.ponto;
-                            const extrasTexto = (custo.extras && custo.extras.length > 0) 
-                                ? `com ${custo.extras.join(', ')}` 
-                                : 'sem extras';
-                            return `<div class="text-xs pl-5 text-white/70">${custo.item}º - ${pontoTexto}, ${extrasTexto}</div>`;
-                        }).join('');
-                    }
-
-                    // 4. Monta o bloco HTML final para este item
-                    return `
-                        <div class="bg-white/10 p-3 rounded-lg space-y-1">
-                            <div class="flex justify-between items-baseline">
-                               <span class="font-semibold text-lg">${item.quantidade}x ${item.nome}</span>
-                               <span class="font-bold">${formatCurrency(subtotal)}</span>
-                            </div>
-                            ${detalhesCustomizacao}
-                        </div>
-                    `;
-                }).join('');
-            } else {
-                htmlItens = '<p class="text-white/60">Não foi possível carregar os itens deste pedido.</p>';
-            }
-        } catch (e) {
-            console.error("Erro ao processar itens do pedido:", e);
-            htmlItens = '<p class="text-red-400">Erro ao ler os dados dos itens.</p>';
-        }
-
-        // 5. Insere o HTML gerado no corpo do modal e exibe o modal
-        modalCorpoPedido.innerHTML = htmlItens;
-        modalDetalhes.classList.remove('hidden');
-    }
+    // --- CONFIGURAÇÃO E LÓGICA DE DADOS ---
     
-    function fecharModalDetalhes() {
-        modalDetalhes.classList.add('hidden');
-    }
+    // 1. Configuração e Variáveis Globais
+    const API_FECHAMENTO_V2 = "{{ url_for('api_fechamento_dia_v2') }}";
+    const API_COMPARATIVOS_V2 = "{{ url_for('api_insights_comparativos_v2') }}";
+    let chartVendas = null;
+    let chartPagamentos = null;
 
-
-    // --- FUNÇÃO PARA CALCULAR INTERVALOS DE DATAS ---
-    function calcularIntervaloDatas(periodo) {
-        const agora = new Date();
-        let dataInicio, dataFim;
-
-        switch(periodo) {
-            case 'hoje':
-                dataInicio = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 0, 0, 0);
-                dataFim = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 23, 59, 59);
-                break;
-            
-            case 'ontem':
-                const ontem = new Date(agora);
-                ontem.setDate(ontem.getDate() - 1);
-                dataInicio = new Date(ontem.getFullYear(), ontem.getMonth(), ontem.getDate(), 0, 0, 0);
-                dataFim = new Date(ontem.getFullYear(), ontem.getMonth(), ontem.getDate(), 23, 59, 59);
-                break;
-            
-            case '7dias':
-                dataInicio = new Date(agora);
-                dataInicio.setDate(dataInicio.getDate() - 7);
-                dataInicio.setHours(0, 0, 0, 0);
-                dataFim = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 23, 59, 59);
-                break;
-            
-            case 'mes_atual':
-                dataInicio = new Date(agora.getFullYear(), agora.getMonth(), 1, 0, 0, 0);
-                dataFim = new Date(agora.getFullYear(), agora.getMonth() + 1, 0, 23, 59, 59);
-                break;
-            
-            case 'custom':
-                if (dateRangePicker.selectedDates.length === 2) {
-                    dataInicio = dateRangePicker.selectedDates[0];
-                    dataFim = new Date(dateRangePicker.selectedDates[1]);
-                    dataFim.setHours(23, 59, 59, 999);
-                } else {
-                    // Se período customizado não foi selecionado, usa hoje
-                    dataInicio = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 0, 0, 0);
-                    dataFim = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 23, 59, 59);
-                }
-                break;
-            
-            default:
-                dataInicio = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 0, 0, 0);
-                dataFim = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 23, 59, 59);
-        }
-
-        return {
-            inicio: dataInicio.toISOString(),
-            fim: dataFim.toISOString()
-        };
-    }
-
-    // --- FUNÇÃO PRINCIPAL PARA BUSCAR E CARREGAR DADOS ---
-    async function carregarDadosOperacionais(page = 1) {
-        btnGerarRelatorio.disabled = true;
-        btnGerarRelatorio.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Gerando...`;
-
-        // Manteremos a lógica de cálculo de datas que já funciona
-        const periodo = selectPeriodo.value;
-        const { inicio, fim } = calcularIntervaloDatas(periodo);
-        const localId = document.getElementById('filtro-local').value;
-        const limit = 50; // Definimos um limite fixo por página por enquanto
-
-        try {
-            // Monta a URL para a NOVA rota, incluindo os parâmetros de paginação
-            let apiUrl = `/api/fechamento_dia?inicio=${encodeURIComponent(inicio)}&fim=${encodeURIComponent(fim)}&page=${page}&limit=${limit}`;
-            if (localId && localId !== 'todos') {
-                apiUrl += `&local_id=${localId}`;
-            }
-            
-            console.log('Buscando dados operacionais para:', { inicio, fim, periodo, localId, page, limit });
-
-            const response = await fetch(apiUrl);
-            if (!response.ok) {
-                throw new Error(`Erro na rede: ${response.status} - ${response.statusText}`);
-            }
-            
-            const dados = await response.json();
-            console.log('Dados operacionais recebidos:', dados);
-
-            // Popula o formulário de taxas (lógica existente, pode ser removida no futuro se não for mais necessário aqui)
-            if(dados.configuracoes) popularFormularioTaxas(dados.configuracoes);
-
-            // Renderiza os dados usando a nova estrutura de resposta
-            renderKPIs(dados.kpis);
-            renderMaisVendidos(dados.itens_top); // Agora vem de 'itens_top'
-            
-            // ATENÇÃO: A função renderGraficos precisa ser ajustada, faremos isso depois.
-            // Por enquanto, vamos adaptá-la para não quebrar.
-            // renderGraficos(dados.vendasPorPeriodo, dados.vendasPorPagamento, dados);
-            
-            renderTabelaPedidos(dados.historico_pedidos.items); // CORREÇÃO: Passamos apenas a lista de itens
-            renderTabelaEstoque(dados.estoque); // NOVA FUNÇÃO DE RENDER
-            renderControlesPaginacao(dados.historico_pedidos); // NOVA FUNÇÃO DE RENDER
-
-        } catch (error) {
-            console.error("Falha ao buscar relatório operacional:", error);
-            alert("Não foi possível carregar os dados operacionais. Verifique o console para mais detalhes.");
-        } finally {
-            btnGerarRelatorio.disabled = false;
-            btnGerarRelatorio.innerHTML = `<i class="fas fa-sync-alt"></i> Gerar Relatório`;
-        }
-    }
-
-    // Adicione esta nova função
-    async function popularFiltroLocais() {
-        try {
-            const response = await fetch('/api/locais');
-            const locais = await response.json();
-            const selectLocal = document.getElementById('filtro-local');
-
-            // Limpa opções antigas (exceto a primeira "Todos os Locais")
-            selectLocal.options.length = 1;
-
-            locais.forEach(local => {
-                const option = new Option(local.nome, local.id);
-                selectLocal.add(option);
-            });
-        } catch (error) {
-            console.error("Erro ao buscar locais para o filtro:", error);
-        }
-    }
-
-    // --- EVENT LISTENERS ---
-    btnGerarRelatorio.addEventListener('click', () => carregarDadosOperacionais(1)); // Sempre busca a primeira página ao clicar
-
-    // (NOVO) Listeners para o modal de detalhes
-    modalFecharPedido.addEventListener('click', fecharModalDetalhes);
-    modalDetalhes.addEventListener('click', (event) => {
-        if (event.target === modalDetalhes) {
-            fecharModalDetalhes();
-        }
-    });
-
-    // (NOVO) Listener DELEGADO para os botões de detalhes na tabela
-    document.getElementById('tabela-pedidos').addEventListener('click', function(event) {
-        const botaoDetalhes = event.target.closest('.btn-detalhes-pedido');
-        if (botaoDetalhes) {
-            const idPedido = botaoDetalhes.dataset.idPedido;
-            const itensJson = botaoDetalhes.dataset.itens;
-            abrirModalDetalhes(idPedido, itensJson);
-        }
-    });
-
+    const btnAnalisar = document.getElementById('btn-analisar');
     const btnComparar = document.getElementById('btn-comparar');
 
-    async function carregarDadosComparativos() {
-        if (dateRangePickerA.selectedDates.length < 2 || dateRangePickerB.selectedDates.length < 2) {
-            alert('Por favor, selecione um intervalo de datas completo para os dois períodos.');
+    flatpickr.localize(flatpickr.l10ns.pt);
+    const datePickerSimples = flatpickr("#report-date", { dateFormat: "Y-m-d", defaultDate: "today" });
+    const datePickerA = flatpickr("#periodo-a", { mode: "range", dateFormat: "Y-m-d", locale: "pt" });
+    const datePickerB = flatpickr("#periodo-b", { mode: "range", dateFormat: "Y-m-d", locale: "pt" });
+
+    // 2. Funções Utilitárias e de Adaptação
+    function formatarMoeda(valor) { return (valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+    function setLoadingState(button, isLoading) {
+        if (isLoading) {
+            button.disabled = true;
+            button.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Carregando...`;
+        } else {
+            button.disabled = false;
+            const icon = button.id === 'btn-analisar' ? 'fa-search' : 'fa-exchange-alt';
+            const text = button.id === 'btn-analisar' ? 'Analisar' : 'Comparar';
+            button.innerHTML = `<i class="fas ${icon} mr-2"></i> ${text}`;
+        }
+    }
+
+    function preencherKPIs(kpis) {
+        document.getElementById('kpi-faturamento-valor').textContent = formatarMoeda(kpis.faturamentoBruto);
+        document.getElementById('kpi-lucro-valor').textContent = formatarMoeda(kpis.lucroEstimado);
+        document.getElementById('kpi-perdas-valor').textContent = formatarMoeda(Math.abs(kpis.perdasAjustes));
+        document.getElementById('kpi-pedidos-valor').textContent = kpis.pedidosRealizados;
+        document.getElementById('kpi-ticket-valor').textContent = formatarMoeda(kpis.ticketMedio);
+        document.querySelector('#advanced-tab-relatorio .glass-container:nth-child(1) p:last-child').textContent = `R$ ${formatarMoeda(kpis.faturamentoBruto)}`;
+        document.querySelector('#advanced-tab-relatorio .glass-container:nth-child(2) p:last-child').textContent = `R$ ${formatarMoeda(kpis.lucroEstimado)}`;
+        document.querySelector('#advanced-tab-relatorio .glass-container:nth-child(3) p:last-child').textContent = `-R$ ${formatarMoeda(Math.abs(kpis.perdasAjustes))}`;
+        document.querySelector('#advanced-tab-relatorio .glass-container:nth-child(4) p:last-child').textContent = kpis.pedidosRealizados;
+        document.querySelector('#advanced-tab-relatorio .glass-container:nth-child(5) p:last-child').textContent = `R$ ${formatarMoeda(kpis.ticketMedio)}`;
+    }
+
+    function preencherComparativos(kpis) {
+        const kpiMap = { faturamento: 'comp-faturamento', qtd_vendas: 'comp-vendas', ticket_medio: 'comp-ticket' };
+        Object.entries(kpis).forEach(([key, value]) => {
+            const prefixo = kpiMap[key];
+            const isCurrency = key !== 'qtd_vendas';
+            
+            document.getElementById(`${prefixo}-a`).textContent = isCurrency ? `R$ ${formatarMoeda(value.A)}` : value.A;
+            document.getElementById(`${prefixo}-b`).textContent = isCurrency ? `R$ ${formatarMoeda(value.B)}` : value.B;
+            
+            const deltaEl = document.getElementById(`${prefixo}-delta`);
+            const deltaValue = value.delta_pct ?? value.delta_abs;
+            const isPositive = deltaValue >= 0;
+
+            deltaEl.classList.toggle('text-green-400', isPositive);
+            deltaEl.classList.toggle('text-red-400', !isPositive);
+
+            let deltaText = '';
+            if (value.delta_pct !== undefined) {
+                deltaText = `${isPositive ? '+' : ''}${deltaValue.toFixed(1)}%`;
+            } else {
+                deltaText = `${isPositive ? '+' : ''}${deltaValue}`;
+            }
+            deltaEl.textContent = deltaText;
+        });
+
+        document.getElementById('comparison-results').classList.remove('hidden');
+        document.getElementById('comparison-placeholder').classList.add('hidden');
+    }
+
+    // 3. Funções de Controle dos Gráficos
+    const chartDefaultOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: 'white' } }, tooltip: { callbacks: { label: function(context) { let label = context.dataset.label || ''; if (label) { label += ': '; } if (context.parsed.y !== null) { label += new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.parsed); } else if (context.parsed !== null) { label += new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.parsed); } return label; } } } }, scales: { y: { ticks: { color: 'white' }, grid: { color: 'rgba(255, 255, 255, 0.2)' } }, x: { ticks: { color: 'white' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } } } };
+    function initOuUpdateChart(chartVar, canvasId, type, data, options) { if (chartVar) { chartVar.destroy(); } const ctx = document.getElementById(canvasId).getContext('2d'); return new Chart(ctx, { type, data, options }); }
+
+    // 4. Lógica Principal de Carregamento
+    async function carregarFechamentoDia() {
+        const datasSelecionadas = datePickerSimples.selectedDates;
+        if (datasSelecionadas.length === 0) { alert("Por favor, selecione uma data."); return; }
+        setLoadingState(btnAnalisar, true);
+        const data = datasSelecionadas[0];
+        const inicio = new Date(data.setHours(0, 0, 0, 0)).toISOString();
+        const fim = new Date(data.setHours(23, 59, 59, 999)).toISOString();
+        const url = `${API_FECHAMENTO_V2}?inicio=${inicio}&fim=${fim}&local_id=todos`;
+
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`O servidor respondeu com um erro: ${response.status}`);
+            const dados = await response.json();
+            preencherKPIs(dados.kpis);
+            chartVendas = initOuUpdateChart(chartVendas, 'grafico-vendas', 'bar', { labels: dados.vendasPorPeriodo.labels, datasets: [{ label: 'Faturamento', data: dados.vendasPorPeriodo.data, backgroundColor: 'rgba(52, 211, 153, 0.7)', borderColor: '#34D399', borderWidth: 2, borderRadius: 5, }] }, chartDefaultOptions);
+            chartPagamentos = initOuUpdateChart(chartPagamentos, 'grafico-pagamentos', 'doughnut', { labels: dados.vendasPorPagamento.labels.map(l => l.replace(/_/g, ' ').replace(/(^\w{1})|(\s+\w{1})/g, letra => letra.toUpperCase())), datasets: [{ label: 'Formas de Pagamento', data: dados.vendasPorPagamento.data, backgroundColor: ['#60A5FA', '#FBBF24', '#A78BFA', '#34D399'], borderColor: 'rgba(255, 255, 255, 0.1)', borderWidth: 2, }] }, { ...chartDefaultOptions, scales: {} });
+        } catch (error) {
+            console.error("Falha ao carregar dados do fechamento:", error);
+            alert(`Não foi possível carregar os dados do relatório. Detalhes: ${error.message}`);
+        } finally {
+            setLoadingState(btnAnalisar, false);
+        }
+    }
+    
+    async function carregarComparativo() {
+        if (datePickerA.selectedDates.length < 2 || datePickerB.selectedDates.length < 2) {
+            alert("Por favor, selecione um intervalo de datas para ambos os períodos.");
             return;
         }
+        setLoadingState(btnComparar, true);
+        const [inicioA, fimA] = [datePickerA.selectedDates[0].toISOString(), datePickerA.selectedDates[1].toISOString()];
+        const [inicioB, fimB] = [datePickerB.selectedDates[0].toISOString(), datePickerB.selectedDates[1].toISOString()];
         
-        btnComparar.disabled = true;
-        btnComparar.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Comparando...`;
-
-        // Formata as datas para o formato YYYY-MM-DD
-        const periodoA_inicio = dateRangePickerA.formatDate(dateRangePickerA.selectedDates[0], 'Y-m-d');
-        const periodoA_fim = dateRangePickerA.formatDate(dateRangePickerA.selectedDates[1], 'Y-m-d');
-        const periodoB_inicio = dateRangePickerB.formatDate(dateRangePickerB.selectedDates[0], 'Y-m-d');
-        const periodoB_fim = dateRangePickerB.formatDate(dateRangePickerB.selectedDates[1], 'Y-m-d');
+        const url = new URL(API_COMPARATIVOS_V2, window.location.origin);
+        url.searchParams.append('periodoA_inicio', inicioA);
+        url.searchParams.append('periodoA_fim', fimA);
+        url.searchParams.append('periodoB_inicio', inicioB);
+        url.searchParams.append('periodoB_fim', fimB);
+        url.searchParams.append('local_id', 'todos');
 
         try {
-            const apiUrl = `/api/insights/comparativos?periodoA_inicio=${periodoA_inicio}&periodoA_fim=${periodoA_fim}&periodoB_inicio=${periodoB_inicio}&periodoB_fim=${periodoB_fim}`;
-            
-            const response = await fetch(apiUrl);
-            if (!response.ok) throw new Error('Falha ao buscar dados comparativos.');
-            
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`O servidor respondeu com um erro: ${response.status}`);
             const dados = await response.json();
-            renderResultadosComparativos(dados);
-
+            preencherComparativos(dados.kpis);
         } catch (error) {
-            console.error("Erro ao carregar comparação:", error);
-            alert("Não foi possível carregar os dados da comparação.");
+            console.error("Falha ao carregar dados comparativos:", error);
+            alert(`Não foi possível carregar os dados comparativos. Detalhes: ${error.message}`);
         } finally {
-            btnComparar.disabled = false;
-            btnComparar.innerHTML = `<i class="fas fa-balance-scale"></i> Comparar`;
+            setLoadingState(btnComparar, false);
         }
     }
 
-    btnComparar.addEventListener('click', carregarDadosComparativos);
+    // 5. Event Listeners
+    btnAnalisar.addEventListener('click', carregarFechamentoDia);
+    btnComparar.addEventListener('click', carregarComparativo);
 
-    // --- LÓGICA DO FORMULÁRIO DE TAXAS ---
-    const btnAbrirTaxas = document.getElementById('btn-abrir-taxas');
-    const formContainerTaxas = document.getElementById('form-container-taxas');
-    const formTaxas = document.getElementById('form-taxas');
-
-    // Função para preencher os campos do formulário
-    function popularFormularioTaxas(configuracoes) {
-        if (!configuracoes) return;
-        document.getElementById('taxa_credito').value = configuracoes.taxa_credito || 0;
-        document.getElementById('taxa_debito').value = configuracoes.taxa_debito || 0;
-        document.getElementById('taxa_pix').value = configuracoes.taxa_pix || 0;
-    }
-
-    // Evento para mostrar/esconder o formulário
-    btnAbrirTaxas.addEventListener('click', () => {
-        formContainerTaxas.classList.toggle('hidden');
-    });
-
-    // Evento para salvar o formulário
-    formTaxas.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const btnSalvar = formTaxas.querySelector('button[type="submit"]');
-        btnSalvar.disabled = true;
-        btnSalvar.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Salvando...`;
-
-        const dados = {
-            taxa_credito: parseFloat(document.getElementById('taxa_credito').value),
-            taxa_debito: parseFloat(document.getElementById('taxa_debito').value),
-            taxa_pix: parseFloat(document.getElementById('taxa_pix').value),
-        };
-
-        try {
-            const response = await fetch('/salvar_configuracoes', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(dados)
-            });
-            if (!response.ok) throw new Error('Falha ao salvar');
-            
-            alert('Taxas salvas com sucesso! O relatório será gerado com os novos valores.');
-            formContainerTaxas.classList.add('hidden'); // Esconde o form após salvar
-            carregarDadosOperacionais(); // Recarrega o relatório com as novas taxas
-
-        } catch (error) {
-            console.error('Erro ao salvar taxas:', error);
-            alert('Não foi possível salvar as taxas.');
-        } finally {
-            btnSalvar.disabled = false;
-            btnSalvar.innerHTML = `<i class="fas fa-save"></i> Salvar Taxas`;
-        }
-    });
-    
-    // --- CARGA INICIAL ---
-    // A ordem correta é popular os filtros PRIMEIRO, e depois carregar os dados UMA VEZ.
-    popularFiltroLocais();
-    carregarDadosOperacionais();
+    carregarFechamentoDia();
 });
 </script>
 

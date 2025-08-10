@@ -3,6 +3,7 @@ import gerenciador_db
 import json
 from datetime import datetime
 import pytz
+import serializers
 
 def fechamento_operacional(inicio, fim, local_id, page, limit):
     """
@@ -256,3 +257,150 @@ def insights_heatmap(inicio, fim, filtros):
       "fim": fim,
       "buckets": lista_buckets
     }
+
+# Ao final de analytics.py, adicione as novas funções
+def fechamento_operacional_v2(inicio, fim, local_id, page, limit):
+    """
+    V2: Orquestra a busca de dados e a serialização para o novo formato da API.
+    Busca os dados brutos e calcula os KPIs e o histórico paginado.
+    """
+    # === PASSO 1: BUSCAR A "MATÉRIA-PRIMA" DO BANCO DE DADOS ===
+    pedidos_finalizados = gerenciador_db.obter_pedidos_finalizados_periodo(inicio, fim, local_id)
+    mapa_produtos = gerenciador_db.obter_mapa_produtos_analytics()
+    lista_de_perdas = gerenciador_db.obter_perdas_periodo(inicio, fim)
+    configuracoes = gerenciador_db.obter_configuracoes()
+    
+    # Pré-busca de todas as movimentações para o cálculo de estoque
+    entradas_ate_inicio = gerenciador_db.obter_entradas_estoque_por_produto(inicio)
+    saidas_ate_inicio = gerenciador_db.obter_saidas_venda_por_produto(inicio)
+    entradas_ate_fim = gerenciador_db.obter_entradas_estoque_por_produto(fim)
+    saidas_ate_fim = gerenciador_db.obter_saidas_venda_por_produto(fim)
+
+    # === PASSO 2: CALCULAR KPIS E AGREGAR DADOS ===
+    total_pedidos = len(pedidos_finalizados)
+    faturamento_bruto = sum(p['valor_total'] for p in pedidos_finalizados)
+    total_itens_vendidos = 0
+    lucro_estimado = 0
+
+    agregacao_pagamentos = {}
+    agregacao_itens = {}
+
+    for p in pedidos_finalizados:
+        # Calcular Lucro Líquido do Pedido (descontando taxas)
+        lucro_bruto_pedido = p['valor_total'] - (p.get('custo_total_pedido') or 0)
+        taxa_percentual = configuracoes.get(f"taxa_{p['metodo_pagamento']}", 0)
+        desconto_taxa = p['valor_total'] * (taxa_percentual / 100.0)
+        lucro_estimado += (lucro_bruto_pedido - desconto_taxa)
+
+        # Agregar por método de pagamento
+        metodo = p['metodo_pagamento']
+        if metodo not in agregacao_pagamentos:
+            agregacao_pagamentos[metodo] = {'valor': 0, 'quantidade': 0}
+        agregacao_pagamentos[metodo]['valor'] += p['valor_total']
+        agregacao_pagamentos[metodo]['quantidade'] += 1
+
+        # Agregar por item individual e categoria
+        try:
+            itens_do_pedido = json.loads(p['itens_json'])
+            for item in itens_do_pedido:
+                produto_id = item['id']
+                total_itens_vendidos += item.get('quantidade', 0)
+
+                if produto_id in mapa_produtos:
+                    if produto_id not in agregacao_itens:
+                        agregacao_itens[produto_id] = {'nome': mapa_produtos[produto_id]['nome'], 'quantidade': 0, 'receita': 0, 'lucro': 0}
+                    
+                    receita_item = item.get('preco', 0) * item.get('quantidade', 0)
+                    custo_item = item.get('custo_unitario', 0) * item.get('quantidade', 0)
+                    
+                    agregacao_itens[produto_id]['quantidade'] += item.get('quantidade', 0)
+                    agregacao_itens[produto_id]['receita'] += receita_item
+                    agregacao_itens[produto_id]['lucro'] += (receita_item - custo_item)
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+    # Formatar dados para os gráficos e listas
+    lista_pagamentos_labels = list(agregacao_pagamentos.keys())
+    vendas_por_pagamento = {
+        "labels": lista_pagamentos_labels,
+        "data": [agregacao_pagamentos[label]['valor'] for label in lista_pagamentos_labels]
+    }
+    
+    lista_itens_bruta = sorted(list(agregacao_itens.values()), key=lambda x: x['quantidade'], reverse=True)
+    itens_top = lista_itens_bruta[:10]
+
+    # Calcular KPIs Finais
+    ticket_medio = faturamento_bruto / total_pedidos if total_pedidos > 0 else 0
+    media_itens_pedido = total_itens_vendidos / total_pedidos if total_pedidos > 0 else 0
+
+    total_perdas_ajustes = sum(abs(perda['quantidade_comprada']) * mapa_produtos[perda['id_produto']].get('custo_medio', 0) 
+                           for perda in lista_de_perdas if perda['id_produto'] in mapa_produtos)
+
+    # === PASSO 3: CALCULAR BALANÇO DE ESTOQUE ===
+    lista_estoque = []
+    for pid, pinfo in mapa_produtos.items():
+        estoque_inicial = entradas_ate_inicio.get(pid, 0) - saidas_ate_inicio.get(pid, 0)
+        entradas_periodo = entradas_ate_fim.get(pid, 0) - entradas_ate_inicio.get(pid, 0)
+        saidas_periodo = saidas_ate_fim.get(pid, 0) - saidas_ate_inicio.get(pid, 0)
+        estoque_final = estoque_inicial + entradas_periodo - saidas_periodo
+
+        if estoque_inicial != 0 or entradas_periodo != 0 or saidas_periodo != 0 or estoque_final != 0:
+            lista_estoque.append({
+                "nome": pinfo['nome'],
+                "inicial": estoque_inicial,
+                "entradas": entradas_periodo,
+                "saidas": saidas_periodo,
+                "final": estoque_final
+            })
+    
+    # === PASSO 4: PAGINAR O HISTÓRICO E PREPARAR PARA SERIALIZAÇÃO ===
+    total_registros = len(pedidos_finalizados)
+    inicio_paginacao = (page - 1) * limit
+    fim_paginacao = inicio_paginacao + limit
+    
+    dados_brutos = {
+        "kpis": {
+            "faturamento_bruto": faturamento_bruto,
+            "lucro_bruto": lucro_estimado,
+            "perdas_ajustes": -total_perdas_ajustes,
+            "pedidos": total_pedidos,
+            "ticket_medio": ticket_medio,
+            "media_itens_pedido": media_itens_pedido
+        },
+        "itens_top": itens_top,
+        "historico_pedidos": {"items": pedidos_finalizados[inicio_paginacao:fim_paginacao]},
+        "estoque": lista_estoque,
+        # A agregação por período (dia/hora) é complexa e pode ser adicionada depois se necessário.
+        # Por enquanto, enviamos vazio para cumprir o contrato da API.
+        "vendasPorPeriodo": {"labels": [], "data": []},
+        "vendasPorPagamento": vendas_por_pagamento,
+        "configuracoes": configuracoes
+    }
+    
+    paginacao = {
+        'page': page,
+        'limit': limit,
+        'total': total_registros
+    }
+
+    # === PASSO 5: CHAMAR O SERIALIZER ===
+    return serializers.FechamentoSerializer.to_api_v2(dados_brutos, paginacao)
+
+
+def insights_comparativos_v2(periodoA_inicio, periodoA_fim, periodoB_inicio, periodoB_fim, filtros):
+    """
+    Versão 2: Orquestra a busca e comparação de KPIs para o novo formato da API.
+    """
+    local_id = filtros.get('local_id', 'todos')
+
+    # Fase 1: Busca os dados para cada período
+    pedidos_A = gerenciador_db.obter_pedidos_finalizados_periodo(periodoA_inicio, periodoA_fim, local_id)
+    kpis_A = _calcular_kpis_para_periodo(pedidos_A)
+
+    pedidos_B = gerenciador_db.obter_pedidos_finalizados_periodo(periodoB_inicio, periodoB_fim, local_id)
+    kpis_B = _calcular_kpis_para_periodo(pedidos_B)
+    
+    # Fase 2: Serializa os dados para o formato de comparação
+    resultado_formatado = serializers.ComparativosSerializer.to_api_v2(kpis_A, kpis_B)
+
+    return resultado_formatado

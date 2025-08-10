@@ -697,6 +697,78 @@ def api_insights_heatmap():
     # 4. Retorna o resultado
     return jsonify(dados_heatmap)
 
+@app.route('/api/fechamento_dia_v2')
+def api_fechamento_dia_v2():
+    """
+    V2: Rota para servir os dados operacionais do dia/período no novo formato canônico.
+    """
+    try:
+        # 1. Validação e normalização dos parâmetros da query
+        inicio_str = request.args.get('inicio')
+        fim_str = request.args.get('fim')
+        if not inicio_str or not fim_str:
+            return jsonify({"erro": "Os parâmetros 'inicio' e 'fim' são obrigatórios."}), 400
+
+        page = request.args.get('page', default=1, type=int)
+        limit = request.args.get('limit', default=50, type=int)
+        local_id = request.args.get('local_id', default='todos')
+
+        # Garante que page e limit sejam sensatos
+        if page < 1: page = 1
+        if limit > 100: limit = 100
+
+        # 2. Chama a nova função orquestradora no módulo de analytics
+        dados_fechamento = analytics.fechamento_operacional_v2(
+            inicio=inicio_str,
+            fim=fim_str,
+            page=page,
+            limit=limit,
+            local_id=local_id
+        )
+
+        # 3. Retorna os dados já serializados no formato correto
+        return jsonify(dados_fechamento)
+
+    except Exception as e:
+        print(f"ERRO CRÍTICO em /api/fechamento_dia_v2: {e}")
+        # Retorna o shape vazio em caso de erro, para não quebrar o frontend
+        return jsonify(serializers.FechamentoSerializer.to_api_v2({}, {})), 500
+
+
+@app.route('/api/insights/comparativos_v2')
+def api_insights_comparativos_v2():
+    """
+    V2: Rota para servir dados comparativos entre dois períodos no novo formato canônico.
+    """
+    try:
+        # 1. Extrai e valida os parâmetros obrigatórios
+        periodoA_inicio = request.args.get('periodoA_inicio')
+        periodoA_fim = request.args.get('periodoA_fim')
+        periodoB_inicio = request.args.get('periodoB_inicio')
+        periodoB_fim = request.args.get('periodoB_fim')
+
+        if not all([periodoA_inicio, periodoA_fim, periodoB_inicio, periodoB_fim]):
+            return jsonify({"erro": "Todos os parâmetros de data dos períodos A e B são obrigatórios."}), 400
+
+        # 2. Coleta filtros opcionais
+        filtros = {
+            'local_id': request.args.get('local_id', 'todos')
+        }
+
+        # 3. Chama a nova função orquestradora em analytics
+        dados_comparativos = analytics.insights_comparativos_v2(
+            periodoA_inicio, periodoA_fim,
+            periodoB_inicio, periodoB_fim,
+            filtros
+        )
+
+        # 4. Retorna o resultado já serializado
+        return jsonify(dados_comparativos)
+
+    except Exception as e:
+        print(f"ERRO CRÍTICO em /api/insights/comparativos_v2: {e}")
+        return jsonify(serializers.ComparativosSerializer.to_api_v2({}, {})), 500
+
 @app.route('/')
 def index():
     # Redireciona a rota principal para a tela do cliente por padrão

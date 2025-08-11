@@ -24,6 +24,12 @@ const navLinks = document.querySelectorAll('#nav-categorias a');
 const sections = document.querySelectorAll('.categoria-secao');
 const lastSection = sections.length > 0 ? sections[sections.length - 1] : null;
 
+// Elementos da tela de senha
+const telaSenha = document.getElementById('tela-senha');
+const btnIrCardapio = document.getElementById('btn-ir-cardapio');
+const placeholderNome = document.getElementById('placeholder-nome');
+const textoConfirmacaoSenha = document.getElementById('texto-confirmacao-senha');
+
 // Elementos do fluxo de teclado
 const telaInicial = document.getElementById('tela-inicial');
 const telaTeclado = document.getElementById('tela-teclado');
@@ -460,7 +466,15 @@ function atualizarVisualAcento() {
 }
 
 function atualizarTextoTeclado() {
-    if (campoTextoNome) campoTextoNome.textContent = nomeDigitadoTemp;
+    if (campoTextoNome && placeholderNome) {
+        if (nomeDigitadoTemp === '') {
+            placeholderNome.classList.remove('hidden');
+            campoTextoNome.textContent = '';
+        } else {
+            placeholderNome.classList.add('hidden');
+            campoTextoNome.textContent = nomeDigitadoTemp;
+        }
+    }
 }
 
 
@@ -535,11 +549,33 @@ if (btnIniciar) {
             return;
         }
         setNomeCliente(nomeFinal);
+
+        // Pega a senha do atributo de dados que definimos no HTML
+        const proximaSenha = document.body.dataset.proximaSenha || 'ERRO';
+
+        // Preenche e mostra a nova tela de senha
+        if (textoConfirmacaoSenha) {
+            textoConfirmacaoSenha.innerHTML = `
+                <div class="block text-4xl font-bold text-orange-400">${nomeFinal}</div>
+                <div class="block text-xl text-zinc-400 my-2">a senha do seu pedido é</div>
+                <div class="block text-5xl font-bold text-green-400 font-mono">#${proximaSenha}</div>
+            `;
+        }
         if (telaTeclado) telaTeclado.classList.add('hidden');
+        if (telaSenha) telaSenha.classList.remove('hidden');
+    });
+}
+
+// Listener para o botão "Ver Cardápio" da tela de senha
+if (btnIrCardapio) {
+    btnIrCardapio.addEventListener('click', () => {
+        if (telaSenha) telaSenha.classList.add('hidden');
         if (mainContainer) mainContainer.classList.remove('content-blurred');
-        nomeDigitadoTemp = '';
+
+        // Limpa o nome temporário e atualiza a UI para o estado inicial
+        nomeDigitadoTemp = ''; 
         atualizarTextoTeclado();
-        atualizarBotaoPrincipal();
+        atualizarBotaoPrincipal(); 
     });
 }
 

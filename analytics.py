@@ -1,7 +1,7 @@
 # analytics.py
 import gerenciador_db
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 import serializers
 
@@ -233,6 +233,59 @@ def fechamento_operacional_v2(inicio, fim, local_id, page, limit):
                 "estoque_do_dia": saldo_inicial + entradas
             })
 
+    # === PASSO 3.5: AGREGAR VENDAS POR PERÍODO (BUCKETS DE 15 MIN) ===
+    fuso_horario_local = pytz.timezone('America/Sao_Paulo')
+
+    # O 'inicio' recebido é UTC, representando o início do dia operacional (05:00 em SP).
+    # Convertemos para datetime local para servir de âncora para os buckets.
+    try:
+        inicio_operacional_local = datetime.fromisoformat(inicio.replace('Z', '+00:00')).astimezone(fuso_horario_local)
+    except ValueError:
+        inicio_operacional_local = datetime.fromisoformat(inicio).astimezone(fuso_horario_local)
+
+    fim_operacional_local = inicio_operacional_local + timedelta(hours=24)
+
+    # Prepara a estrutura de dados com 96 buckets (24h * 4 buckets/hora)
+    vendas_por_periodo_labels = []
+    vendas_por_periodo_data = [0.0] * 96
+    for i in range(96):
+        timestamp_bucket = inicio_operacional_local + timedelta(minutes=15 * i)
+        vendas_por_periodo_labels.append(timestamp_bucket.strftime('%H:%M'))
+
+    # Itera sobre os pedidos para preencher os buckets
+    for p in pedidos_finalizados:
+        timestamp_pagamento_str = p.get('timestamp_pagamento')
+        if not timestamp_pagamento_str:
+            continue
+
+        try:
+            # Converte o timestamp do pedido para o fuso local
+            if 'Z' in timestamp_pagamento_str:
+                timestamp_utc = datetime.fromisoformat(timestamp_pagamento_str.replace('Z', '+00:00'))
+            else:
+                timestamp_utc = datetime.fromisoformat(timestamp_pagamento_str).astimezone(pytz.utc)
+
+            timestamp_local = timestamp_utc.astimezone(fuso_horario_local)
+
+            # Garante que o pedido está dentro da janela de 24h (robustez)
+            if not (inicio_operacional_local <= timestamp_local < fim_operacional_local):
+                continue
+
+            # Calcula em qual bucket de 15 minutos o pedido se encaixa
+            delta_segundos = (timestamp_local - inicio_operacional_local).total_seconds()
+            indice_bucket = int(delta_segundos // (15 * 60))
+
+            if 0 <= indice_bucket < 96:
+                vendas_por_periodo_data[indice_bucket] += p.get('valor_total') or 0
+
+        except (ValueError, TypeError):
+            continue
+
+    vendas_por_periodo_final = {
+        "labels": vendas_por_periodo_labels,
+        "data": [round(valor, 2) for valor in vendas_por_periodo_data]
+    }
+
     # === PASSO 4: PAGINAR O HISTÓRICO E PREPARAR PARA SERIALIZAÇÃO ===
     total_registros = len(pedidos_finalizados)
     inicio_paginacao = (page - 1) * limit
@@ -252,7 +305,7 @@ def fechamento_operacional_v2(inicio, fim, local_id, page, limit):
         "estoque": lista_estoque,
         # A agregação por período (dia/hora) é complexa e pode ser adicionada depois se necessário.
         # Por enquanto, enviamos vazio para cumprir o contrato da API.
-        "vendasPorPeriodo": {"labels": [], "data": []},
+        "vendasPorPeriodo": vendas_por_periodo_final,
         "vendasPorPagamento": vendas_por_pagamento,
         "configuracoes": configuracoes
     }

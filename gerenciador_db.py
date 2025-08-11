@@ -1,7 +1,6 @@
 import sqlite3
-import datetime
-import json # Adicione esta importação no topo do seu arquivo, junto com as outras
-from datetime import timedelta, timezone # Adicione esta importação também
+import json 
+from datetime import datetime, timedelta, timezone
 import random
 
 NOME_BANCO_DADOS = 'espetao.db'
@@ -99,7 +98,7 @@ def criar_novo_pedido(nome_cliente, itens_pedido, metodo_pagamento):
         'itens': itens_pedido,
         'metodo_pagamento': metodo_pagamento,
         'status': 'recebido',
-        'timestamp': datetime.datetime.now(timezone.utc).isoformat(),
+        'timestamp': datetime.now(timezone.utc).isoformat(),
         'valor_total': valor_total # Adicionamos o campo calculado
     }
 
@@ -505,7 +504,7 @@ def obter_historico_produto(id_produto):
         historico_lista = []
         for tupla in historico_tuplas:
             # Formata a data para um formato mais legível
-            data_formatada = datetime.datetime.fromisoformat(tupla[0]).strftime('%d/%m/%Y %H:%M')
+            data_formatada = datetime.fromisoformat(tupla[0]).strftime('%d/%m/%Y %H:%M')
             
             historico_lista.append({
                 'data': data_formatada, 
@@ -549,7 +548,7 @@ def _normalizar_e_ordenar_itens(itens_recebidos, cursor):
 
         # Garante que o item tenha um uid para desempate
         if 'uid' not in item:
-            item['uid'] = datetime.datetime.now().timestamp() + random.random()
+            item['uid'] = datetime.now().timestamp() + random.random()
 
         itens_enriquecidos.append(item)
 
@@ -709,7 +708,7 @@ def iniciar_preparo_pedido(id_do_pedido):
             return False
 
         itens_atuais = json.loads(resultado[0])
-        timestamp_inicio = datetime.datetime.now().isoformat()
+        timestamp_inicio = datetime.now(timezone.utc).isoformat()
         itens_modificados = []
 
         # 2. Itera sobre os itens e adiciona o timestamp naqueles que precisam.
@@ -757,7 +756,7 @@ def reiniciar_preparo_item(pedido_id, produto_id, k_posicao):
             return False
 
         itens_atuais = json.loads(resultado[0])
-        timestamp_novo = datetime.datetime.now().isoformat()
+        timestamp_novo = datetime.now(timezone.utc).isoformat()
 
         # Filtra apenas os itens que correspondem ao produto e que requerem preparo.
         # A ordem é preservada da forma como os itens estão no pedido.
@@ -1023,9 +1022,9 @@ def obter_dados_relatorio(data_inicio, data_fim, local_id=None):
             if p['metodo_pagamento'] in vendas_por_pagamento:
                 vendas_por_pagamento[p['metodo_pagamento']] += p['valor_total']
 
-            data_hora_obj = datetime.datetime.fromisoformat(p['timestamp_finalizacao'])
-            data_hora_formatada = data_hora_obj.strftime('%d/%m %H:%M')
-            historico_pedidos_tabela.append(dict(p, horario=data_hora_formatada))
+            data_hora_obj = datetime.fromisoformat(p['timestamp_finalizacao'])
+            dt_inicio = datetime.fromisoformat(data_inicio.replace('Z', '+00:00'))
+            dt_fim = datetime.fromisoformat(data_fim.replace('Z', '+00:00'))
 
             # Calcula a proporção de custo para este pedido específico
             ratio_custo = (p['custo_total_pedido'] or 0) / p['valor_total'] if p['valor_total'] > 0 else 0
@@ -1052,8 +1051,8 @@ def obter_dados_relatorio(data_inicio, data_fim, local_id=None):
         itens_mais_vendidos = sorted(list(itens_vendidos_agregado.values()), key=lambda x: x['quantidade'], reverse=True)[:10]
 
         # --- NOVA LÓGICA PARA DECIDIR O MODO DE AGREGAÇÃO ---
-        dt_inicio = datetime.datetime.fromisoformat(data_inicio.replace('Z', '+00:00'))
-        dt_fim = datetime.datetime.fromisoformat(data_fim.replace('Z', '+00:00'))
+        dt_inicio = datetime.fromisoformat(data_inicio.replace('Z', '+00:00'))
+        dt_fim = datetime.fromisoformat(data_fim.replace('Z', '+00:00'))
         
         modo_agregacao = '15min' if (dt_fim - dt_inicio) < timedelta(days=2) else 'dia'
         
@@ -1092,7 +1091,7 @@ def _agregar_vendas_por_periodo(pedidos, modo):
 
     for pedido in pedidos:
         # Converte o texto do timestamp para um objeto datetime
-        timestamp_obj = datetime.datetime.fromisoformat(pedido['timestamp_finalizacao'])
+        timestamp_obj = datetime.fromisoformat(pedido['timestamp_finalizacao'])
 
         if modo == '15min':
             # Arredonda o minuto para o intervalo de 15 mais próximo (0, 15, 30, 45)
@@ -1332,7 +1331,7 @@ def obter_proxima_senha_diaria():
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        agora = datetime.datetime.now()
+        agora = datetime.now()
         horario_corte = agora.replace(hour=5, minute=0, second=0, microsecond=0)
 
         # Define a data de início da busca pela última senha
@@ -1708,7 +1707,7 @@ def executar_backfill_estoque_inicial():
 
         # 2. Prepara os dados para a inserção em lote.
         movimentacoes_para_inserir = []
-        timestamp_antigo = datetime.datetime(2020, 1, 1).isoformat()
+        timestamp_antigo = datetime(2020, 1, 1).isoformat()
 
         for produto_id, estoque_atual in produtos_com_estoque:
             movimentacoes_para_inserir.append((

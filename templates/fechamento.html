@@ -413,7 +413,20 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // 3. Funções de Controle dos Gráficos
-    const chartDefaultOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: 'white' } }, tooltip: { callbacks: { label: function(context) { let label = context.dataset.label || ''; if (label) { label += ': '; } if (context.parsed.y !== null) { label += new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.parsed); } else if (context.parsed !== null) { label += new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(context.parsed); } return label; } } } }, scales: { y: { ticks: { color: 'white' }, grid: { color: 'rgba(255, 255, 255, 0.2)' } }, x: { ticks: { color: 'white' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } } } };
+    const chartDefaultOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: 'white' } }, tooltip: { callbacks: { 
+        label: function(ctx) {
+            let label = ctx.dataset.label || '';
+            if (label) {
+                label += ': ';
+            }
+            // Usamos ctx.raw, que contém o valor numérico original do dataset.
+            // Number() é uma camada extra de segurança para garantir que o tipo é numérico.
+            const value = Number(ctx.raw);
+            label += new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+            return label;
+        } 
+
+        } } }, scales: { y: { ticks: { color: 'white' }, grid: { color: 'rgba(255, 255, 255, 0.2)' } }, x: { ticks: { color: 'white' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } } } };
     function initOuUpdateChart(chartVar, canvasId, type, data, options) { if (chartVar) { chartVar.destroy(); } const ctx = document.getElementById(canvasId).getContext('2d'); return new Chart(ctx, { type, data, options }); }
 
     // 4. Lógica Principal de Carregamento
@@ -622,10 +635,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const datasSelecionadas = datePickerSimples.selectedDates;
         if (datasSelecionadas.length === 0) { alert("Por favor, selecione uma data."); return; }
         setLoadingState(btnAnalisar, true);
-        const data = datasSelecionadas[0];
-        const inicio = new Date(data.setHours(0, 0, 0, 0)).toISOString(); 
-        const fim = new Date(data.setHours(23, 59, 59, 999)).toISOString();
-        const url = `${API_FECHAMENTO_V2}?data=${data.toISOString().split('T')[0]}&local_id=todos`;
+        const dataSelecionada = datePickerSimples.input.value; // Pega o valor 'YYYY-MM-DD' direto do campo
+        const url = `${API_FECHAMENTO_V2}?data=${dataSelecionada}&local_id=todos`;
 
         try {
             const response = await fetch(url);
@@ -641,7 +652,7 @@ document.addEventListener('DOMContentLoaded', function() {
             preencherPedidos(d.historicoPedidos);
 
             // Atualiza Gráficos (já usavam a estrutura correta)
-            chartVendas = initOuUpdateChart(chartVendas, 'grafico-vendas', 'bar', { labels: d.vendasPorPeriodo.labels, datasets: [{ label: 'Faturamento', data: d.vendasPorPeriodo.data, backgroundColor: 'rgba(52, 211, 153, 0.7)', borderColor: '#34D399', borderWidth: 2, borderRadius: 5, }] }, chartDefaultOptions);
+            chartVendas = initOuUpdateChart(chartVendas, 'grafico-vendas', 'bar', { labels: d.vendasPorPeriodo.labels, datasets: [{ label: 'Faturamento', data: d.vendasPorPeriodo.data.map(Number), backgroundColor: 'rgba(52, 211, 153, 0.7)', borderColor: '#34D399', borderWidth: 2, borderRadius: 5, }] }, chartDefaultOptions);
             chartPagamentos = initOuUpdateChart(chartPagamentos, 'grafico-pagamentos', 'doughnut', { labels: d.vendasPorPagamento.labels.map(l => l.replace(/_/g, ' ').replace(/(^\w{1})|(\s+\w{1})/g, letra => letra.toUpperCase())), datasets: [{ label: 'Formas de Pagamento', data: d.vendasPorPagamento.data, backgroundColor: ['#60A5FA', '#FBBF24', '#A78BFA', '#34D399'], borderColor: 'rgba(255, 255, 255, 0.1)', borderWidth: 2, }] }, { ...chartDefaultOptions, scales: {} });
 
         } catch (error) {

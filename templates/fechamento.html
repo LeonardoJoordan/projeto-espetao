@@ -465,11 +465,11 @@ document.addEventListener('DOMContentLoaded', function() {
         const containerItens = document.getElementById('container-itens-top');
         const containerEstoque = document.getElementById('container-balanco-estoque');
 
-        // Renderiza Itens Mais Vendidos
+        // Renderiza Itens Mais Vendidos (lógica inalterada)
         if (!itensTop || itensTop.length === 0) {
             containerItens.innerHTML = '<p class="text-white/50 text-center py-4">Sem itens para exibir.</p>';
         } else {
-            const tableHead = `
+            const tableHeadItens = `
                 <thead class="bg-white/10">
                     <tr>
                         <th class="px-4 py-2 text-left">Produto</th>
@@ -478,36 +478,40 @@ document.addEventListener('DOMContentLoaded', function() {
                         <th class="px-4 py-2 text-right">Lucro</th>
                     </tr>
                 </thead>`;
-            const tableBody = itensTop.map(item => `
+            const tableBodyItens = itensTop.map(item => `
                 <tr class="border-b border-white/10">
                     <td class="px-4 py-2">${item.nome}</td>
                     <td class="px-4 py-2 text-center">${item.quantidade}</td>
                     <td class="px-4 py-2 text-right">R$ ${formatarMoeda(item.receita)}</td>
                     <td class="px-4 py-2 text-right">R$ ${formatarMoeda(item.lucro)}</td>
                 </tr>`).join('');
-            containerItens.innerHTML = `<table class="w-full text-sm">${tableHead}<tbody>${tableBody}</tbody></table>`;
+            containerItens.innerHTML = `<table class="w-full text-sm">${tableHeadItens}<tbody>${tableBodyItens}</tbody></table>`;
         }
 
-        // Renderiza Balanço de Estoque
+        // Renderiza Balanço de Estoque (lógica ATUALIZADA)
         if (!estoque || estoque.length === 0) {
             containerEstoque.innerHTML = '<p class="text-white/50 text-center py-4">Sem movimentação de estoque no período.</p>';
         } else {
+            // Cabeçalhos atualizados para o novo fluxo
             const tableHead = `
                 <thead class="bg-white/10">
                     <tr>
                         <th class="px-4 py-2 text-left">Produto</th>
-                        <th class="px-4 py-2 text-center">Inicial</th>
+                        <th class="px-4 py-2 text-center">Est. Anterior</th>
                         <th class="px-4 py-2 text-center">Entradas</th>
+                        <th class="px-4 py-2 text-center">Est. Atual</th>
                         <th class="px-4 py-2 text-center">Saídas</th>
-                        <th class="px-4 py-2 text-center">Final</th>
+                        <th class="px-4 py-2 text-center">Est. Final</th>
                     </tr>
                 </thead>`;
+            // Corpo da tabela mapeando para os novos campos da API
             const tableBody = estoque.map(item => `
                 <tr class="border-b border-white/10">
                     <td class="px-4 py-2">${item.nome}</td>
                     <td class="px-4 py-2 text-center">${item.inicial}</td>
-                    <td class="px-4 py-2 text-center text-green-400">${item.entradas}</td>
-                    <td class="px-4 py-2 text-center text-red-400">${item.saidas}</td>
+                    <td class="px-4 py-2 text-center text-green-400">+${item.entradas}</td>
+                    <td class="px-4 py-2 text-center font-semibold">${item.estoqueAtual}</td>
+                    <td class="px-4 py-2 text-center text-red-400">-${item.saidas}</td>
                     <td class="px-4 py-2 text-center font-bold">${item.final}</td>
                 </tr>`).join('');
             containerEstoque.innerHTML = `<table class="w-full text-sm">${tableHead}<tbody>${tableBody}</tbody></table>`;
@@ -621,7 +625,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const data = datasSelecionadas[0];
         const inicio = new Date(data.setHours(0, 0, 0, 0)).toISOString(); 
         const fim = new Date(data.setHours(23, 59, 59, 999)).toISOString();
-        const url = `${API_FECHAMENTO_V2}?inicio=${inicio}&fim=${fim}&local_id=todos`;
+        const url = `${API_FECHAMENTO_V2}?data=${data.toISOString().split('T')[0]}&local_id=todos`;
 
         try {
             const response = await fetch(url);

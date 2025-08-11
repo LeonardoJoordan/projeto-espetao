@@ -185,7 +185,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (item.requer_preparo === 1 && totaisPorProduto[item.id] > 1) {
                 contadoresPorProduto[item.id] = (contadoresPorProduto[item.id] || 0) + 1;
                 const N = totaisPorProduto[item.id];
-                tituloHtml = `<span><span class="font-semibold text-amber-300 mr-2 whitespace-nowrap">${contadoresPorProduto[item.id]}/${N}</span><span>${item.nome}</span></span>`;
+                tituloHtml = `<span><span class="font-semibold text-white mr-2 whitespace-nowrap">${contadoresPorProduto[item.id]}/${N}</span><span>${item.nome}</span></span>`;
             } else {
                 tituloHtml = `<span>${item.quantidade}x ${item.nome}</span>`;
             }

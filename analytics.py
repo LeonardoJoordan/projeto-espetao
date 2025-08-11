@@ -5,155 +5,6 @@ from datetime import datetime
 import pytz
 import serializers
 
-def fechamento_operacional(inicio, fim, local_id, page, limit):
-    """
-    Função principal para calcular os dados operacionais do fechamento.
-    Busca os dados brutos e calcula os KPIs e o histórico paginado.
-    """
-    # Passo 1: Buscar a "matéria-prima" do nosso gerenciador de banco de dados
-    pedidos_finalizados = gerenciador_db.obter_pedidos_finalizados_periodo(inicio, fim, local_id)
-    mapa_produtos = gerenciador_db.obter_mapa_produtos_analytics()
-    # Pré-busca todos os dados de movimentação para o cálculo de estoque
-    entradas_ate_inicio = gerenciador_db.obter_entradas_estoque_por_produto(inicio)
-    saidas_ate_inicio = gerenciador_db.obter_saidas_venda_por_produto(inicio)
-    entradas_ate_fim = gerenciador_db.obter_entradas_estoque_por_produto(fim)
-    saidas_ate_fim = gerenciador_db.obter_saidas_venda_por_produto(fim)
-    lista_de_perdas = gerenciador_db.obter_perdas_periodo(inicio, fim)
-
-
-    # Passo 2: Calcular os KPIs básicos
-    total_pedidos = len(pedidos_finalizados)
-    faturamento_bruto = sum(p['valor_total'] for p in pedidos_finalizados)
-    ticket_medio = faturamento_bruto / total_pedidos if total_pedidos > 0 else 0
-    # O lucro bruto já vem calculado por pedido, então podemos somá-lo
-    lucro_bruto = sum(p['custo_total_pedido'] for p in pedidos_finalizados if p['custo_total_pedido'] is not None)
-    
-    # Passo 3: Paginar o histórico de pedidos
-    total_registros = len(pedidos_finalizados)
-    inicio_paginacao = (page - 1) * limit
-    fim_paginacao = inicio_paginacao + limit
-    itens_paginados = pedidos_finalizados[inicio_paginacao:fim_paginacao]
-
-    # Passo 3.5: Calcular agregações
-    agregacao_pagamentos = {}
-    agregacao_categorias = {}
-    agregacao_itens = {}
-
-    for p in pedidos_finalizados:
-        # Agregação por método de pagamento
-        metodo = p['metodo_pagamento']
-        if metodo not in agregacao_pagamentos:
-            agregacao_pagamentos[metodo] = {'valor': 0, 'quantidade': 0}
-        agregacao_pagamentos[metodo]['valor'] += p['valor_total']
-        agregacao_pagamentos[metodo]['quantidade'] += 1
-
-        # Agregação por categoria (requer análise do JSON de itens)
-        try:
-            itens_do_pedido = json.loads(p['itens_json'])
-            for item in itens_do_pedido:
-                produto_id = item['id']
-                if produto_id in mapa_produtos:
-                    categoria = mapa_produtos[produto_id]['categoria']
-                    if categoria not in agregacao_categorias:
-                        agregacao_categorias[categoria] = {'qtd': 0, 'receita': 0, 'custo': 0, 'lucro': 0}
-
-                    receita_item = item.get('preco', 0) * item.get('quantidade', 0)
-                    custo_item = item.get('custo_unitario', 0) * item.get('quantidade', 0)
-                    
-                    agregacao_categorias[categoria]['qtd'] += item.get('quantidade', 0)
-                    agregacao_categorias[categoria]['receita'] += receita_item
-                    agregacao_categorias[categoria]['custo'] += custo_item
-                    agregacao_categorias[categoria]['lucro'] += (receita_item - custo_item)
-
-                # Agregação por item individual
-                    if produto_id not in agregacao_itens:
-                        agregacao_itens[produto_id] = {'nome': mapa_produtos[produto_id]['nome'], 'qtd': 0, 'receita': 0, 'custo': 0, 'lucro': 0}
-
-                    agregacao_itens[produto_id]['qtd'] += item.get('quantidade', 0)
-                    agregacao_itens[produto_id]['receita'] += receita_item
-                    agregacao_itens[produto_id]['custo'] += custo_item
-                    agregacao_itens[produto_id]['lucro'] += (receita_item - custo_item)
-
-        except (json.JSONDecodeError, TypeError):
-            print(f"AVISO: Não foi possível decodificar itens_json para o pedido ID: {p['id']}")
-            continue # Pula para o próximo pedido
-
-    # Formata a saída das agregações para o formato de lista esperado pelo contrato da API
-    lista_pagamentos = [
-        {"metodo": metodo, "valor": dados['valor'], "quantidade": dados['quantidade']}
-        for metodo, dados in agregacao_pagamentos.items()
-    ]
-    lista_categorias = [
-        {"categoria": cat, "qtd": dados['qtd'], "receita": dados['receita'], "custo": dados['custo'], "lucro": dados['lucro']}
-        for cat, dados in agregacao_categorias.items()
-    ]
-
-    # Formata a lista de itens e ordena para pegar o Top N (ex: Top 10)
-    lista_itens_bruta = list(agregacao_itens.values())
-    lista_itens_bruta.sort(key=lambda x: x['qtd'], reverse=True)
-    lista_itens_top = lista_itens_bruta[:10]
-
-    # Cálculo de estoque por movimento
-    lista_estoque = []
-    # Usamos as chaves do mapa de produtos como a lista definitiva de todos os produtos existentes
-    for pid, pinfo in mapa_produtos.items():
-        # Calcula o estoque inicial
-        total_entradas_inicio = entradas_ate_inicio.get(pid, 0)
-        total_saidas_inicio = saidas_ate_inicio.get(pid, 0)
-        estoque_inicial = total_entradas_inicio - total_saidas_inicio
-
-        # Calcula as movimentações no período
-        total_entradas_fim = entradas_ate_fim.get(pid, 0)
-        total_saidas_fim = saidas_ate_fim.get(pid, 0)
-        entradas_periodo = total_entradas_fim - total_entradas_inicio
-        saidas_periodo = total_saidas_fim - total_saidas_inicio
-        
-        # Calcula o estoque final
-        estoque_final = estoque_inicial + entradas_periodo - saidas_periodo
-
-        # Adiciona à lista apenas se houve alguma movimentação ou se o estoque não é zero
-        if estoque_inicial != 0 or entradas_periodo != 0 or saidas_periodo != 0 or estoque_final != 0:
-            lista_estoque.append({
-                "produto_id": pid,
-                "nome": pinfo['nome'],
-                "inicial": estoque_inicial,
-                "entradas": entradas_periodo,
-                "saidas": -saidas_periodo, # Mostra as saídas como um número positivo
-                "final": estoque_final
-            })
-
-        # Cálculo do valor de perdas e ajustes
-        total_perdas_ajustes = 0
-        for perda in lista_de_perdas:
-            pid = perda['id_produto']
-            if pid in mapa_produtos:
-                custo_medio = mapa_produtos[pid].get('custo_medio', 0)
-                quantidade_perdida = perda['quantidade_comprada']
-                total_perdas_ajustes += abs(quantidade_perdida) * custo_medio
-
-    # Passo 4: Montar o dicionário de resposta
-    resultado = {
-      "kpis": {
-          "faturamento_bruto": faturamento_bruto,
-          "ticket_medio": ticket_medio,
-          "pedidos": total_pedidos,
-          "perdas_ajustes": -total_perdas_ajustes, # Mostrado como negativo
-          "lucro_bruto": lucro_bruto
-      },
-      "pagamentos": lista_pagamentos,
-      "categorias": lista_categorias,
-      "itens_top": lista_itens_top,
-      "estoque": lista_estoque,
-      "historico_pedidos": {
-          "page": page,
-          "limit": limit,
-          "total": total_registros,
-          "items": itens_paginados
-      }
-    }
-
-    return resultado
-
 def insights_comparativos(periodoA_inicio, periodoA_fim, periodoB_inicio, periodoB_fim, filtros):
     """
     Calcula e compara KPIs entre dois períodos distintos, aplicando filtros.
@@ -267,21 +118,15 @@ def fechamento_operacional_v2(inicio, fim, local_id, page, limit):
     # === PASSO 1: BUSCAR A "MATÉRIA-PRIMA" DO BANCO DE DADOS ===
     pedidos_finalizados = gerenciador_db.obter_pedidos_finalizados_periodo(inicio, fim, local_id)
     mapa_produtos = gerenciador_db.obter_mapa_produtos_analytics()
-    lista_de_perdas = gerenciador_db.obter_perdas_periodo(inicio, fim)
-    configuracoes = gerenciador_db.obter_configuracoes()
-    entradas_do_dia_map = gerenciador_db.obter_entradas_positivas_periodo(inicio, fim)
     
-    # Pré-busca de todas as movimentações para o cálculo de estoque
-    entradas_ate_inicio = gerenciador_db.obter_entradas_estoque_por_produto(inicio)
-    saidas_ate_inicio = gerenciador_db.obter_saidas_venda_por_produto(inicio)
-    entradas_ate_fim = gerenciador_db.obter_entradas_estoque_por_produto(fim)
-    saidas_ate_fim = gerenciador_db.obter_saidas_venda_por_produto(fim)
-
+    configuracoes = gerenciador_db.obter_configuracoes()
+        
     # === PASSO 2: CALCULAR KPIS E AGREGAR DADOS ===
     total_pedidos = len(pedidos_finalizados)
     faturamento_bruto = sum(p['valor_total'] for p in pedidos_finalizados)
     total_itens_vendidos = 0
     lucro_estimado = 0
+    total_perdas_ajustes = 0
 
     agregacao_pagamentos = {}
     agregacao_itens = {}
@@ -334,37 +179,60 @@ def fechamento_operacional_v2(inicio, fim, local_id, page, limit):
     ticket_medio = faturamento_bruto / total_pedidos if total_pedidos > 0 else 0
     media_itens_pedido = total_itens_vendidos / total_pedidos if total_pedidos > 0 else 0
 
-    total_perdas_ajustes = sum(abs(perda['quantidade_comprada']) * mapa_produtos[perda['id_produto']].get('custo_medio', 0) 
-                           for perda in lista_de_perdas if perda['id_produto'] in mapa_produtos)
-
-    # === PASSO 3: CALCULAR BALANÇO DE ESTOQUE ===
-    lista_estoque = []
-    for pid, pinfo in mapa_produtos.items():
-        # Saldo acumulado até o início do dia de trabalho
-        estoque_inicial = entradas_ate_inicio.get(pid, 0) - saidas_ate_inicio.get(pid, 0)
-        
-        # Apenas as compras/reposições feitas no período
-        entradas_dia = entradas_do_dia_map.get(pid, 0)
-
-        # Saldo disponível para venda no dia
-        estoque_do_dia = estoque_inicial + entradas_dia
-
-        # Saídas por vendas finalizadas no período
-        saidas_dia = saidas_ate_fim.get(pid, 0) - saidas_ate_inicio.get(pid, 0)
-
-        # Saldo ao final do dia de trabalho
-        estoque_final = estoque_do_dia - saidas_dia
-
-        if estoque_inicial != 0 or entradas_dia != 0 or saidas_dia != 0 or estoque_final != 0:
-            lista_estoque.append({
-                "nome": pinfo['nome'],
-                "inicial": estoque_inicial,
-                "entradas": entradas_dia,
-                "estoque_do_dia": estoque_do_dia, # Novo campo
-                "saidas": saidas_dia,
-                "final": estoque_final
-            })
     
+    # === PASSO 3: CALCULAR BALANÇO DE ESTOQUE A PARTIR DO LEDGER ===
+    # Define o início absoluto para buscar saldos anteriores
+    inicio_absoluto = datetime(2000, 1, 1).isoformat()
+
+    # Busca todas as movimentações relevantes de uma só vez
+    movimentacoes_ate_fim = gerenciador_db.obter_movimentacoes_periodo(inicio_absoluto, fim, local_id)
+
+    # Processa as movimentações para calcular o balanço
+    balanco_por_produto = {}
+    for pid, pinfo in mapa_produtos.items():
+        balanco_por_produto[pid] = {
+            'nome': pinfo['nome'], 'saldo_anterior': 0,
+            'entradas_periodo': 0, 'saidas_periodo': 0
+        }
+
+    for mov in movimentacoes_ate_fim:
+        pid = mov['produto_id']
+        if pid in balanco_por_produto:
+            # Lógica do saldo anterior (inalterada)
+            if mov['created_at'] < inicio:
+                balanco_por_produto[pid]['saldo_anterior'] += mov['quantidade']
+            # Lógica do período atual
+            else:
+                if mov['quantidade'] > 0:
+                    balanco_por_produto[pid]['entradas_periodo'] += mov['quantidade']
+                else:
+                    balanco_por_produto[pid]['saidas_periodo'] += mov['quantidade']
+
+                # NOVA LÓGICA: Se for um ajuste, calcula o valor da perda
+                if mov['origem'] == 'ajuste':
+                    # O valor da perda é a quantidade (negativa) * custo médio do item
+                    valor_perda = mov['quantidade'] * mov['custo_medio']
+                    total_perdas_ajustes += valor_perda
+
+    # Formata a lista final de estoque para o frontend
+    lista_estoque = []
+    for pid, dados in balanco_por_produto.items():
+        saldo_inicial = dados['saldo_anterior']
+        entradas = dados['entradas_periodo']
+        saidas = -dados['saidas_periodo'] # Inverte o sinal para exibição
+        saldo_final = saldo_inicial + entradas - saidas
+
+        # Adiciona à lista apenas se houve movimentação ou se ainda há estoque
+        if saldo_inicial != 0 or entradas != 0 or saidas != 0 or saldo_final != 0:
+            lista_estoque.append({
+                "nome": dados['nome'],
+                "inicial": saldo_inicial,
+                "entradas": entradas,
+                "saidas": saidas,
+                "final": saldo_final,
+                "estoque_do_dia": saldo_inicial + entradas
+            })
+
     # === PASSO 4: PAGINAR O HISTÓRICO E PREPARAR PARA SERIALIZAÇÃO ===
     total_registros = len(pedidos_finalizados)
     inicio_paginacao = (page - 1) * limit

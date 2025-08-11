@@ -45,7 +45,7 @@ class FechamentoSerializer:
                 "nome": item.get('nome', ''),
                 "inicial": item.get('inicial', 0),
                 "entradas": item.get('entradas', 0),
-                "estoqueDoDia": item.get('estoque_do_dia', 0), # Novo campo
+                "estoque_atual": item.get('estoque_do_dia', 0), # Novo campo
                 "saidas": item.get('saidas', 0),
                 "final": item.get('final', 0)
             } for item in dados_brutos.get('estoque', [])

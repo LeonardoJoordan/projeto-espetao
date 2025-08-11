@@ -101,6 +101,31 @@ def inicializar_banco():
         ''')
         print("Tabela 'pedidos' verificada/criada.")
 
+        # Tabela de Movimentações de Estoque (Ledger)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS estoque_movimentacoes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                produto_id INTEGER NOT NULL,
+                quantidade INTEGER NOT NULL,
+                custo_total_movimentacao REAL NOT NULL DEFAULT 0,
+                origem TEXT NOT NULL,
+                referencia_id INTEGER,
+                observacao TEXT,
+                created_at TEXT NOT NULL,
+                local_id INTEGER,
+                FOREIGN KEY (produto_id) REFERENCES produtos (id) ON DELETE CASCADE,
+                FOREIGN KEY (local_id) REFERENCES locais (id),
+                UNIQUE(origem, referencia_id, produto_id)
+            )
+        ''')
+        print("Tabela 'estoque_movimentacoes' verificada/criada.")
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_movimentacoes_produto_data
+            ON estoque_movimentacoes (produto_id, created_at);
+        ''')
+        print("Índice para 'estoque_movimentacoes' (produto, data) verificado/criado.")
+
         # Tabela de Acompanhamentos (NOVA)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS acompanhamentos (

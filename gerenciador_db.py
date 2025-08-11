@@ -115,30 +115,46 @@ def criar_novo_pedido(nome_cliente, itens_pedido, metodo_pagamento):
 
 def adicionar_novo_produto(nome, descricao, foto_url, preco_venda, estoque_inicial, custo_inicial, categoria_id, requer_preparo):
     """
-    Adiciona um novo produto na tabela 'produtos', salvando seu custo médio inicial.
+    Adiciona um novo produto e, na mesma transação, registra seu estoque
+    inicial no ledger de movimentações.
     """
+    conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # O custo_inicial de compra é o primeiro custo_medio do produto.
-        custo_medio_inicial = custo_inicial
-
-        # Comando SQL atualizado para usar a coluna `custo_medio`
+        # Passo 1: Insere o produto com estoque e custo zerados (campos legados).
+        # A fonte da verdade agora é o ledger.
         cursor.execute('''
             INSERT INTO produtos (nome, descricao, foto_url, preco_venda, estoque_atual, custo_medio, categoria_id, requer_preparo)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (nome, descricao, foto_url, preco_venda, estoque_inicial, custo_medio_inicial, categoria_id, requer_preparo))
+            VALUES (?, ?, ?, ?, 0, 0, ?, ?)
+        ''', (nome, descricao, foto_url, preco_venda, categoria_id, requer_preparo))
+        
+        new_product_id = cursor.lastrowid
+
+        # Passo 2: Registra o estoque inicial como a primeira movimentação no ledger.
+        # Só faz sentido registrar se houver estoque inicial.
+        if estoque_inicial > 0:
+            custo_total_inicial = estoque_inicial * custo_inicial
+            timestamp_atual = datetime.now(timezone.utc).isoformat()
+
+            cursor.execute('''
+                INSERT INTO estoque_movimentacoes
+                (produto_id, quantidade, custo_total_movimentacao, origem, observacao, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (new_product_id, estoque_inicial, custo_total_inicial, 'saldo_inicial', 'Criação de novo produto.', timestamp_atual))
 
         conn.commit()
-        print(f"Produto '{nome}' adicionado com custo médio de {custo_medio_inicial:.2f} (Requer preparo: {requer_preparo}).")
+        print(f"Produto '{nome}' (ID: {new_product_id}) adicionado e saldo inicial registrado no ledger.")
         return True
 
     except sqlite3.IntegrityError:
         print(f"Erro: O produto '{nome}' já existe.")
+        if conn: conn.rollback()
         return False
     except sqlite3.Error as e:
         print(f"Ocorreu um erro ao adicionar o produto: {e}")
+        if conn: conn.rollback()
         return False
     finally:
         if conn:
@@ -146,57 +162,55 @@ def adicionar_novo_produto(nome, descricao, foto_url, preco_venda, estoque_inici
 
 def obter_todos_produtos():
     """
-    Busca todos os produtos com estoque, lendo o custo médio diretamente do banco
-    e calculando o lucro.
+    Busca todos os produtos com estoque positivo, calculando saldo e custo reais
+    a partir do ledger para exibir no cardápio do cliente.
     """
+    # Passo 1: Obter o mapa de custos médios reais
+    mapa_custos = obter_mapa_custo_medio_atual()
+    conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # A query agora busca p.custo_medio em vez de p.custo_total_do_estoque
         cursor.execute('''
-            SELECT p.id, p.nome, p.descricao, p.foto_url, p.preco_venda, p.estoque_atual, 
-                p.custo_medio, c.nome as categoria_nome, p.categoria_id, p.requer_preparo,
-                c.ordem as categoria_ordem, p.ordem as produto_ordem
+            SELECT 
+                p.id, p.nome, p.descricao, p.foto_url, p.preco_venda, 
+                c.nome as categoria_nome, p.categoria_id, p.requer_preparo,
+                c.ordem as categoria_ordem, p.ordem as produto_ordem,
+                (SELECT COALESCE(SUM(m.quantidade), 0) FROM estoque_movimentacoes m WHERE m.produto_id = p.id) as estoque_calculado
             FROM produtos p
             LEFT JOIN categorias c ON p.categoria_id = c.id
-            WHERE p.estoque_atual > 0
-            ORDER BY c.ordem, p.ordem, p.nome 
+            GROUP BY p.id
+            HAVING estoque_calculado > 0
+            ORDER BY c.ordem, p.ordem, p.nome
         ''')
         
         produtos_tuplas = cursor.fetchall()
         produtos_lista = []
         for tupla in produtos_tuplas:
-            # Desempacota os valores, incluindo o novo custo_medio
-            id_produto, nome, descricao, foto_url, preco_venda, estoque, custo_medio, categoria, categoria_id, requer_preparo, categoria_ordem, produto_ordem = tupla
+            id_produto, nome, descricao, foto_url, preco_venda, categoria, categoria_id, requer_preparo, categoria_ordem, produto_ordem, estoque = tupla
             
-            # O lucro é simplesmente a diferença entre o preço de venda e o custo médio já armazenado
-            lucro = preco_venda - custo_medio
+            # Passo 2: Usa o custo médio do nosso mapa
+            custo_medio_real = mapa_custos.get(id_produto, 0)
+            lucro = preco_venda - custo_medio_real
 
-            # A lógica para buscar o último preço de compra para o formulário continua útil
+            # Lógica do último preço de compra
             cursor.execute('''
-                SELECT custo_unitario_compra 
-                FROM entradas_de_estoque 
-                WHERE id_produto = ? AND quantidade_comprada > 0
-                ORDER BY data_entrada DESC 
-                LIMIT 1
+                SELECT custo_unitario_compra FROM entradas_de_estoque 
+                WHERE id_produto = ? AND quantidade_comprada > 0 ORDER BY data_entrada DESC LIMIT 1
             ''', (id_produto,))
-            
             ultimo_preco_compra_resultado = cursor.fetchone()
-            # Se não houver histórico de compra, o último preço é o custo médio atual.
-            ultimo_preco_compra = ultimo_preco_compra_resultado[0] if ultimo_preco_compra_resultado else custo_medio
+            ultimo_preco_compra = ultimo_preco_compra_resultado[0] if ultimo_preco_compra_resultado else custo_medio_real
 
             produtos_lista.append({
                 'id': id_produto, 'nome': nome, 'descricao': descricao, 'foto_url': foto_url,
-                'preco_venda': preco_venda, 'estoque': estoque, 'custo_medio': custo_medio,
+                'preco_venda': preco_venda, 'estoque': estoque, 'custo_medio': custo_medio_real,
                 'lucro': lucro, 'categoria': categoria, 'categoria_id': categoria_id,
                 'ultimo_preco_compra': ultimo_preco_compra, 'requer_preparo': requer_preparo,
-                'categoria_ordem': categoria_ordem, # <-- Ordem da categoria adicionada
-                'produto_ordem': produto_ordem      # <-- Ordem do produto adicionada
+                'categoria_ordem': categoria_ordem, 'produto_ordem': produto_ordem
             })
         
         return produtos_lista
-
     except sqlite3.Error as e:
         print(f"Ocorreu um erro ao obter os produtos: {e}")
         return []
@@ -206,51 +220,52 @@ def obter_todos_produtos():
 
 def obter_todos_produtos_para_gestao():
     """
-    Busca TODOS os produtos para a tela de gestão, lendo o custo médio diretamente
-    do banco e calculando o lucro.
+    Busca TODOS os produtos para a tela de gestão, calculando estoque e custo
+    reais a partir do ledger.
     """
+    # Passo 1: Obter o mapa de custos médios reais
+    mapa_custos = obter_mapa_custo_medio_atual()
+    conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # Query atualizada para buscar p.custo_medio
+        # A query agora foca apenas nos dados do produto e no cálculo de estoque
         cursor.execute('''
-            SELECT p.id, p.nome, p.descricao, p.foto_url, p.preco_venda, p.estoque_atual, p.custo_medio, c.nome as categoria_nome, p.categoria_id, p.requer_preparo
+            SELECT 
+                p.id, p.nome, p.descricao, p.foto_url, p.preco_venda, 
+                c.nome as categoria_nome, p.categoria_id, p.requer_preparo,
+                (SELECT COALESCE(SUM(m.quantidade), 0) FROM estoque_movimentacoes m WHERE m.produto_id = p.id) as estoque_calculado
             FROM produtos p
             LEFT JOIN categorias c ON p.categoria_id = c.id
-            ORDER BY c.ordem, p.ordem, p.nome 
+            ORDER BY c.ordem, p.ordem, p.nome
         ''')
         
         produtos_tuplas = cursor.fetchall()
         produtos_lista = []
         for tupla in produtos_tuplas:
-            # Desempacota os valores, incluindo o novo custo_medio
-            id_produto, nome, descricao, foto_url, preco_venda, estoque, custo_medio, categoria, categoria_id, requer_preparo = tupla
+            id_produto, nome, descricao, foto_url, preco_venda, categoria, categoria_id, requer_preparo, estoque = tupla
             
-            # Cálculo de lucro simplificado
-            lucro = preco_venda - custo_medio
+            # Passo 2: Usa o custo médio do nosso mapa
+            custo_medio_real = mapa_custos.get(id_produto, 0)
+            lucro = preco_venda - custo_medio_real
 
-            # Lógica para buscar o último preço de compra para preencher o formulário
+            # A busca pelo último preço de compra continua útil para o formulário
             cursor.execute('''
-                SELECT custo_unitario_compra 
-                FROM entradas_de_estoque 
-                WHERE id_produto = ? AND quantidade_comprada > 0
-                ORDER BY data_entrada DESC 
-                LIMIT 1
+                SELECT custo_unitario_compra FROM entradas_de_estoque 
+                WHERE id_produto = ? AND quantidade_comprada > 0 ORDER BY data_entrada DESC LIMIT 1
             ''', (id_produto,))
-            
             ultimo_preco_compra_resultado = cursor.fetchone()
-            ultimo_preco_compra = ultimo_preco_compra_resultado[0] if ultimo_preco_compra_resultado else custo_medio
+            ultimo_preco_compra = ultimo_preco_compra_resultado[0] if ultimo_preco_compra_resultado else custo_medio_real
 
             produtos_lista.append({
                 'id': id_produto, 'nome': nome, 'descricao': descricao, 'foto_url': foto_url,
-                'preco_venda': preco_venda, 'estoque': estoque, 'custo_medio': custo_medio,
+                'preco_venda': preco_venda, 'estoque': estoque, 'custo_medio': custo_medio_real,
                 'lucro': lucro, 'categoria': categoria, 'categoria_id': categoria_id,
                 'ultimo_preco_compra': ultimo_preco_compra, 'requer_preparo': requer_preparo
             })
         
         return produtos_lista
-
     except sqlite3.Error as e:
         print(f"Ocorreu um erro ao obter os produtos para gestão: {e}")
         return []
@@ -358,74 +373,52 @@ def excluir_produto(id_produto):
 
 def adicionar_estoque(id_produto, quantidade_adicionada, custo_unitario_movimentacao):
     """
-    Adiciona ou remove estoque, recalculando o custo médio ponderado do produto
-    e registrando a entrada no histórico.
+    Registra uma movimentação de estoque (compra ou ajuste) no ledger.
+    A função não calcula mais o custo médio nem altera a tabela de produtos.
     """
+    # Determina a origem com base no sinal da quantidade
+    if quantidade_adicionada > 0:
+        origem = 'compra'
+        observacao = 'Entrada de estoque manual.'
+    else:
+        origem = 'ajuste'
+        observacao = 'Ajuste de perda/sobra manual.'
+
+    # Calcula o custo total da movimentação
+    custo_total = quantidade_adicionada * custo_unitario_movimentacao
+
+    conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # PASSO 1: Ler o estado atual do produto (estoque e custo médio)
-        cursor.execute("SELECT estoque_atual, custo_medio FROM produtos WHERE id = ?", (id_produto,))
-        resultado = cursor.fetchone()
-        if not resultado:
-            print(f"Erro: Produto com ID {id_produto} não encontrado.")
-            return False
-        
-        estoque_atual, custo_medio_atual = resultado
-        novo_custo_medio = custo_medio_atual # Valor padrão inicial
+        # Prepara os dados para a inserção no ledger
+        movimentacao = (
+            id_produto,
+            quantidade_adicionada,
+            custo_total,
+            origem,
+            None,  # referencia_id
+            observacao,
+            datetime.now(timezone.utc).isoformat(), # created_at
+            None   # local_id (não disponível neste fluxo por enquanto)
+        )
 
-        # PASSO 2: Calcular o novo estoque
-        novo_estoque = estoque_atual + quantidade_adicionada
-        if novo_estoque < 0:
-            print(f"Erro: A operação resultaria em estoque negativo ({novo_estoque}). Operação cancelada.")
-            return False
-
-        # PASSO 3: Calcular o novo custo médio com base na operação
-        if novo_estoque > 0:
-            # Calcula o valor total do estoque antigo
-            valor_total_estoque_antigo = estoque_atual * custo_medio_atual
-
-            if quantidade_adicionada > 0:
-                # LÓGICA DE COMPRA (Cenário 1)
-                valor_da_nova_compra = quantidade_adicionada * custo_unitario_movimentacao
-                novo_valor_total = valor_total_estoque_antigo + valor_da_nova_compra
-                novo_custo_medio = novo_valor_total / novo_estoque
-            
-            elif quantidade_adicionada < 0 and custo_unitario_movimentacao == 0:
-                # LÓGICA DE PERDA (Cenário 2)
-                # O valor total do estoque permanece o mesmo, mas é dividido por menos itens.
-                novo_custo_medio = valor_total_estoque_antigo / novo_estoque
-
-            elif quantidade_adicionada < 0 and custo_unitario_movimentacao > 0:
-                # LÓGICA DE CORREÇÃO DE ERRO
-                valor_a_reverter = abs(quantidade_adicionada) * custo_unitario_movimentacao
-                novo_valor_total = valor_total_estoque_antigo - valor_a_reverter
-                novo_custo_medio = novo_valor_total / novo_estoque
-
-        else: # Se o novo estoque for 0, o custo médio também deve ser 0
-            novo_custo_medio = 0
-
-        # PASSO 4: Atualizar o produto com os novos valores de estoque e custo médio
+        # Insere o registro único no ledger
         cursor.execute('''
-            UPDATE produtos 
-            SET estoque_atual = ?, custo_medio = ?
-            WHERE id = ?
-        ''', (novo_estoque, novo_custo_medio, id_produto))
-
-        # PASSO 5: Registrar esta movimentação no histórico (esta parte não muda)
-        data_atual = datetime.datetime.now().isoformat()
-        cursor.execute('''
-            INSERT INTO entradas_de_estoque (id_produto, quantidade_comprada, custo_unitario_compra, data_entrada)
-            VALUES (?, ?, ?, ?)
-        ''', (id_produto, quantidade_adicionada, custo_unitario_movimentacao, data_atual))
+            INSERT INTO estoque_movimentacoes
+            (produto_id, quantidade, custo_total_movimentacao, origem, referencia_id, observacao, created_at, local_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', movimentacao)
 
         conn.commit()
-        print(f"Estoque do produto ID {id_produto} atualizado. Novo estoque: {novo_estoque}. Novo Custo Médio: {novo_custo_medio:.2f}.")
+        print(f"Movimentação de {quantidade_adicionada} para o produto ID {id_produto} registrada no ledger.")
         return True
 
     except sqlite3.Error as e:
-        print(f"Ocorreu um erro ao adicionar estoque: {e}")
+        print(f"ERRO ao registrar movimentação de estoque no ledger: {e}")
+        if conn:
+            conn.rollback()
         return False
     finally:
         if conn:
@@ -572,8 +565,8 @@ def _normalizar_e_ordenar_itens(itens_recebidos, cursor):
 
 def salvar_novo_pedido(dados_do_pedido, local_id):
     """
-    Salva um novo pedido, lendo o custo médio de cada item no momento da venda
-    e armazenando essa informação no JSON do pedido.
+    Salva um novo pedido, registrando a saída de cada item no ledger de estoque
+    (tabela estoque_movimentacoes).
     """
     conn = None
     try:
@@ -581,21 +574,20 @@ def salvar_novo_pedido(dados_do_pedido, local_id):
         cursor = conn.cursor()
 
         proxima_senha = obter_proxima_senha_diaria()
+        timestamp_atual = datetime.now(timezone.utc).isoformat()
 
+        # --- Lógica de Preparação do Pedido (inalterada) ---
         ids_dos_produtos = [item['id'] for item in dados_do_pedido['itens']]
-        if not ids_dos_produtos: 
+        if not ids_dos_produtos:
             return None
 
         placeholders = ','.join('?' for _ in ids_dos_produtos)
         cursor.execute(f"SELECT requer_preparo FROM produtos WHERE id IN ({placeholders})", ids_dos_produtos)
         resultados_preparo = cursor.fetchall()
-
         fluxo_e_simples = all(resultado[0] == 0 for resultado in resultados_preparo)
 
-        # Primeiro, normaliza e ordena a lista de itens recebida
         itens_ordenados = _normalizar_e_ordenar_itens(dados_do_pedido['itens'], cursor)
 
-        # Depois, enriquece a lista JÁ ORDENADA com os dados de custo
         itens_finais_para_salvar = []
         for item in itens_ordenados:
             cursor.execute("SELECT custo_medio FROM produtos WHERE id = ?", (item['id'],))
@@ -606,33 +598,50 @@ def salvar_novo_pedido(dados_do_pedido, local_id):
             itens_finais_para_salvar.append(item_com_custo)
 
         itens_como_json = json.dumps(itens_finais_para_salvar)
-        timestamp_atual = datetime.datetime.now().isoformat()
         valor_total = sum(item['preco'] * item['quantidade'] for item in dados_do_pedido['itens'])
 
-        # COMANDO SQL ATUALIZADO
+        # --- Inserção do Pedido (inalterada) ---
         cursor.execute('''
             INSERT INTO pedidos (nome_cliente, status, metodo_pagamento, modalidade, valor_total, timestamp_criacao, itens_json, fluxo_simples, senha_diaria, local_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             dados_do_pedido['nome_cliente'], 'aguardando_pagamento',
-            dados_do_pedido['metodo_pagamento'], dados_do_pedido['modalidade'], # <-- Dado da modalidade extraído
+            dados_do_pedido['metodo_pagamento'], dados_do_pedido['modalidade'],
             valor_total, timestamp_atual, itens_como_json, 1 if fluxo_e_simples else 0, proxima_senha,
-            local_id # <-- Dado do local_id agora sendo usado
+            local_id
         ))
-
         id_do_pedido_salvo = cursor.lastrowid
 
-        for item in dados_do_pedido['itens']:
-            cursor.execute('''
-                UPDATE produtos
-                SET estoque_atual = estoque_atual - ?,
-                    estoque_reservado = estoque_reservado + ?
-                WHERE id = ?
-            ''', (item['quantidade'], item['quantidade'], item['id']))
+        # --- NOVA LÓGICA DE REGISTRO NO LEDGER DE ESTOQUE ---
+        ledger_agregado = {}
+        for item in itens_finais_para_salvar:
+            produto_id = item['id']
+            quantidade = item['quantidade']
+            # Se o produto já está no nosso agregado, soma a quantidade. Senão, adiciona.
+            ledger_agregado[produto_id] = ledger_agregado.get(produto_id, 0) + quantidade
+        
+        # Agora, cria as movimentações a partir do dicionário agregado
+        movimentacoes_ledger = []
+        for produto_id, quantidade_total in ledger_agregado.items():
+            movimentacoes_ledger.append((
+                produto_id,
+                -quantidade_total,  # A quantidade total, como um número negativo para saída
+                'pedido',             # origem
+                id_do_pedido_salvo,   # referencia_id
+                None,                 # observacao
+                timestamp_atual,      # created_at
+                local_id              # local_id
+            ))
 
+        cursor.executemany('''
+            INSERT INTO estoque_movimentacoes
+            (produto_id, quantidade, origem, referencia_id, observacao, created_at, local_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', movimentacoes_ledger)
+        
         conn.commit()
 
-        print(f"SUCESSO: Pedido #{id_do_pedido_salvo} criado com SENHA DIÁRIA #{proxima_senha}, CUSTO REGISTRADO e estoque RESERVADO.")
+        print(f"SUCESSO: Pedido #{id_do_pedido_salvo} criado e saídas registradas no ledger.")
         return {'id': id_do_pedido_salvo, 'senha': proxima_senha}
 
     except sqlite3.Error as e:
@@ -642,9 +651,7 @@ def salvar_novo_pedido(dados_do_pedido, local_id):
         return None
     finally:
         if conn:
-            conn.close()
-
-    
+            conn.close() 
 
 def confirmar_pagamento_pedido(id_do_pedido):
     """
@@ -656,7 +663,7 @@ def confirmar_pagamento_pedido(id_do_pedido):
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        timestamp_atual = datetime.datetime.now().isoformat()
+        timestamp_atual = datetime.now(timezone.utc).isoformat()
 
         cursor.execute("""
             UPDATE pedidos
@@ -826,7 +833,7 @@ def entregar_pedido(id_do_pedido):
             """, (quantidade_vendida, id_produto))
 
         # Atualiza o pedido para 'finalizado' e salva o custo total daquela venda
-        timestamp_final = datetime.datetime.now().isoformat()
+        timestamp_final = datetime.now(timezone.utc).isoformat()
         cursor.execute("""
             UPDATE pedidos
             SET status = 'finalizado',
@@ -848,48 +855,68 @@ def entregar_pedido(id_do_pedido):
 
 def cancelar_pedido(id_do_pedido):
     """
-    Cancela um pedido, devolvendo o estoque reservado ao estoque atual
+    Cancela um pedido, registrando a devolução de cada item no ledger de estoque
     e mudando o status para 'cancelado'.
     """
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
+        # Usamos row_factory para facilitar o acesso aos dados do pedido como dicionário
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
-        cursor.execute("SELECT itens_json FROM pedidos WHERE id = ?", (id_do_pedido,))
-        resultado = cursor.fetchone()
-        if not resultado:
+        # 1. Busca os dados do pedido original (itens e local)
+        cursor.execute("SELECT itens_json, local_id FROM pedidos WHERE id = ?", (id_do_pedido,))
+        pedido = cursor.fetchone()
+
+        if not pedido:
             print(f"AVISO: Tentativa de cancelar pedido #{id_do_pedido} que não existe.")
             return False
 
-        itens_do_pedido = json.loads(resultado[0])
+        itens_do_pedido = json.loads(pedido['itens_json'])
+        local_id_do_pedido = pedido['local_id']
+        timestamp_cancelamento = datetime.now(timezone.utc).isoformat()
 
+        # 2. Prepara as movimentações de estorno para o ledger
+        movimentacoes_estorno = []
         for item in itens_do_pedido:
-            cursor.execute("""
-                UPDATE produtos
-                SET estoque_reservado = estoque_reservado - ?,
-                    estoque_atual = estoque_atual + ?
-                WHERE id = ?
-            """, (item['quantidade'], item['quantidade'], item['id']))
-        
-        # ATUALIZA O STATUS PARA 'CANCELADO'
-        timestamp_final = datetime.datetime.now().isoformat()
+            movimentacoes_estorno.append((
+                item['id'],           # produto_id
+                item['quantidade'],   # quantidade (positiva para estorno/devolução)
+                'cancelamento',       # origem
+                id_do_pedido,         # referencia_id
+                None,                 # observacao
+                timestamp_cancelamento, # created_at
+                local_id_do_pedido    # local_id
+            ))
+
+        # 3. Insere todos os estornos de uma vez no ledger (se houver itens)
+        if movimentacoes_estorno:
+            cursor.executemany('''
+                INSERT INTO estoque_movimentacoes
+                (produto_id, quantidade, origem, referencia_id, observacao, created_at, local_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', movimentacoes_estorno)
+
+        # 4. Atualiza o status do pedido para 'cancelado' (lógica original preservada)
         cursor.execute("""
-            UPDATE pedidos 
-            SET status = 'cancelado', timestamp_finalizacao = ? 
+            UPDATE pedidos
+            SET status = 'cancelado', timestamp_finalizacao = ?
             WHERE id = ?
-        """, (timestamp_final, id_do_pedido))
+        """, (timestamp_cancelamento, id_do_pedido))
 
         conn.commit()
-        print(f"SUCESSO: Pedido #{id_do_pedido} cancelado e estoque devolvido.")
+        print(f"SUCESSO: Pedido #{id_do_pedido} cancelado e estoque estornado no ledger.")
         return True
 
     except sqlite3.Error as e:
         print(f"ERRO ao cancelar o pedido #{id_do_pedido}: {e}")
-        if conn: conn.rollback()
+        if conn:
+            conn.rollback()
         return False
     finally:
-        if conn: conn.close()
+        if conn:
+            conn.close()
 
 def chamar_cliente_pedido(id_do_pedido):
     """
@@ -1664,156 +1691,140 @@ def atualizar_categoria_produto(id_produto, nova_categoria_id):
         if conn:
             conn.close()
 
-def obter_entradas_estoque_por_produto(data_fim):
+def executar_backfill_estoque_inicial():
     """
-    Calcula o total de movimentações de entrada (compras, ajustes positivos/negativos)
-    para cada produto até uma data específica.
-
-    Args:
-        data_fim (str): Timestamp ISO 8601 do fim do período de contagem.
-
-    Returns:
-        dict: Um dicionário no formato {id_produto: total_movimentado}.
+    Executa uma migração única para popular a tabela estoque_movimentacoes
+    com o saldo inicial de cada produto, baseado no campo legado 'estoque_atual'.
+    Esta função deve ser executada apenas uma vez.
     """
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
-        query = """
-            SELECT id_produto, SUM(quantidade_comprada)
-            FROM entradas_de_estoque
-            WHERE data_entrada <= ?
-            GROUP BY id_produto
-        """
-        cursor.execute(query, (data_fim,))
-        # Converte a lista de tuplas em um dicionário para fácil acesso
-        return {row[0]: row[1] for row in cursor.fetchall()}
+
+        # 1. Busca todos os produtos com estoque legado.
+        cursor.execute("SELECT id, estoque_atual FROM produtos WHERE estoque_atual > 0")
+        produtos_com_estoque = cursor.fetchall()
+
+        # 2. Prepara os dados para a inserção em lote.
+        movimentacoes_para_inserir = []
+        timestamp_antigo = datetime.datetime(2020, 1, 1).isoformat()
+
+        for produto_id, estoque_atual in produtos_com_estoque:
+            movimentacoes_para_inserir.append((
+                produto_id,
+                estoque_atual,
+                'saldo_inicial',
+                None,  # referencia_id
+                'Migração do sistema antigo.', # observacao
+                timestamp_antigo,
+                None # local_id
+            ))
+
+        # 3. Insere todos os saldos iniciais de uma vez.
+        # O IGNORE garante que, se a função for executada por engano
+        # mais de uma vez, ela não irá falhar nem duplicar dados.
+        cursor.executemany('''
+            INSERT OR IGNORE INTO estoque_movimentacoes 
+            (produto_id, quantidade, origem, referencia_id, observacao, created_at, local_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', movimentacoes_para_inserir)
+
+        conn.commit()
+        print(f"Backfill concluído. {cursor.rowcount} saldos iniciais foram migrados para o ledger de estoque.")
+        return True
 
     except sqlite3.Error as e:
-        print(f"ERRO ao obter entradas de estoque agregadas: {e}")
-        return {}
+        print(f"ERRO CRÍTICO durante o backfill de estoque: {e}")
+        if conn:
+            conn.rollback()
+        return False
     finally:
         if conn:
             conn.close()
 
-def obter_saidas_venda_por_produto(data_fim):
+def obter_movimentacoes_periodo(inicio, fim, local_id='todos'):
     """
-    Calcula o total de saídas por venda para cada produto, analisando
-    os pedidos finalizados até uma data específica.
-
-    Args:
-        data_fim (str): Timestamp ISO 8601 do fim do período de contagem.
-
-    Returns:
-        dict: Um dicionário no formato {id_produto: total_vendido}.
-    """
-    saidas_por_produto = {}
-    conn = None
-    try:
-        conn = sqlite3.connect(NOME_BANCO_DADOS)
-        cursor = conn.cursor()
-        query = """
-            SELECT itens_json FROM pedidos
-            WHERE status = 'finalizado' AND timestamp_finalizacao <= ?
-        """
-        cursor.execute(query, (data_fim,))
-        
-        for row in cursor.fetchall():
-            try:
-                itens_do_pedido = json.loads(row[0])
-                for item in itens_do_pedido:
-                    produto_id = item['id']
-                    quantidade = item.get('quantidade', 0)
-                    saidas_por_produto[produto_id] = saidas_por_produto.get(produto_id, 0) + quantidade
-            except (json.JSONDecodeError, TypeError):
-                # Ignora pedidos com JSON malformado, como planejado
-                continue
-        
-        return saidas_por_produto
-
-    except sqlite3.Error as e:
-        print(f"ERRO ao obter saídas por venda agregadas: {e}")
-        return {}
-    finally:
-        if conn:
-            conn.close()
-
-def obter_perdas_periodo(inicio, fim):
-    """
-    Busca todos os registros de perdas (movimentações negativas com custo zero)
-    dentro de um período.
-
-    Args:
-        inicio (str): Timestamp ISO 8601 do início do período.
-        fim (str): Timestamp ISO 8601 do fim do período.
-
-    Returns:
-        list: Uma lista de dicionários, onde cada um representa uma perda.
+    Busca todas as movimentações de estoque (ledger) dentro de um período,
+    enriquecendo cada movimentação com o custo médio do produto.
     """
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+
+        # A query agora faz um JOIN para buscar também o p.custo_medio
         query = """
-            SELECT id_produto, quantidade_comprada
-            FROM entradas_de_estoque
-            WHERE quantidade_comprada < 0
-              AND custo_unitario_compra = 0
-              AND data_entrada BETWEEN ? AND ?
+            SELECT
+                m.produto_id,
+                m.quantidade,
+                m.custo_total_movimentacao,
+                m.origem,
+                m.created_at,
+                p.custo_medio
+            FROM estoque_movimentacoes m
+            JOIN produtos p ON m.produto_id = p.id
+            WHERE m.created_at BETWEEN ? AND ?
         """
-        cursor.execute(query, (inicio, fim))
-        # Retorna a lista de perdas já no formato de dicionário
-        return [dict(row) for row in cursor.fetchall()]
+        params = [inicio, fim]
+
+        if local_id != 'todos':
+            query += " AND m.local_id = ?"
+            params.append(int(local_id))
+
+        cursor.execute(query, params)
+        resultados = cursor.fetchall()
+        
+        return [dict(row) for row in resultados]
 
     except sqlite3.Error as e:
-        print(f"ERRO ao obter perdas do período: {e}")
+        print(f"ERRO ao obter movimentações de estoque por período: {e}")
         return []
     finally:
         if conn:
             conn.close()
 
-def _normalizar_e_ordenar_itens(itens_recebidos, cursor):
+def obter_mapa_custo_medio_atual():
     """
-    Garante que uma lista de itens de pedido esteja ordenada pela chave canônica.
-    Chave: categoria_ordem ASC, produto_ordem ASC, id ASC, uid ASC.
-    Esta função não existe no arquivo original e precisará ser criada.
-    O cursor é necessário para buscar dados de ordenação de produtos legados, se necessário.
-    """
-    # Lógica a ser implementada na Tarefa 2
-    print("Aviso: _normalizar_e_ordenar_itens ainda não implementada.")
-    return itens_recebidos # Retorna a lista original por enquanto
-
-def obter_entradas_positivas_periodo(inicio, fim):
-    """
-    Busca o total de entradas de estoque (somente quantidades positivas, i.e., compras)
-    para cada produto dentro de um período específico.
-
-    Args:
-        inicio (str): Timestamp ISO 8601 do início do período.
-        fim (str): Timestamp ISO 8601 do fim do período.
+    Calcula o custo médio atual para todos os produtos com base nas entradas
+    do ledger (compras e saldos iniciais).
 
     Returns:
-        dict: Um dicionário no formato {id_produto: total_comprado}.
+        dict: Um dicionário no formato {produto_id: custo_medio_calculado}.
     """
+    mapa_custos = {}
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
+
+        # A query soma os custos e quantidades de todas as transações de ENTRADA
         query = """
-            SELECT id_produto, SUM(quantidade_comprada)
-            FROM entradas_de_estoque
-            WHERE data_entrada BETWEEN ? AND ?
-              AND quantidade_comprada > 0
-            GROUP BY id_produto
+            SELECT
+                produto_id,
+                SUM(custo_total_movimentacao),
+                SUM(quantidade)
+            FROM estoque_movimentacoes
+            WHERE quantidade > 0
+            GROUP BY produto_id
         """
-        cursor.execute(query, (inicio, fim))
-        # Converte a lista de tuplas em um dicionário para fácil acesso
-        return {row[0]: row[1] for row in cursor.fetchall()}
+        cursor.execute(query)
+        
+        for produto_id, custo_total, quantidade_total in cursor.fetchall():
+            # Evita divisão por zero se a quantidade total for 0 por algum motivo
+            if quantidade_total > 0:
+                custo_medio = custo_total / quantidade_total
+                mapa_custos[produto_id] = custo_medio
+            else:
+                mapa_custos[produto_id] = 0
+        
+        return mapa_custos
 
     except sqlite3.Error as e:
-        print(f"ERRO ao obter entradas positivas do período: {e}")
+        print(f"ERRO ao calcular o mapa de custo médio: {e}")
         return {}
     finally:
         if conn:
             conn.close()
+

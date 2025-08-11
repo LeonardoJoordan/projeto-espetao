@@ -615,34 +615,6 @@ def api_mudar_categoria_produto():
     else:
         return jsonify({"status": "erro", "mensagem": "Falha ao atualizar o banco de dados."}), 500
 
-@app.route('/api/fechamento_dia')
-def api_fechamento_dia():
-    """
-    Nova rota para servir os dados operacionais do dia/período.
-    """
-    # 1. Extrai os parâmetros da URL, com valores padrão para paginação
-    data_inicio_str = request.args.get('inicio')
-    data_fim_str = request.args.get('fim')
-    local_id = request.args.get('local_id', default='todos')
-    page = request.args.get('page', default=1, type=int)
-    limit = request.args.get('limit', default=50, type=int)
-
-    # 2. Validação básica dos parâmetros de data
-    if not data_inicio_str or not data_fim_str:
-        return jsonify({"erro": "Os parâmetros 'inicio' e 'fim' são obrigatórios."}), 400
-
-    # 3. Chama a nova função "trabalhadora" no módulo de analytics
-    dados_fechamento = analytics.fechamento_operacional(
-        inicio=data_inicio_str,
-        fim=data_fim_str,
-        local_id=local_id,
-        page=page,
-        limit=limit
-    )
-
-    # 4. Retorna os dados processados como JSON
-    return jsonify(dados_fechamento)
-
 @app.route('/api/insights/comparativos')
 def api_insights_comparativos():
     """
@@ -715,12 +687,12 @@ def api_fechamento_dia_v2():
             try:
                 tz_sp = pytz.timezone('America/Sao_Paulo')
                 dia_selecionado = datetime.strptime(date_str, '%Y-%m-%d')
-                
+
                 # O dia de trabalho começa às 05:00 do dia D
                 inicio_local = tz_sp.localize(dia_selecionado.replace(hour=5, minute=0, second=0, microsecond=0))
                 # E termina 1 microssegundo antes das 05:00 do dia D+1
                 fim_local = inicio_local + timedelta(days=1, microseconds=-1)
-                
+
                 # Converte para UTC para as queries no banco
                 inicio_str = inicio_local.astimezone(pytz.utc).isoformat()
                 fim_str = fim_local.astimezone(pytz.utc).isoformat()

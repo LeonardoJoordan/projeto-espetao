@@ -344,9 +344,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (confirm('Deseja reiniciar o tempo de preparo para este item?')) {
                 try {
-                    // Chama a nova rota da API que criamos
-                    const k = itemElemento.dataset.k; // Lê a posição 'k' do item
-                    fetch(`/pedido/${pedidoId}/item/${produtoId}/reiniciar?k=${k}`, { method: 'POST' });
+                    // Lê o valor 'k' 0-based do dataset.
+                    const kZeroBased = itemElemento.dataset.k; 
+                    // Converte para número e adiciona 1 para alinhar com a expectativa 1-based do backend.
+                    const kOneBased = Number(kZeroBased) + 1;
+
+                    // Chama a rota da API com o valor de 'k' corrigido (1-based).
+                    fetch(`/pedido/${pedidoId}/item/${produtoId}/reiniciar?k=${kOneBased}`, { method: 'POST' });
                     // Não precisamos fazer mais nada aqui. O backend vai emitir um evento
                     // e a tela irá se atualizar sozinha.
                 } catch (error) {

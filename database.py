@@ -108,14 +108,14 @@ def inicializar_banco():
                 produto_id INTEGER NOT NULL,
                 quantidade INTEGER NOT NULL,
                 custo_total_movimentacao REAL NOT NULL DEFAULT 0,
+                custo_unitario_aplicado REAL,
                 origem TEXT NOT NULL,
                 referencia_id INTEGER,
                 observacao TEXT,
                 created_at TEXT NOT NULL,
                 local_id INTEGER,
                 FOREIGN KEY (produto_id) REFERENCES produtos (id) ON DELETE CASCADE,
-                FOREIGN KEY (local_id) REFERENCES locais (id),
-                UNIQUE(origem, referencia_id, produto_id)
+                FOREIGN KEY (local_id) REFERENCES locais (id)
             )
         ''')
         print("Tabela 'estoque_movimentacoes' verificada/criada.")

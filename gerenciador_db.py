@@ -373,41 +373,48 @@ def excluir_produto(id_produto):
 def adicionar_estoque(id_produto, quantidade_adicionada, custo_unitario_movimentacao):
     """
     Registra uma movimentação de estoque (compra ou ajuste) no ledger.
-    A função não calcula mais o custo médio nem altera a tabela de produtos.
+    - Para entradas, registra o custo total da movimentação.
+    - Para saídas (ajustes), fotografa o custo médio atual do produto.
     """
-    # Determina a origem com base no sinal da quantidade
-    if quantidade_adicionada > 0:
-        origem = 'compra'
-        observacao = 'Entrada de estoque manual.'
-    else:
-        origem = 'ajuste'
-        observacao = 'Ajuste de perda/sobra manual.'
-
-    # Calcula o custo total da movimentação
-    custo_total = quantidade_adicionada * custo_unitario_movimentacao
-
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # Prepara os dados para a inserção no ledger
+        custo_total_mov = 0
+        custo_unitario_snap = None # Snapshot do custo para saídas
+
+        if quantidade_adicionada > 0:
+            # Lógica para ENTRADAS (Compras)
+            origem = 'compra'
+            observacao = 'Entrada de estoque manual.'
+            custo_total_mov = quantidade_adicionada * custo_unitario_movimentacao
+        else:
+            # Lógica para SAÍDAS (Ajustes/Perdas)
+            origem = 'ajuste'
+            observacao = 'Ajuste de perda/sobra manual.'
+            # Busca o custo médio atual para "fotografar" na saída
+            mapa_custos = obter_mapa_custo_medio_atual()
+            custo_unitario_snap = mapa_custos.get(int(id_produto), 0)
+
+        # Prepara os dados para a inserção no ledger (agora com 9 colunas)
         movimentacao = (
             id_produto,
             quantidade_adicionada,
-            custo_total,
+            custo_total_mov,         # Custo total (para entradas)
+            custo_unitario_snap,     # Custo médio (para saídas)
             origem,
-            None,  # referencia_id
+            None,                    # referencia_id
             observacao,
             datetime.now(timezone.utc).isoformat(), # created_at
-            None   # local_id (não disponível neste fluxo por enquanto)
+            None                     # local_id
         )
 
-        # Insere o registro único no ledger
+        # Insere o registro no ledger
         cursor.execute('''
             INSERT INTO estoque_movimentacoes
-            (produto_id, quantidade, custo_total_movimentacao, origem, referencia_id, observacao, created_at, local_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (produto_id, quantidade, custo_total_movimentacao, custo_unitario_aplicado, origem, referencia_id, observacao, created_at, local_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', movimentacao)
 
         conn.commit()
@@ -565,79 +572,72 @@ def _normalizar_e_ordenar_itens(itens_recebidos, cursor):
 def salvar_novo_pedido(dados_do_pedido, local_id):
     """
     Salva um novo pedido, registrando a saída de cada item no ledger de estoque
-    (tabela estoque_movimentacoes).
+    e fotografando o custo médio de cada produto no momento da transação.
     """
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
+        # --- Lógica de Preparação do Pedido ---
         proxima_senha = obter_proxima_senha_diaria()
         timestamp_atual = datetime.now(timezone.utc).isoformat()
-
-        # --- Lógica de Preparação do Pedido (inalterada) ---
         ids_dos_produtos = [item['id'] for item in dados_do_pedido['itens']]
-        if not ids_dos_produtos:
-            return None
-
+        if not ids_dos_produtos: return None
         placeholders = ','.join('?' for _ in ids_dos_produtos)
         cursor.execute(f"SELECT requer_preparo FROM produtos WHERE id IN ({placeholders})", ids_dos_produtos)
         resultados_preparo = cursor.fetchall()
         fluxo_e_simples = all(resultado[0] == 0 for resultado in resultados_preparo)
-
         itens_ordenados = _normalizar_e_ordenar_itens(dados_do_pedido['itens'], cursor)
-
-        itens_finais_para_salvar = []
-        for item in itens_ordenados:
-            cursor.execute("SELECT custo_medio FROM produtos WHERE id = ?", (item['id'],))
-            resultado = cursor.fetchone()
-            custo_a_registrar = resultado[0] if resultado else 0
-            item_com_custo = item.copy()
-            item_com_custo['custo_unitario'] = custo_a_registrar
-            itens_finais_para_salvar.append(item_com_custo)
-
-        itens_como_json = json.dumps(itens_finais_para_salvar)
         valor_total = sum(item['preco'] * item['quantidade'] for item in dados_do_pedido['itens'])
 
-        # --- Inserção do Pedido (inalterada) ---
+        # --- Inserção do Pedido ---
         cursor.execute('''
             INSERT INTO pedidos (nome_cliente, status, metodo_pagamento, modalidade, valor_total, timestamp_criacao, itens_json, fluxo_simples, senha_diaria, local_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             dados_do_pedido['nome_cliente'], 'aguardando_pagamento',
             dados_do_pedido['metodo_pagamento'], dados_do_pedido['modalidade'],
-            valor_total, timestamp_atual, itens_como_json, 1 if fluxo_e_simples else 0, proxima_senha,
+            valor_total, timestamp_atual, json.dumps(itens_ordenados), 1 if fluxo_e_simples else 0, proxima_senha,
             local_id
         ))
         id_do_pedido_salvo = cursor.lastrowid
 
         # --- NOVA LÓGICA DE REGISTRO NO LEDGER DE ESTOQUE ---
+
+        # 1. Busca o mapa de custos atualizado ANTES de registrar as saídas.
+        mapa_custos = obter_mapa_custo_medio_atual()
+
+        # 2. Agrega os itens para registrar uma única saída por produto.
         ledger_agregado = {}
-        for item in itens_finais_para_salvar:
+        for item in itens_ordenados:
             produto_id = item['id']
             quantidade = item['quantidade']
-            # Se o produto já está no nosso agregado, soma a quantidade. Senão, adiciona.
             ledger_agregado[produto_id] = ledger_agregado.get(produto_id, 0) + quantidade
-        
-        # Agora, cria as movimentações a partir do dicionário agregado
+
+        # 3. Prepara as movimentações com o custo "fotografado".
         movimentacoes_ledger = []
         for produto_id, quantidade_total in ledger_agregado.items():
+            custo_unitario_snap = mapa_custos.get(produto_id, 0)
             movimentacoes_ledger.append((
                 produto_id,
-                -quantidade_total,  # A quantidade total, como um número negativo para saída
-                'pedido',             # origem
-                id_do_pedido_salvo,   # referencia_id
-                None,                 # observacao
-                timestamp_atual,      # created_at
-                local_id              # local_id
+                -quantidade_total,
+                0,                       # custo_total_movimentacao (0 para saídas)
+                custo_unitario_snap,     # custo_unitario_aplicado (o snapshot)
+                'pedido',
+                id_do_pedido_salvo,
+                None,
+                timestamp_atual,
+                local_id
             ))
 
+        # 4. Insere as movimentações no ledger com a query correta (9 colunas).
         cursor.executemany('''
             INSERT INTO estoque_movimentacoes
-            (produto_id, quantidade, origem, referencia_id, observacao, created_at, local_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (produto_id, quantidade, custo_total_movimentacao, custo_unitario_aplicado, origem, referencia_id, observacao, created_at, local_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', movimentacoes_ledger)
-        
+
         conn.commit()
 
         print(f"SUCESSO: Pedido #{id_do_pedido_salvo} criado e saídas registradas no ledger.")
@@ -650,7 +650,7 @@ def salvar_novo_pedido(dados_do_pedido, local_id):
         return None
     finally:
         if conn:
-            conn.close() 
+            conn.close()
 
 def confirmar_pagamento_pedido(id_do_pedido):
     """
@@ -854,50 +854,52 @@ def entregar_pedido(id_do_pedido):
 
 def cancelar_pedido(id_do_pedido):
     """
-    Cancela um pedido, registrando a devolução de cada item no ledger de estoque
-    e mudando o status para 'cancelado'.
+    Cancela um pedido. Busca as saídas originais no ledger para reverter o estoque
+    com o mesmo custo, e então muda o status do pedido para 'cancelado'.
     """
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
-        # Usamos row_factory para facilitar o acesso aos dados do pedido como dicionário
-        conn.row_factory = sqlite3.Row
+        conn.row_factory = sqlite3.Row # Facilita o acesso aos dados como dicionário
         cursor = conn.cursor()
 
-        # 1. Busca os dados do pedido original (itens e local)
-        cursor.execute("SELECT itens_json, local_id FROM pedidos WHERE id = ?", (id_do_pedido,))
-        pedido = cursor.fetchone()
-
-        if not pedido:
-            print(f"AVISO: Tentativa de cancelar pedido #{id_do_pedido} que não existe.")
-            return False
-
-        itens_do_pedido = json.loads(pedido['itens_json'])
-        local_id_do_pedido = pedido['local_id']
         timestamp_cancelamento = datetime.now(timezone.utc).isoformat()
 
-        # 2. Prepara as movimentações de estorno para o ledger
-        movimentacoes_estorno = []
-        for item in itens_do_pedido:
-            movimentacoes_estorno.append((
-                item['id'],           # produto_id
-                item['quantidade'],   # quantidade (positiva para estorno/devolução)
-                'cancelamento',       # origem
-                id_do_pedido,         # referencia_id
-                None,                 # observacao
-                timestamp_cancelamento, # created_at
-                local_id_do_pedido    # local_id
-            ))
+        # 1. Busca as movimentações de SAÍDA originais do pedido no ledger.
+        cursor.execute("""
+            SELECT produto_id, quantidade, custo_unitario_aplicado, local_id
+            FROM estoque_movimentacoes
+            WHERE origem = 'pedido' AND referencia_id = ?
+        """, (id_do_pedido,))
+        saidas_originais = cursor.fetchall()
 
-        # 3. Insere todos os estornos de uma vez no ledger (se houver itens)
-        if movimentacoes_estorno:
+        # 2. Prepara as movimentações de estorno (ENTRADA) com base nas saídas.
+        movimentacoes_estorno = []
+        if saidas_originais:
+            for mov in saidas_originais:
+                quantidade_devolvida = abs(mov['quantidade'])
+                custo_da_saida = mov['custo_unitario_aplicado'] or 0
+
+                movimentacoes_estorno.append((
+                    mov['produto_id'],
+                    quantidade_devolvida,
+                    quantidade_devolvida * custo_da_saida, # custo_total_movimentacao
+                    None,                                  # custo_unitario_aplicado (NULL para entradas)
+                    'cancelamento',                        # origem
+                    id_do_pedido,                          # referencia_id
+                    f"Estorno do pedido #{id_do_pedido}",  # observacao
+                    timestamp_cancelamento,                # created_at
+                    mov['local_id']                        # local_id
+                ))
+
+            # 3. Insere todos os estornos de uma vez no ledger.
             cursor.executemany('''
                 INSERT INTO estoque_movimentacoes
-                (produto_id, quantidade, origem, referencia_id, observacao, created_at, local_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (produto_id, quantidade, custo_total_movimentacao, custo_unitario_aplicado, origem, referencia_id, observacao, created_at, local_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', movimentacoes_estorno)
 
-        # 4. Atualiza o status do pedido para 'cancelado' (lógica original preservada)
+        # 4. Atualiza o status do pedido para 'cancelado', independentemente de ter itens.
         cursor.execute("""
             UPDATE pedidos
             SET status = 'cancelado', timestamp_finalizacao = ?
@@ -1337,7 +1339,7 @@ def obter_proxima_senha_diaria():
         # Define a data de início da busca pela última senha
         if agora < horario_corte:
             # Regra 1 (Antes das 5h): Busca nas últimas 8 horas
-            data_inicio_busca = agora - datetime.timedelta(hours=8)
+            data_inicio_busca = agora - timedelta(hours=8)
         else:
             # Regra 2 (Depois das 5h): Busca a partir das 5h de hoje
             data_inicio_busca = horario_corte
@@ -1759,6 +1761,7 @@ def obter_movimentacoes_periodo(inicio, fim, local_id='todos'):
                 m.produto_id,
                 m.quantidade,
                 m.custo_total_movimentacao,
+                m.custo_unitario_aplicado,
                 m.origem,
                 m.created_at,
                 p.custo_medio

@@ -113,189 +113,118 @@ def insights_heatmap(inicio, fim, filtros):
 def fechamento_operacional_v2(inicio, fim, local_id, page, limit):
     """
     V2: Orquestra a busca de dados e a serialização para o novo formato da API.
-    Busca os dados brutos e calcula os KPIs e o histórico paginado.
+    Calcula KPIs de lucro e perdas diretamente do ledger de estoque para máxima precisão.
     """
     # === PASSO 1: BUSCAR A "MATÉRIA-PRIMA" DO BANCO DE DADOS ===
     pedidos_finalizados = gerenciador_db.obter_pedidos_finalizados_periodo(inicio, fim, local_id)
     mapa_produtos = gerenciador_db.obter_mapa_produtos_analytics()
-    
     configuracoes = gerenciador_db.obter_configuracoes()
-        
-    # === PASSO 2: CALCULAR KPIS E AGREGAR DADOS ===
-    total_pedidos = len(pedidos_finalizados)
+
+    # Busca TODAS as movimentações de estoque no período para calcular custos
+    movimentacoes_periodo = gerenciador_db.obter_movimentacoes_periodo(inicio, fim, local_id)
+
+    # === PASSO 2: CALCULAR CUSTOS E KPIS DIRETAMENTE DO LEDGER ===
     faturamento_bruto = sum(p['valor_total'] for p in pedidos_finalizados)
-    total_itens_vendidos = 0
-    lucro_estimado = 0
-    total_perdas_ajustes = 0
+    cogs_total = 0  # Custo dos Produtos Vendidos
+    perdas_total = 0
 
-    agregacao_pagamentos = {}
-    agregacao_itens = {}
+    # Itera sobre as movimentações do período para calcular os custos de SAÍDA
+    for mov in movimentacoes_periodo:
+        if mov['quantidade'] < 0: # Apenas saídas
+            custo_da_saida = abs(mov['quantidade']) * (mov.get('custo_unitario_aplicado') or 0)
+            if mov['origem'] == 'pedido':
+                cogs_total += custo_da_saida
+            elif mov['origem'] == 'ajuste':
+                perdas_total += custo_da_saida
 
+    lucro_bruto = faturamento_bruto - cogs_total
+
+    # Desconta as taxas de pagamento para chegar ao lucro líquido final
+    desconto_total_taxas = 0
     for p in pedidos_finalizados:
-        # Calcular Lucro Líquido do Pedido (descontando taxas)
-        lucro_bruto_pedido = p['valor_total'] - (p.get('custo_total_pedido') or 0)
         taxa_percentual = configuracoes.get(f"taxa_{p['metodo_pagamento']}", 0)
-        desconto_taxa = p['valor_total'] * (taxa_percentual / 100.0)
-        lucro_estimado += (lucro_bruto_pedido - desconto_taxa)
+        desconto_total_taxas += p['valor_total'] * (taxa_percentual / 100.0)
 
-        # Agregar por método de pagamento
-        metodo = p['metodo_pagamento']
-        if metodo not in agregacao_pagamentos:
-            agregacao_pagamentos[metodo] = {'valor': 0, 'quantidade': 0}
-        agregacao_pagamentos[metodo]['valor'] += p['valor_total']
-        agregacao_pagamentos[metodo]['quantidade'] += 1
+    lucro_liquido_final = lucro_bruto - desconto_total_taxas
 
-        # Agregar por item individual e categoria
-        try:
-            itens_do_pedido = json.loads(p['itens_json'])
-            for item in itens_do_pedido:
-                produto_id = item['id']
-                total_itens_vendidos += item.get('quantidade', 0)
-
-                if produto_id in mapa_produtos:
-                    if produto_id not in agregacao_itens:
-                        agregacao_itens[produto_id] = {'nome': mapa_produtos[produto_id]['nome'], 'quantidade': 0, 'receita': 0, 'lucro': 0}
-                    
-                    receita_item = item.get('preco', 0) * item.get('quantidade', 0)
-                    custo_item = item.get('custo_unitario', 0) * item.get('quantidade', 0)
-                    
-                    agregacao_itens[produto_id]['quantidade'] += item.get('quantidade', 0)
-                    agregacao_itens[produto_id]['receita'] += receita_item
-                    agregacao_itens[produto_id]['lucro'] += (receita_item - custo_item)
-        except (json.JSONDecodeError, TypeError):
-            continue
-
-    # Formatar dados para os gráficos e listas
-    lista_pagamentos_labels = list(agregacao_pagamentos.keys())
-    vendas_por_pagamento = {
-        "labels": lista_pagamentos_labels,
-        "data": [agregacao_pagamentos[label]['valor'] for label in lista_pagamentos_labels]
-    }
-    
-    lista_itens_bruta = sorted(list(agregacao_itens.values()), key=lambda x: x['quantidade'], reverse=True)
-    itens_top = lista_itens_bruta[:10]
-
-    # Calcular KPIs Finais
+    # KPIs restantes
+    total_pedidos = len(pedidos_finalizados)
     ticket_medio = faturamento_bruto / total_pedidos if total_pedidos > 0 else 0
+    total_itens_vendidos = sum(sum(item.get('quantidade', 0) for item in json.loads(p.get('itens_json') or '[]')) for p in pedidos_finalizados)
     media_itens_pedido = total_itens_vendidos / total_pedidos if total_pedidos > 0 else 0
 
-    
-    # === PASSO 3: CALCULAR BALANÇO DE ESTOQUE A PARTIR DO LEDGER ===
-    # Define o início absoluto para buscar saldos anteriores
+    # === PASSO 3: AGREGAR DADOS PARA GRÁFICOS E TABELAS ===
+    agregacao_pagamentos = {}
+    agregacao_itens = {}
+    for p in pedidos_finalizados:
+        metodo = p['metodo_pagamento']
+        if metodo not in agregacao_pagamentos: agregacao_pagamentos[metodo] = {'valor': 0, 'quantidade': 0}
+        agregacao_pagamentos[metodo]['valor'] += p['valor_total']
+        agregacao_pagamentos[metodo]['quantidade'] += 1
+        try:
+            itens_do_pedido = json.loads(p.get('itens_json') or '[]')
+            for item in itens_do_pedido:
+                pid = item['id']
+                if pid not in agregacao_itens: agregacao_itens[pid] = {'nome': item['nome'], 'quantidade': 0, 'receita': 0, 'lucro': 0}
+                receita = item.get('preco', 0) * item.get('quantidade', 0)
+                custo = (item.get('custo_unitario', 0) or 0) * item.get('quantidade', 0)
+                agregacao_itens[pid]['quantidade'] += item.get('quantidade', 0)
+                agregacao_itens[pid]['receita'] += receita
+                agregacao_itens[pid]['lucro'] += (receita - custo)
+        except (json.JSONDecodeError, TypeError): continue
+    lista_pagamentos_labels = list(agregacao_pagamentos.keys())
+    vendas_por_pagamento = {"labels": lista_pagamentos_labels, "data": [agregacao_pagamentos[label]['valor'] for label in lista_pagamentos_labels]}
+    itens_top = sorted(list(agregacao_itens.values()), key=lambda x: x['quantidade'], reverse=True)[:10]
+
+    # === PASSO 4: CALCULAR BALANÇO DE ESTOQUE ===
     inicio_absoluto = datetime(2000, 1, 1).isoformat()
-
-    # Busca todas as movimentações relevantes de uma só vez
     movimentacoes_ate_fim = gerenciador_db.obter_movimentacoes_periodo(inicio_absoluto, fim, local_id)
-
-    # Processa as movimentações para calcular o balanço
-    balanco_por_produto = {}
-    for pid, pinfo in mapa_produtos.items():
-        balanco_por_produto[pid] = {
-            'nome': pinfo['nome'], 'saldo_anterior': 0,
-            'entradas_periodo': 0, 'saidas_periodo': 0
-        }
-
+    balanco_por_produto = {pid: {'nome': pinfo['nome'], 'saldo_anterior': 0, 'entradas_periodo': 0, 'saidas_periodo': 0} for pid, pinfo in mapa_produtos.items()}
     for mov in movimentacoes_ate_fim:
         pid = mov['produto_id']
         if pid in balanco_por_produto:
-            # Lógica do saldo anterior (inalterada)
             if mov['created_at'] < inicio:
                 balanco_por_produto[pid]['saldo_anterior'] += mov['quantidade']
-            # Lógica do período atual
             else:
-                if mov['quantidade'] > 0:
-                    balanco_por_produto[pid]['entradas_periodo'] += mov['quantidade']
-                else:
-                    balanco_por_produto[pid]['saidas_periodo'] += mov['quantidade']
-
-                # NOVA LÓGICA: Se for um ajuste, calcula o valor da perda
-                if mov['origem'] == 'ajuste':
-                    # O valor da perda é a quantidade (negativa) * custo médio do item
-                    valor_perda = mov['quantidade'] * mov['custo_medio']
-                    total_perdas_ajustes += valor_perda
-
-    # Formata a lista final de estoque para o frontend
+                if mov['quantidade'] > 0: balanco_por_produto[pid]['entradas_periodo'] += mov['quantidade']
+                else: balanco_por_produto[pid]['saidas_periodo'] += mov['quantidade']
     lista_estoque = []
     for pid, dados in balanco_por_produto.items():
-        saldo_inicial = dados['saldo_anterior']
-        entradas = dados['entradas_periodo']
-        saidas = -dados['saidas_periodo'] # Inverte o sinal para exibição
+        saldo_inicial, entradas, saidas = dados['saldo_anterior'], dados['entradas_periodo'], -dados['saidas_periodo']
         saldo_final = saldo_inicial + entradas - saidas
-
-        # Adiciona à lista apenas se houve movimentação ou se ainda há estoque
         if saldo_inicial != 0 or entradas != 0 or saidas != 0 or saldo_final != 0:
-            lista_estoque.append({
-                "nome": dados['nome'],
-                "inicial": saldo_inicial,
-                "entradas": entradas,
-                "saidas": saidas,
-                "final": saldo_final,
-                "estoque_do_dia": saldo_inicial + entradas
-            })
+            lista_estoque.append({"nome": dados['nome'], "inicial": saldo_inicial, "entradas": entradas, "saidas": saidas, "final": saldo_final, "estoque_do_dia": saldo_inicial + entradas})
 
-    # === PASSO 3.5: AGREGAR VENDAS POR PERÍODO (BUCKETS DE 15 MIN) ===
+    # === PASSO 5: AGREGAR VENDAS POR PERÍODO (BUCKETS DE 15 MIN) ===
     fuso_horario_local = pytz.timezone('America/Sao_Paulo')
-
-    # O 'inicio' recebido é UTC, representando o início do dia operacional (05:00 em SP).
-    # Convertemos para datetime local para servir de âncora para os buckets.
     try:
         inicio_operacional_local = datetime.fromisoformat(inicio.replace('Z', '+00:00')).astimezone(fuso_horario_local)
     except ValueError:
         inicio_operacional_local = datetime.fromisoformat(inicio).astimezone(fuso_horario_local)
-
-    fim_operacional_local = inicio_operacional_local + timedelta(hours=24)
-
-    # Prepara a estrutura de dados com 96 buckets (24h * 4 buckets/hora)
-    vendas_por_periodo_labels = []
+    vendas_por_periodo_labels = [(inicio_operacional_local + timedelta(minutes=15 * i)).strftime('%H:%M') for i in range(96)]
     vendas_por_periodo_data = [0.0] * 96
-    for i in range(96):
-        timestamp_bucket = inicio_operacional_local + timedelta(minutes=15 * i)
-        vendas_por_periodo_labels.append(timestamp_bucket.strftime('%H:%M'))
-
-    # Itera sobre os pedidos para preencher os buckets
     for p in pedidos_finalizados:
-        timestamp_pagamento_str = p.get('timestamp_pagamento')
-        if not timestamp_pagamento_str:
-            continue
-
+        ts_pag_str = p.get('timestamp_pagamento')
+        if not ts_pag_str: continue
         try:
-            # Converte o timestamp do pedido para o fuso local
-            if 'Z' in timestamp_pagamento_str:
-                timestamp_utc = datetime.fromisoformat(timestamp_pagamento_str.replace('Z', '+00:00'))
-            else:
-                timestamp_utc = datetime.fromisoformat(timestamp_pagamento_str).astimezone(pytz.utc)
-
-            timestamp_local = timestamp_utc.astimezone(fuso_horario_local)
-
-            # Garante que o pedido está dentro da janela de 24h (robustez)
-            if not (inicio_operacional_local <= timestamp_local < fim_operacional_local):
-                continue
-
-            # Calcula em qual bucket de 15 minutos o pedido se encaixa
-            delta_segundos = (timestamp_local - inicio_operacional_local).total_seconds()
-            indice_bucket = int(delta_segundos // (15 * 60))
-
+            ts_utc = datetime.fromisoformat(ts_pag_str.replace('Z', '+00:00')) if 'Z' in ts_pag_str else datetime.fromisoformat(ts_pag_str).astimezone(pytz.utc)
+            ts_local = ts_utc.astimezone(fuso_horario_local)
+            delta_segundos = (ts_local - inicio_operacional_local).total_seconds()
+            indice_bucket = int(delta_segundos // 900)
             if 0 <= indice_bucket < 96:
                 vendas_por_periodo_data[indice_bucket] += p.get('valor_total') or 0
+        except (ValueError, TypeError): continue
+    vendas_por_periodo_final = {"labels": vendas_por_periodo_labels, "data": [round(valor, 2) for valor in vendas_por_periodo_data]}
 
-        except (ValueError, TypeError):
-            continue
-
-    vendas_por_periodo_final = {
-        "labels": vendas_por_periodo_labels,
-        "data": [round(valor, 2) for valor in vendas_por_periodo_data]
-    }
-
-    # === PASSO 4: PAGINAR O HISTÓRICO E PREPARAR PARA SERIALIZAÇÃO ===
+    # === PASSO 6: PAGINAR O HISTÓRICO E PREPARAR PARA SERIALIZAÇÃO ===
     total_registros = len(pedidos_finalizados)
     inicio_paginacao = (page - 1) * limit
     fim_paginacao = inicio_paginacao + limit
-    
     dados_brutos = {
         "kpis": {
             "faturamento_bruto": faturamento_bruto,
-            "lucro_bruto": lucro_estimado,
-            "perdas_ajustes": -total_perdas_ajustes,
+            "lucro_bruto": lucro_liquido_final,
+            "perdas_ajustes": perdas_total,
             "pedidos": total_pedidos,
             "ticket_medio": ticket_medio,
             "media_itens_pedido": media_itens_pedido
@@ -303,20 +232,13 @@ def fechamento_operacional_v2(inicio, fim, local_id, page, limit):
         "itens_top": itens_top,
         "historico_pedidos": {"items": pedidos_finalizados[inicio_paginacao:fim_paginacao]},
         "estoque": lista_estoque,
-        # A agregação por período (dia/hora) é complexa e pode ser adicionada depois se necessário.
-        # Por enquanto, enviamos vazio para cumprir o contrato da API.
         "vendasPorPeriodo": vendas_por_periodo_final,
         "vendasPorPagamento": vendas_por_pagamento,
         "configuracoes": configuracoes
     }
-    
-    paginacao = {
-        'page': page,
-        'limit': limit,
-        'total': total_registros
-    }
+    paginacao = {'page': page, 'limit': limit, 'total': total_registros}
 
-    # === PASSO 5: CHAMAR O SERIALIZER ===
+    # === PASSO FINAL: CHAMAR O SERIALIZER ===
     return serializers.FechamentoSerializer.to_api_v2(dados_brutos, paginacao)
 
 

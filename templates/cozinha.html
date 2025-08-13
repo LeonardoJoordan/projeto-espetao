@@ -143,7 +143,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // --- LÓGICA DE RENDERIZAÇÃO CONDICIONAL ---
         // Determina se este card específico deve mostrar o valor total.
-        const deveMostrarValor = pedido.status === 'aguardando_pagamento' && pedido.id === firstAguardandoPagamentoId;
+        const deveMostrarValor = pedido.status === 'aguardando_pagamento';
         // -------------------------------------------
 
         let modalidadeHtml = '';

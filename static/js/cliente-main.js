@@ -832,3 +832,92 @@ if (btnNovoPedido) {
         ajustarLarguraTeclas();
     });
 }
+
+// ==========================================================
+// 7. MONITOR DE INATIVIDADE
+// ==========================================================
+
+const TEMPO_INATIVIDADE = 50000; // 50 segundos
+const TEMPO_CONTAGEM = 10; // 10 segundos
+
+let timerInatividade = null;
+let timerContagem = null;
+
+const overlayInatividade = document.getElementById('overlay-inatividade');
+const contadorInatividade = document.getElementById('contador-inatividade');
+const mensagemPadraoContador = contadorInatividade ? contadorInatividade.dataset.mensagemReinicio : '';
+
+function esconderOverlayInatividade() {
+    if (!overlayInatividade || overlayInatividade.classList.contains('hidden')) return;
+    
+    overlayInatividade.classList.add('hidden');
+    clearInterval(timerContagem);
+    // Restaura a mensagem original para a próxima vez que o overlay for mostrado
+    if(contadorInatividade) contadorInatividade.textContent = "Toque na tela para continuar seu pedido.";
+}
+
+function mostrarOverlayInatividade() {
+    // Busca a referência à tela inicial dentro da função para garantir que está atualizada
+    const telaInicial = document.getElementById('tela-inicial');
+
+    // Se a tela inicial já estiver visível, não faz sentido recarregar.
+    // Apenas reiniciamos o ciclo de monitoramento.
+    if (telaInicial && !telaInicial.classList.contains('hidden')) {
+        console.log("Inatividade detectada na tela inicial. O timer será reiniciado sem recarregar a página.");
+        reiniciarTimerInatividade();
+        return; 
+    }
+
+    if (!overlayInatividade) return;
+
+    overlayInatividade.classList.remove('hidden');
+    
+    let segundosRestantes = TEMPO_CONTAGEM;
+    if(contadorInatividade) contadorInatividade.textContent = mensagemPadraoContador.replace('%s', segundosRestantes);
+
+    timerContagem = setInterval(() => {
+        segundosRestantes--;
+        if(contadorInatividade) contadorInatividade.textContent = mensagemPadraoContador.replace('%s', segundosRestantes);
+
+        if (segundosRestantes <= 0) {
+            clearInterval(timerContagem);
+            location.reload();
+        }
+    }, 1000);
+}
+
+function reiniciarTimerInatividade() {
+    esconderOverlayInatividade();
+    clearTimeout(timerInatividade);
+    timerInatividade = setTimeout(mostrarOverlayInatividade, TEMPO_INATIVIDADE);
+}
+
+function iniciarMonitorInatividade() {
+    const eventosDeAtividade = ['click', 'touchstart', 'keydown'];
+    
+    eventosDeAtividade.forEach(evento => {
+        window.addEventListener(evento, reiniciarTimerInatividade, { passive: true });
+    });
+
+    if (mainContent) {
+        mainContent.addEventListener('scroll', reiniciarTimerInatividade, { passive: true });
+    }
+
+    // Também reseta o timer se o usuário voltar para a aba do totem
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            reiniciarTimerInatividade();
+        }
+    });
+
+    // Inicia o timer pela primeira vez
+    reiniciarTimerInatividade();
+}
+
+// Chame a função de inicialização quando o DOM estiver pronto.
+document.addEventListener('DOMContentLoaded', () => {
+    // ... (código existente dentro deste listener)
+    
+    // Adicione esta linha no final do listener 'DOMContentLoaded'
+    iniciarMonitorInatividade(); 
+});

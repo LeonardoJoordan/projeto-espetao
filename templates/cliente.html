@@ -460,6 +460,15 @@
         </div>
     </div>
 
+    <div id="overlay-inatividade" class="hidden fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
+        <div class="bg-zinc-800 border border-zinc-600 rounded-2xl shadow-2xl p-8 text-center max-w-lg w-full">
+            <h2 class="text-3xl text-white font-bold mb-4">Sessão expirando...</h2>
+            <p id="contador-inatividade" class="text-zinc-300 text-xl" data-mensagem-reinicio="Reiniciando em %s segundos para proteger sua privacidade.">
+                Toque na tela para continuar seu pedido.
+            </p>
+        </div>
+    </div>
+
 <script type="module" src="{{ url_for('static', filename='js/cliente-main.js') }}"></script>
 </body>
 </html>

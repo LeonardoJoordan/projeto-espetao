@@ -52,6 +52,33 @@ let eventoPopupAtivo = null;
 // 3. FUNÇÕES DE UI (Manipulação da Interface)
 // ==========================================================
 
+async function mostrarAlerta(titulo, mensagem) {
+    const modal = document.getElementById('modal-alerta');
+    const tituloEl = document.getElementById('titulo-alerta');
+    const mensagemEl = document.getElementById('mensagem-alerta');
+    const btnOk = document.getElementById('btn-ok-alerta');
+
+    if (!modal || !tituloEl || !mensagemEl || !btnOk) {
+        console.error("Elementos do modal de alerta não encontrados.");
+        alert(`${titulo}\n\n${mensagem}`); // Fallback para o alert nativo
+        return;
+    }
+
+    return new Promise(resolve => {
+        tituloEl.textContent = titulo;
+        mensagemEl.textContent = mensagem;
+
+        modal.classList.remove('hidden');
+        mainContainer.classList.add('content-blurred');
+
+        btnOk.addEventListener('click', () => {
+            modal.classList.add('hidden');
+            mainContainer.classList.remove('content-blurred');
+            resolve();
+        }, { once: true }); // O listener é removido automaticamente após o primeiro clique
+    });
+}
+
 function atualizarBotaoPrincipal() {
     if (!btnAcaoPrincipal) return;
 
@@ -148,7 +175,7 @@ function abrirPopupSimples(productCard) {
                 quantidade++;
                 atualizarInterfaceSimples();
             } else {
-                alert(`Desculpe, temos apenas ${estoqueDisponivel} unidades deste item em estoque.`);
+                mostrarAlerta('Putz, esses são os últimos', `Infelizmente já foi quase tudo, esses são os últimos ${estoqueDisponivel} em estoque.`);
             }
         } else if (target.id === 'btn-diminuir-simples') {
             if (quantidade > 1) {
@@ -320,7 +347,7 @@ async function abrirPopupCustomizacao(productCard) { // Adicionamos 'async' aqui
                 quantidadeDisplay.textContent = quantidade;
                 precoTotalDisplay.textContent = `R$ ${(quantidade * precoProduto).toFixed(2).replace('.', ',')}`;
             } else {
-                alert(`Desculpe, temos apenas ${estoqueDisponivel} espetinhos deste tipo em estoque.`);
+                mostrarAlerta('Putz, esses são os últimos', `Infelizmente já foi quase tudo, esses são os últimos ${estoqueDisponivel} em estoque.`);
             }
         }
 
@@ -542,10 +569,10 @@ if (tecladoContainer) {
 
 // Listener para o botão "Iniciar Pedido" do teclado
 if (btnIniciar) {
-    btnIniciar.addEventListener('click', () => {
+    btnIniciar.addEventListener('click', async () => {
         const nomeFinal = nomeDigitadoTemp.trim();
         if (nomeFinal === '') {
-            alert("Por favor, digite um nome para o pedido.");
+            await mostrarAlerta("Nome Inválido", "Por favor, digite um nome para o pedido.");
             return;
         }
         setNomeCliente(nomeFinal);
@@ -700,17 +727,18 @@ if (modalConfirmacao) {
             const modalidadeEntregaInput = document.querySelector('input[name="modalidade_entrega"]:checked');
 
             // 1. LÓGICA DE VALIDAÇÃO
+            target.disabled = true; // Desabilita o botão antes da validação
+
             if (!metodoPagamentoInput) {
-                alert('Por favor, selecione uma forma de pagamento.');
+                await mostrarAlerta('Pagamento Pendente', 'Por favor, selecione uma forma de pagamento.');
+                target.disabled = false; // Reabilita o botão após o alerta
                 return;
             }
             if (!modalidadeEntregaInput) {
-                alert('Por favor, selecione se o consumo é no local ou para viagem.');
+                await mostrarAlerta('Modalidade Pendente', 'Por favor, selecione se o consumo é no local ou para viagem.');
+                target.disabled = false; // Reabilita o botão após o alerta
                 return;
             }
-
-            // Desabilita o botão para evitar cliques duplos
-            target.disabled = true;
 
             // 2. CAPTURA DOS DADOS
             const metodoPagamento = metodoPagamentoInput.value;

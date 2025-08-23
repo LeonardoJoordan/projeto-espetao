@@ -577,32 +577,22 @@ if (btnIniciar) {
         }
         setNomeCliente(nomeFinal);
 
-        // Pega a senha do atributo de dados que definimos no HTML
-        const proximaSenha = document.body.dataset.proximaSenha || 'ERRO';
-
-        // Preenche e mostra a nova tela de senha
-        if (textoConfirmacaoSenha) {
-            textoConfirmacaoSenha.innerHTML = `
-                <div class="block text-4xl font-bold text-orange-400">${nomeFinal}</div>
-                <div class="block text-xl text-zinc-400 my-2">a senha do seu pedido é</div>
-                <div class="block text-5xl font-bold text-green-400 font-mono">#${proximaSenha}</div>
-            `;
-        }
+        // AGORA, VAI DIRETO PARA O CARDÁPIO
         if (telaTeclado) telaTeclado.classList.add('hidden');
-        if (telaSenha) telaSenha.classList.remove('hidden');
+        if (mainContainer) mainContainer.classList.remove('content-blurred');
+
+        // Limpa o nome temporário e atualiza a UI para o estado inicial do cardápio
+        nomeDigitadoTemp = '';
+        atualizarTextoTeclado();
+        atualizarBotaoPrincipal();
     });
 }
 
-// Listener para o botão "Ver Cardápio" da tela de senha
+// Listener para o botão "Fechar" da tela de sucesso (antigo btnIrCardapio)
 if (btnIrCardapio) {
     btnIrCardapio.addEventListener('click', () => {
-        if (telaSenha) telaSenha.classList.add('hidden');
-        if (mainContainer) mainContainer.classList.remove('content-blurred');
-
-        // Limpa o nome temporário e atualiza a UI para o estado inicial
-        nomeDigitadoTemp = ''; 
-        atualizarTextoTeclado();
-        atualizarBotaoPrincipal(); 
+        // A única ação agora é recarregar a página para um novo pedido.
+        location.reload();
     });
 }
 

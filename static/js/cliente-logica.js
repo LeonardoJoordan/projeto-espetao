@@ -178,9 +178,10 @@ export async function salvarPedido(metodoPagamento, modalidade) { // <-- NOVO PA
         }
 
         const result = await response.json();
-        alert(`Pedido #${result.senha_diaria} recebido com sucesso!`);
 
-        location.reload();
+        // Em vez de alert e reload, chamamos o modal de sucesso.
+        // O reload agora será responsabilidade do botão "Fechar" no modal.
+        mostrarModalSucesso(nomeClienteAtual, result.senha_diaria);
 
         return result;
 
@@ -205,3 +206,23 @@ export function formatCurrency(value) {
     return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+/**
+ * Exibe um modal de sucesso com o nome do cliente e a senha do pedido.
+ * @param {string} nomeCliente - O nome do cliente.
+ * @param {string} senhaPedido - A senha gerada para o pedido.
+ */
+function mostrarModalSucesso(nomeCliente, senhaPedido) {
+    const telaSenha = document.getElementById('tela-senha');
+    const textoConfirmacao = document.getElementById('texto-confirmacao-senha');
+    const mainContainer = document.getElementById('main-container');
+
+    if (telaSenha && textoConfirmacao && mainContainer) {
+        textoConfirmacao.innerHTML = `
+            <div class="block text-2xl text-zinc-300 mb-2">Pedido recebido, ${nomeCliente}!</div>
+            <div class="block text-xl text-zinc-400 my-2">Sua senha para retirada é</div>
+            <div class="block text-5xl font-bold text-green-400 font-mono">#${senhaPedido}</div>
+        `;
+        telaSenha.classList.remove('hidden');
+        mainContainer.classList.add('content-blurred');
+    }
+}

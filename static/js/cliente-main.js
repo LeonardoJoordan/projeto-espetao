@@ -57,42 +57,44 @@ let eventoPopupAtivo = null;
 let socket = null;
 if (window.io && typeof window.io === 'function') {
   socket = io();
-  socket.on('connect', () => console.log('Conectado ao servidor Socket.IO'));
-  socket.on('atualizacao_disponibilidade', (payload) => { /* ... */ });
+
+  socket.on('connect', () => {
+      console.log('Conectado ao servidor Socket.IO');
+  });
+
+  // Listener para receber atualizações de disponibilidade de estoque
+  socket.on('atualizacao_disponibilidade', (payload) => {
+      console.log('%cEstoque Atualizado via Socket.IO:', 'color: lightblue', payload);
+
+      payload.updates.forEach(update => {
+          // IMPLEMENTADO FALLBACK: usa 'disponivel', se não existir, tenta 'disponibilidade_atual'
+          const disponivel = update.disponivel ?? update.disponibilidade_atual ?? 0;
+          
+          const productCard = document.querySelector(`.product-card[data-id="${update.produto_id}"]`);
+          if (productCard) {
+              const addButton = productCard.querySelector('.add-button');
+              productCard.dataset.estoque = disponivel;
+
+              if (disponivel <= 0) {
+                  addButton.disabled = true;
+                  addButton.style.backgroundColor = '#52525B';
+                  addButton.style.cursor = 'not-allowed';
+              } else {
+                  addButton.disabled = false;
+                  addButton.style.backgroundColor = '';
+                  addButton.style.cursor = 'pointer';
+              }
+          }
+      });
+  });
+
 } else {
   console.warn('Socket.IO não disponível; seguindo sem tempo real.');
 }
 
-socket.on('connect', () => {
-    console.log('Conectado ao servidor Socket.IO');
-});
-
-// Listener para receber atualizações de disponibilidade de estoque
-socket.on('atualizacao_disponibilidade', (payload) => {
-    console.log('%cEstoque Atualizado via Socket.IO:', 'color: lightblue', payload);
-
-    payload.updates.forEach(update => {
-        const productCard = document.querySelector(`.product-card[data-id="${update.produto_id}"]`);
-        if (productCard) {
-            const addButton = productCard.querySelector('.add-button');
-
-            productCard.dataset.estoque = update.disponivel;
-
-            if (update.disponivel <= 0) {
-                addButton.disabled = true;
-                addButton.style.backgroundColor = '#52525B';
-                addButton.style.cursor = 'not-allowed';
-            } else {
-                addButton.disabled = false;
-                addButton.style.backgroundColor = '';
-                addButton.style.cursor = 'pointer';
-            }
-        }
-    });
-});
+//
 
 // Listeners globais para renovar a sessão do carrinho em qualquer interação
-document.addEventListener('click', renovarSessaoDebounced);
 mainContent.addEventListener('scroll', renovarSessaoDebounced); // Usando a referência já existente
 
 
@@ -225,7 +227,7 @@ function abrirPopupSimples(productCard) {
                 quantidade++;
                 atualizarInterfaceSimples();
             } else {
-                mostrarAlerta('Item Esgotado', 'Desculpe, este item acabou de esgotar ou não há mais unidades disponíveis.');
+                await mostrarAlerta('Item Esgotado', resultadoReserva.mensagem || 'Não há mais unidades disponíveis.');
             }
         } else if (target.id === 'btn-diminuir-simples') {
             if (quantidade > 1) {
@@ -237,22 +239,12 @@ function abrirPopupSimples(productCard) {
             // Libera a quantidade TOTAL que estava reservada neste popup
             await gerenciarReservaAPI(idProduto, -quantidade);
             modalSimples.classList.add('hidden');
-            modalSimples.innerHTML = '';
             mainContainer.classList.remove('content-blurred');
         } else if (target.id === 'btn-adicionar-simples') {
-            const novoItem = {
-                id: idProduto,
-                nome: productCard.dataset.nome,
-                preco: parseFloat(productCard.dataset.preco),
-                quantidade: quantidade,
-                requer_preparo: parseInt(productCard.dataset.requerPreparo),
-                categoria_ordem: parseInt(productCard.dataset.categoriaOrdem),
-                produto_ordem: parseInt(productCard.dataset.produtoOrdem)
-            };
+            const novoItem = { id: idProduto, nome: productCard.dataset.nome, preco: parseFloat(productCard.dataset.preco), quantidade: quantidade, requer_preparo: parseInt(productCard.dataset.requerPreparo), categoria_ordem: parseInt(productCard.dataset.categoriaOrdem), produto_ordem: parseInt(productCard.dataset.produtoOrdem) };
             adicionarItemAoPedido(novoItem);
             atualizarBotaoPrincipal();
             modalSimples.classList.add('hidden');
-            modalSimples.innerHTML = '';
             mainContainer.classList.remove('content-blurred');
         }
     };
@@ -390,80 +382,56 @@ async function abrirPopupCustomizacao(productCard) { // Adicionamos 'async' aqui
     eventoPopupAtivo = async (event) => { // <-- Função agora é async
         const target = event.target;
         const idProduto = parseInt(productCard.dataset.id);
-
+        
         if (target.closest('#btn-aumentar-popup')) {
             const resultadoReserva = await gerenciarReservaAPI(idProduto, 1);
             if (resultadoReserva.sucesso) {
                 quantidade++;
-                // A lógica de adicionar o HTML e atualizar os displays permanece a mesma
                 containerLinhas.insertAdjacentHTML('beforeend', criarLinhaHtml(quantidade, acompanhamentosDisponiveis));
                 quantidadeDisplay.textContent = quantidade;
-                precoTotalDisplay.textContent = `R$ ${(quantidade * precoProduto).toFixed(2).replace('.', ',')}`;
+                precoTotalDisplay.textContent = formatCurrency(quantidade * precoProduto);
             } else {
-                mostrarAlerta('Item Esgotado', 'Desculpe, este item acabou de esgotar ou não há mais unidades disponíveis.');
+                await mostrarAlerta('Item Esgotado', resultadoReserva.mensagem || 'Não há mais unidades disponíveis.');
             }
-        }
-
-        if (target.closest('#btn-diminuir-popup')) {
+        } else if (target.closest('#btn-diminuir-popup')) {
             if (quantidade > 1) {
                 await gerenciarReservaAPI(idProduto, -1); // Libera a reserva
                 quantidade--;
-                if (containerLinhas.lastElementChild) {
-                    containerLinhas.lastElementChild.remove();
-                }
+                if (containerLinhas.lastElementChild) containerLinhas.lastElementChild.remove();
                 quantidadeDisplay.textContent = quantidade;
-                precoTotalDisplay.textContent = `R$ ${(quantidade * precoProduto).toFixed(2).replace('.', ',')}`;
+                precoTotalDisplay.textContent = formatCurrency(quantidade * precoProduto);
             }
-        }
-
-        if (target.closest('#btn-cancelar-item-popup')) {
+        } else if (target.closest('#btn-cancelar-item-popup')) {
             // Libera a quantidade TOTAL que estava reservada neste popup
             await gerenciarReservaAPI(idProduto, -quantidade);
             modalCustomizacao.classList.add('hidden');
-            modalCustomizacao.innerHTML = '';
             mainContainer.classList.remove('content-blurred');
-        }
-
-        // --- O restante da lógica de manipulação de UI (pontos, extras, etc.) permanece inalterado ---
-        const pontoOption = target.closest('.ponto-option');
-        if (pontoOption) {
-            const grupo = pontoOption.closest('.ponto-options');
-            grupo.querySelectorAll('.ponto-option').forEach(opt => opt.classList.remove('selected'));
-            pontoOption.classList.add('selected');
-            pontoOption.querySelector('input').checked = true;
-        }
-
-        const extraItem = target.closest('.extra-item');
-        if (extraItem) {
-            event.preventDefault();
-            const input = extraItem.querySelector('input');
-            input.checked = !input.checked;
-            extraItem.classList.toggle('selected', input.checked);
-        }
-
-        if (target.closest('#btn-adicionar-pedido-popup')) {
-            const todosOsItensCustomizados = document.querySelectorAll('.item-customizacao');
-            todosOsItensCustomizados.forEach((itemNode) => {
+        } else if (target.closest('#btn-adicionar-pedido-popup')) {
+            document.querySelectorAll('.item-customizacao').forEach(itemNode => {
                 const ponto = itemNode.querySelector('input[name$="ponto"]:checked').value;
-                const acompanhamentos = Array.from(itemNode.querySelectorAll('.extras-grid input[type="checkbox"]:checked'))
-                                .map(cb => cb.value);
-                const customizacaoDoItem = { ponto: ponto, acompanhamentos: acompanhamentos };
-                const novoItem = {
-                    id: idProduto,
-                    nome: productCard.dataset.nome,
-                    preco: parseFloat(productCard.dataset.preco),
-                    quantidade: 1,
-                    customizacao: customizacaoDoItem,
-                    requer_preparo: parseInt(productCard.dataset.requerPreparo),
-                    categoria_ordem: parseInt(productCard.dataset.categoriaOrdem),
-                    produto_ordem: parseInt(productCard.dataset.produtoOrdem)
-                };
+                const acompanhamentos = Array.from(itemNode.querySelectorAll('.extras-grid input:checked')).map(cb => cb.value);
+                const customizacao = { ponto, acompanhamentos };
+                const novoItem = { id: idProduto, nome: nomeProduto, preco: parseFloat(productCard.dataset.preco), quantidade: 1, customizacao, requer_preparo: parseInt(productCard.dataset.requerPreparo), categoria_ordem: parseInt(productCard.dataset.categoriaOrdem), produto_ordem: parseInt(productCard.dataset.produtoOrdem) };
                 adicionarItemAoPedido(novoItem);
             });
             atualizarBotaoPrincipal();
             modalCustomizacao.classList.add('hidden');
-            modalCustomizacao.innerHTML = '';
             mainContainer.classList.remove('content-blurred');
+        } else {
+            // Lógica de UI para seleção de ponto/extras (mantida)
+            const pontoOption = target.closest('.ponto-option');
+            if (pontoOption) {
+                pontoOption.closest('.ponto-options').querySelectorAll('.ponto-option').forEach(opt => opt.classList.remove('selected'));
+                pontoOption.classList.add('selected');
+                pontoOption.querySelector('input').checked = true;
+            }
+            const extraItem = target.closest('.extra-item');
+            if (extraItem) {
+                event.preventDefault();
+                const input = extraItem.querySelector('input');
+                input.checked = !input.checked;
+                extraItem.classList.toggle('selected', input.checked);
+            }
         }
     };
 

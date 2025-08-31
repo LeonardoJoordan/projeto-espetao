@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 import gerenciador_db
-from flask_socketio import SocketIO
+from flask_socketio import SocketIO, join_room
 import os
 import uuid
 from werkzeug.utils import secure_filename
@@ -49,6 +49,38 @@ if socketio is None:
 
 # Variável global para armazenar o ID do local da sessão atual
 LOCAL_SESSAO_ATUAL = None
+
+def emit_estoque_atualizado(local_id, updates, origem="desconhecida"):
+    """
+    Agrega e emite atualizações de disponibilidade de estoque para um local específico.
+    """
+    if not updates or not local_id:
+        return
+
+    payload = {
+        "local_id": local_id,
+        "origem": origem,
+        "version": int(time.time() * 1000),
+        "updates": updates
+    }
+    room = f"local:{local_id}"
+    socketio.emit('atualizacao_disponibilidade', payload, to=room)
+    print(f"Emitido 'atualizacao_disponibilidade' para a sala {room}: {len(updates)} updates.")
+
+
+@socketio.on('connect')
+def handle_connect():
+    """
+    Quando um cliente se conecta, ele entra em uma "sala" específica
+    para o local de trabalho atual. Isso garante que ele só receba
+    atualizações de estoque relevantes para o seu totem.
+    """
+    if LOCAL_SESSAO_ATUAL:
+        room = f"local:{LOCAL_SESSAO_ATUAL}"
+        join_room(room)
+        print(f"Cliente conectado e ingressou na sala: {room}")
+    else:
+        print("AVISO: Cliente conectado, mas nenhum local de sessão foi definido.")
 
 @app.route('/api/definir_local_sessao', methods=['POST'])
 def definir_local_sessao(local_id):
@@ -752,6 +784,50 @@ def api_insights_comparativos_v2():
     except Exception as e:
         print(f"ERRO CRÍTICO em /api/insights/comparativos_v2: {e}")
         return jsonify(serializers.ComparativosSerializer.to_api_v2({}, {})), 500
+    
+# === NOVAS ROTAS PARA RESERVA DE ESTOQUE ===
+
+@app.route('/api/carrinho/item', methods=['POST'])
+def api_gerenciar_reserva_item():
+    """ Endpoint para adicionar/remover itens do carrinho (reservar/liberar). """
+    dados = request.get_json()
+    carrinho_id = dados.get('carrinho_id')
+    produto_id = dados.get('produto_id')
+    quantidade_delta = dados.get('quantidade_delta')
+    # Usamos o local da sessão como autoridade máxima
+    local_id = LOCAL_SESSAO_ATUAL 
+
+    if not all([carrinho_id, produto_id, quantidade_delta, local_id]):
+        return jsonify({"sucesso": False, "mensagem": "Dados incompletos."}), 400
+
+    resultado = gerenciador_db.gerenciar_reserva(carrinho_id, local_id, produto_id, quantidade_delta)
+
+    if resultado.get('sucesso'):
+        emit_estoque_atualizado(
+            local_id=local_id,
+            updates=resultado.get('produtos_afetados', []),
+            origem='reserva_item'
+        )
+
+    return jsonify(resultado)
+
+@app.route('/api/carrinho/renovar', methods=['POST'])
+def api_renovar_carrinho():
+    """ Endpoint para estender a validade das reservas do carrinho. """
+    dados = request.get_json()
+    carrinho_id = dados.get('carrinho_id')
+    local_id = LOCAL_SESSAO_ATUAL
+
+    if not all([carrinho_id, local_id]):
+        return jsonify({"sucesso": False, "mensagem": "Dados incompletos."}), 400
+
+    # Aplica o rate limit do servidor: ignora se chamado há menos de 5s
+    # Implementação simples sem cache:
+    # (uma implementação real usaria Redis ou um dict em memória com timestamps)
+    # Por agora, vamos delegar a lógica para o gerenciador_db.
+
+    resultado = gerenciador_db.renovar_reservas_carrinho(carrinho_id, local_id)
+    return jsonify(resultado)
 
 @app.route('/')
 def index():

@@ -2,6 +2,7 @@ import sqlite3
 import json 
 from datetime import datetime, timedelta, timezone
 import random
+import uuid # Usaremos para o carrinho_id
 
 NOME_BANCO_DADOS = 'espetao.db'
 
@@ -161,54 +162,52 @@ def adicionar_novo_produto(nome, descricao, foto_url, preco_venda, estoque_inici
 
 def obter_todos_produtos():
     """
-    Busca todos os produtos com estoque positivo, calculando saldo e custo reais
-    a partir do ledger para exibir no cardápio do cliente.
+    Busca todos os produtos com disponibilidade positiva, calculando o saldo real
+    a partir do ledger MENOS as reservas ativas, para exibir no cardápio do cliente.
     """
-    # Passo 1: Obter o mapa de custos médios reais
-    mapa_custos = obter_mapa_custo_medio_atual()
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
+        # Garante que reservas expiradas sejam limpas antes da consulta
+        _executar_limpeza_reservas(cursor)
+
+        # Query otimizada que calcula on_hand (ledger) e reservado (carrinhos)
+        # e já filtra no SQL por disponibilidade > 0
+        agora_utc = datetime.now(timezone.utc).isoformat()
         cursor.execute('''
             SELECT 
                 p.id, p.nome, p.descricao, p.foto_url, p.preco_venda, 
                 c.nome as categoria_nome, p.categoria_id, p.requer_preparo,
                 c.ordem as categoria_ordem, p.ordem as produto_ordem,
-                (SELECT COALESCE(SUM(m.quantidade), 0) FROM estoque_movimentacoes m WHERE m.produto_id = p.id) as estoque_calculado
+                (SELECT COALESCE(SUM(m.quantidade), 0) FROM estoque_movimentacoes m WHERE m.produto_id = p.id) as on_hand,
+                (SELECT COALESCE(SUM(r.quantidade_reservada), 0) 
+                 FROM reservas_carrinho r 
+                 WHERE r.produto_id = p.id AND r.expires_at > ?) as reservado
             FROM produtos p
             LEFT JOIN categorias c ON p.categoria_id = c.id
             GROUP BY p.id
-            HAVING estoque_calculado > 0
+            HAVING (on_hand - reservado) > 0
             ORDER BY c.ordem, p.ordem, p.nome
-        ''')
-        
+        ''', (agora_utc,))
+
         produtos_tuplas = cursor.fetchall()
         produtos_lista = []
         for tupla in produtos_tuplas:
-            id_produto, nome, descricao, foto_url, preco_venda, categoria, categoria_id, requer_preparo, categoria_ordem, produto_ordem, estoque = tupla
-            
-            # Passo 2: Usa o custo médio do nosso mapa
-            custo_medio_real = mapa_custos.get(id_produto, 0)
-            lucro = preco_venda - custo_medio_real
+            id_produto, nome, descricao, foto_url, preco_venda, categoria, categoria_id, requer_preparo, categoria_ordem, produto_ordem, on_hand, reservado = tupla
 
-            # Lógica do último preço de compra
-            cursor.execute('''
-                SELECT custo_unitario_compra FROM entradas_de_estoque 
-                WHERE id_produto = ? AND quantidade_comprada > 0 ORDER BY data_entrada DESC LIMIT 1
-            ''', (id_produto,))
-            ultimo_preco_compra_resultado = cursor.fetchone()
-            ultimo_preco_compra = ultimo_preco_compra_resultado[0] if ultimo_preco_compra_resultado else custo_medio_real
+            disponivel = on_hand - reservado
 
             produtos_lista.append({
                 'id': id_produto, 'nome': nome, 'descricao': descricao, 'foto_url': foto_url,
-                'preco_venda': preco_venda, 'estoque': estoque, 'custo_medio': custo_medio_real,
-                'lucro': lucro, 'categoria': categoria, 'categoria_id': categoria_id,
-                'ultimo_preco_compra': ultimo_preco_compra, 'requer_preparo': requer_preparo,
+                'preco_venda': preco_venda, 
+                'estoque': disponivel, # Enviando a disponibilidade real para o template
+                'categoria': categoria, 'categoria_id': categoria_id,
+                'requer_preparo': requer_preparo,
                 'categoria_ordem': categoria_ordem, 'produto_ordem': produto_ordem
             })
-        
+
         return produtos_lista
     except sqlite3.Error as e:
         print(f"Ocorreu um erro ao obter os produtos: {e}")
@@ -1830,3 +1829,157 @@ def obter_mapa_custo_medio_atual():
         if conn:
             conn.close()
 
+# === NOVAS FUNÇÕES PARA RESERVA DE ESTOQUE ===
+
+def _executar_limpeza_reservas(cursor):
+    """
+    Função interna para remover todas as reservas expiradas.
+    Deve ser chamada no início de qualquer transação de reserva.
+    """
+    agora_utc = datetime.now(timezone.utc).isoformat()
+    cursor.execute("DELETE FROM reservas_carrinho WHERE expires_at < ?", (agora_utc,))
+    return cursor.rowcount
+
+def obter_disponibilidade_para_produtos(produto_ids, local_id):
+    """
+    Calcula a disponibilidade real para uma lista de produtos,
+    considerando o estoque do ledger menos as reservas ativas.
+    """
+    if not produto_ids:
+        return {}
+
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        _executar_limpeza_reservas(cursor)
+
+        disponibilidades = {}
+        placeholders = ','.join('?' for _ in produto_ids)
+
+        # 1. Obter o estoque total (on_hand) do ledger
+        cursor.execute(f'''
+            SELECT produto_id, COALESCE(SUM(quantidade), 0) as on_hand
+            FROM estoque_movimentacoes
+            WHERE produto_id IN ({placeholders})
+            GROUP BY produto_id
+        ''', produto_ids)
+        estoque_on_hand = {row[0]: row[1] for row in cursor.fetchall()}
+
+        # 2. Obter o total de reservas ativas
+        cursor.execute(f'''
+            SELECT produto_id, COALESCE(SUM(quantidade_reservada), 0) as total_reservado
+            FROM reservas_carrinho
+            WHERE produto_id IN ({placeholders}) AND local_id = ?
+            GROUP BY produto_id
+        ''', (*produto_ids, local_id))
+        total_reservado = {row[0]: row[1] for row in cursor.fetchall()}
+
+        # 3. Calcular a disponibilidade final
+        for pid in produto_ids:
+            on_hand = estoque_on_hand.get(pid, 0)
+            reservado = total_reservado.get(pid, 0)
+            disponibilidades[pid] = on_hand - reservado
+
+        return disponibilidades
+
+    except sqlite3.Error as e:
+        print(f"ERRO ao obter disponibilidade: {e}")
+        return {pid: 0 for pid in produto_ids} # Retorna 0 em caso de erro
+    finally:
+        if conn:
+            conn.close()
+
+
+def gerenciar_reserva(carrinho_id, local_id, produto_id, quantidade_delta):
+    """
+    Adiciona ou remove uma quantidade de reserva para um produto em um carrinho.
+    Operação atômica e transacional.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # PASSO 1: Limpeza de reservas expiradas
+        _executar_limpeza_reservas(cursor)
+
+        # PASSO 2: Obter o estado atual antes de modificar
+        cursor.execute("SELECT COALESCE(SUM(quantidade), 0) FROM estoque_movimentacoes WHERE produto_id = ?", (produto_id,))
+        estoque_on_hand = cursor.fetchone()[0]
+
+        cursor.execute("SELECT COALESCE(SUM(quantidade_reservada), 0) FROM reservas_carrinho WHERE produto_id = ? AND local_id = ?", (produto_id, local_id))
+        total_reservado_antes = cursor.fetchone()[0]
+
+        cursor.execute("SELECT quantidade_reservada FROM reservas_carrinho WHERE carrinho_id = ? AND produto_id = ?", (carrinho_id, produto_id))
+        reserva_carrinho_atual = cursor.fetchone()
+        reserva_carrinho_atual = reserva_carrinho_atual[0] if reserva_carrinho_atual else 0
+
+        disponivel = estoque_on_hand - (total_reservado_antes - reserva_carrinho_atual)
+
+        # PASSO 3: Validar se a reserva é possível
+        if quantidade_delta > 0 and disponivel < quantidade_delta:
+            conn.rollback()
+            return {'sucesso': False, 'mensagem': 'Estoque insuficiente.', 'produtos_afetados': [{'produto_id': produto_id, 'disponibilidade_atual': disponivel}]}
+
+        # PASSO 4: Aplicar a mudança
+        nova_quantidade = reserva_carrinho_atual + quantidade_delta
+        agora_utc = datetime.now(timezone.utc)
+        expires_at = agora_utc + timedelta(seconds=120)
+
+        if nova_quantidade > 0:
+            cursor.execute('''
+                INSERT INTO reservas_carrinho (carrinho_id, produto_id, local_id, quantidade_reservada, created_at, expires_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(carrinho_id, produto_id, local_id) DO UPDATE SET
+                quantidade_reservada = ?, expires_at = ?
+            ''', (carrinho_id, produto_id, local_id, nova_quantidade, agora_utc.isoformat(), expires_at.isoformat(), nova_quantidade, expires_at.isoformat()))
+        else:
+            cursor.execute("DELETE FROM reservas_carrinho WHERE carrinho_id = ? AND produto_id = ?", (carrinho_id, produto_id))
+
+        conn.commit()
+
+        # PASSO 5: Retornar a nova disponibilidade do produto
+        disponibilidade_final = obter_disponibilidade_para_produtos([produto_id], local_id)
+        produto_afetado = {'produto_id': produto_id, 'disponivel': disponibilidade_final.get(produto_id, 0)}
+        return {'sucesso': True, 'produtos_afetados': [produto_afetado]}
+
+    except sqlite3.Error as e:
+        if conn: conn.rollback()
+        print(f"ERRO ao gerenciar reserva: {e}")
+        return {'sucesso': False, 'mensagem': 'Erro no servidor.', 'disponibilidade_atual': 0}
+    finally:
+        if conn: conn.close()
+
+
+def renovar_reservas_carrinho(carrinho_id, local_id):
+    """
+    Estende o tempo de expiração de todas as reservas de um carrinho.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # Rate limit: Não fazemos update desnecessário no DB.
+        # Opcional, mas boa prática. O ideal é checar no app.py com cache.
+        # Aqui vamos sempre renovar para simplificar.
+
+        novo_expires_at = (datetime.now(timezone.utc) + timedelta(seconds=120)).isoformat()
+
+        cursor.execute("""
+            UPDATE reservas_carrinho
+            SET expires_at = ?
+            WHERE carrinho_id = ? AND local_id = ?
+        """, (novo_expires_at, carrinho_id, local_id))
+
+        conn.commit()
+        return {'sucesso': True}
+
+    except sqlite3.Error as e:
+        if conn: conn.rollback()
+        print(f"ERRO ao renovar reserva: {e}")
+        return {'sucesso': False}
+    finally:
+        if conn: conn.close()

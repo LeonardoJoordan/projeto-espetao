@@ -1,6 +1,82 @@
 // static/js/cliente-logica.js
 
 // ==========================================================
+// NOVO: LÓGICA DE RESERVA DE ESTOQUE
+// ==========================================================
+
+// Gera um ID único para a sessão do carrinho deste cliente.
+// Ele persistirá enquanto a página não for recarregada.
+// Gera um ID "único" simples para a sessão do carrinho, compatível com http.
+function gerarUUIDSimples() {
+    return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
+        (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+    );
+}
+export const carrinhoId = gerarUUIDSimples();
+
+/**
+ * Função para criar uma versão "debounced" de uma função.
+ * Ela só será executada após um certo tempo sem ser chamada.
+ * @param {Function} func A função a ser executada.
+ * @param {number} delay O tempo de espera em milissegundos.
+ * @returns {Function}
+ */
+function debounce(func, delay) {
+    let timeout;
+    return function(...args) {
+        const context = this;
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(context, args), delay);
+    };
+}
+
+/**
+ * Chama a API para renovar o TTL de todas as reservas no carrinho atual.
+ */
+async function renovarSessaoAPI() {
+    if (pedidoAtual.length === 0) return; // Não renova carrinhos vazios
+
+    console.log(`%cRENEW: Renovando sessão para carrinho ${carrinhoId}`, 'color: dodgerblue');
+    try {
+        await fetch('/api/carrinho/renovar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ carrinho_id: carrinhoId })
+        });
+    } catch (error) {
+        console.error("Falha ao renovar a sessão do carrinho:", error);
+    }
+}
+
+// Criamos uma versão da função de renovação que só pode ser chamada a cada 10 segundos.
+export const renovarSessaoDebounced = debounce(renovarSessaoAPI, 10000);
+
+
+/**
+ * Chama a API para reservar ou liberar um item.
+ * @param {number} produtoId - O ID do produto.
+ * @param {number} delta - A quantidade a ser alterada (+1 para reservar, -1 para liberar).
+ * @returns {Promise<object>}
+ */
+export async function gerenciarReservaAPI(produtoId, delta) {
+    try {
+        const response = await fetch('/api/carrinho/item', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                carrinho_id: carrinhoId,
+                produto_id: produtoId,
+                quantidade_delta: delta
+            })
+        });
+        return await response.json();
+    } catch (error) {
+        console.error("Falha ao gerenciar reserva:", error);
+        return { sucesso: false, mensagem: "Erro de conexão." };
+    }
+}
+
+// ==========================================================
 // 1. ESTADO DA APLICAÇÃO
 // (As variáveis centrais que controlam o funcionamento)
 // ==========================================================

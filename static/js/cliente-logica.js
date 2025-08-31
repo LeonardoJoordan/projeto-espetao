@@ -218,8 +218,8 @@ function mostrarModalSucesso(nomeCliente, senhaPedido) {
 
     if (telaSenha && textoConfirmacao && mainContainer) {
         textoConfirmacao.innerHTML = `
-            <div class="block text-2xl text-zinc-300 mb-2">Pedido recebido, ${nomeCliente}!</div>
-            <div class="block text-xl text-zinc-400 my-2">Sua senha para retirada é</div>
+            <div class="block text-2xl text-zinc-300 mb-2">Pronto ${nomeCliente}, pedido recebido!</div>
+            <div class="block text-xl text-zinc-400 my-2">A senha do seu pedido é</div>
             <div class="block text-5xl font-bold text-green-400 font-mono">#${senhaPedido}</div>
         `;
         telaSenha.classList.remove('hidden');

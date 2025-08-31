@@ -737,6 +737,7 @@ if (modalConfirmacao) {
             try {
                 // 3. ENVIO DOS DADOS (NOTE O NOVO ARGUMENTO)
                 await salvarPedido(metodoPagamento, modalidadeEntrega);
+                modalConfirmacao.classList.add('hidden'); // <-- ADICIONE ESTA LINHA
                 // Se o pedido for salvo com sucesso, a página será recarregada
                 // pela função salvarPedido, então não precisamos reativar o botão.
             } catch (error) {

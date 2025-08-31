@@ -96,7 +96,7 @@ def tela_cliente():
     ]
 
     # 4. Busca o ID do próximo pedido a ser criado
-    proxima_senha = gerenciador_db.obter_proxima_senha_diaria()
+    proxima_senha = gerenciador_db.obter_proxima_senha_diaria(LOCAL_SESSAO_ATUAL)
     
     # 5. Envia todos os dados, incluindo o novo ID, para o template renderizar
     return render_template(
@@ -340,15 +340,6 @@ def salvar_pedido():
         "status": "sucesso",
         "mensagem": "Pedido recebido, em preparação!",
         "senha_diaria": id_do_pedido_salvo['senha']
-    })
-
-    socketio.emit('novo_pedido', {'msg': 'Um novo pedido chegou!'})
-
-    return jsonify({
-        "status": "sucesso",
-        "mensagem": "Pedido recebido, em preparação!",
-        "senha_diaria": id_do_pedido_salvo['senha']
-        
     })
 
 @app.route('/pedido/iniciar_preparo/<int:id_do_pedido>', methods=['POST'])

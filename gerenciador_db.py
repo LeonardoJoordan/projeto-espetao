@@ -580,7 +580,7 @@ def salvar_novo_pedido(dados_do_pedido, local_id):
         cursor = conn.cursor()
 
         # --- Lógica de Preparação do Pedido ---
-        proxima_senha = obter_proxima_senha_diaria()
+        proxima_senha = obter_proxima_senha_diaria(local_id)
         timestamp_atual = datetime.now(timezone.utc).isoformat()
         ids_dos_produtos = [item['id'] for item in dados_do_pedido['itens']]
         if not ids_dos_produtos: return None
@@ -1323,7 +1323,7 @@ def pular_pedido_para_retirada(id_do_pedido):
         if conn:
             conn.close()
 
-def obter_proxima_senha_diaria():
+def obter_proxima_senha_diaria(local_id):
     """
     Calcula a próxima senha diária com base no horário de trabalho que
     começa às 5h da manhã.
@@ -1346,8 +1346,8 @@ def obter_proxima_senha_diaria():
 
         # Busca a maior senha usada desde o início do ciclo de trabalho
         cursor.execute(
-            "SELECT MAX(senha_diaria) FROM pedidos WHERE timestamp_criacao >= ?",
-            (data_inicio_busca.isoformat(),)
+            "SELECT MAX(senha_diaria) FROM pedidos WHERE timestamp_criacao >= ? AND local_id = ?",
+            (data_inicio_busca.isoformat(), local_id)
         )
         resultado = cursor.fetchone()
 

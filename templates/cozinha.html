@@ -273,7 +273,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 card.dataset.id = pedido.id;
                 card.dataset.status = pedido.status;
                 card.innerHTML = buildCardContent(pedido, isSplitView);
-                if(isSplitView) card.classList.replace('h-96', 'h-48');
+                if (isSplitView) {
+                card.classList.remove('h-[90vh]');
+                card.classList.add('max-h-[44vh]', 'h-auto');
+                }
                 cardContainer.appendChild(card);
             });
             mainContainer.appendChild(sectionNode);
@@ -289,7 +292,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 card.dataset.status = pedido.status;
                 card.dataset.timestampInicio = pedido.timestamp_inicio_preparo || '';
                 card.innerHTML = buildCardContent(pedido, isSplitView);
-                if(isSplitView) card.classList.replace('h-96', 'h-48');
+                if (isSplitView) {
+                card.classList.remove('h-[90vh]');
+                card.classList.add('max-h-[44vh]', 'h-auto');
+                }
                 cardContainer.appendChild(card);
             });
             mainContainer.appendChild(sectionNode);

@@ -78,19 +78,24 @@ if (window.io && typeof window.io === 'function') {
             // PASSO 2: ATUALIZA A UI IMEDIATAMENTE
             const productCard = document.querySelector(`.product-card[data-id="${produtoId}"]`);
             if (productCard) {
-                const addButton = productCard.querySelector('.add-button');
-                // Sincroniza o data-attribute também, por consistência
-                productCard.dataset.estoque = disponivel;
+            const addButton = productCard.querySelector('.add-button');
 
-                if (disponivel <= 0) {
-                    addButton.disabled = true;
-                    addButton.style.backgroundColor = '#52525B';
-                    addButton.style.cursor = 'not-allowed';
-                } else {
-                    addButton.disabled = false;
-                    addButton.style.backgroundColor = '';
-                    addButton.style.cursor = 'pointer';
-                }
+            // Sempre mantenha o botão clicável
+            addButton.disabled = false;
+            addButton.style.cursor = 'pointer';
+            addButton.style.backgroundColor = ''; // deixa o estilo padrão
+
+            // Sincroniza o data-attribute para consultas futuras
+            productCard.dataset.estoque = String(disponivel);
+
+            // (Opcional) Feedback visual sem bloquear:
+            // - Quando zerado, exibimos um "badge" ou classe visual
+            //   sem impedir o clique; o clique fará a checagem real.
+            if (disponivel <= 0) {
+                productCard.classList.add('possivel-esgotado'); // classe só visual
+            } else {
+                productCard.classList.remove('possivel-esgotado');
+            }
             }
         });
     });

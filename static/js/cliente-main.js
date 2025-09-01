@@ -108,6 +108,18 @@ if (window.io && typeof window.io === 'function') {
 
 // Listeners globais para renovar a sessão do carrinho em qualquer interação
 mainContent.addEventListener('scroll', renovarSessaoDebounced); // Usando a referência já existente
+// Renovar TTL em mais interações (compartilham o mesmo debounce)
+window.addEventListener('click', renovarSessaoDebounced, { passive: true });
+window.addEventListener('touchstart', renovarSessaoDebounced, { passive: true });
+window.addEventListener('keydown', renovarSessaoDebounced, { passive: true });
+window.addEventListener('wheel', renovarSessaoDebounced, { passive: true });
+window.addEventListener('pointerdown', renovarSessaoDebounced, { passive: true });
+
+// Ao voltar o foco/visibilidade para a aba, renove também
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') renovarSessaoDebounced();
+});
+window.addEventListener('focus', renovarSessaoDebounced);
 
 
 // ==========================================================
@@ -1108,7 +1120,28 @@ function mostrarOverlayInatividade() {
 
         if (segundosRestantes <= 0) {
             clearInterval(timerContagem);
-            location.reload();
+
+            try {
+                // Envia ao servidor a instrução para expirar e limpar as reservas deste carrinho no local atual
+                const payload = JSON.stringify({ carrinho_id: carrinhoId });
+                const blob = new Blob([payload], { type: 'application/json' });
+                if (navigator.sendBeacon) {
+                    navigator.sendBeacon('/api/carrinho/forcar_expirar', blob);
+                } else {
+                    // Fallback: tentativa não-bloqueante
+                    fetch('/api/carrinho/forcar_expirar', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: payload,
+                        keepalive: true,
+                    }).catch(() => {});
+                }
+            } catch (e) {
+                console.warn('Falha ao sinalizar expiração forçada.', e);
+            }
+
+            // Pequeno atraso para dar chance do beacon ser enviado antes da navegação
+            setTimeout(() => location.reload(), 150);
         }
     }, 1000);
 }

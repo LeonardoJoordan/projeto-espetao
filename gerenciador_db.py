@@ -1992,3 +1992,62 @@ def renovar_reservas_carrinho(carrinho_id, local_id):
         return {'sucesso': False}
     finally:
         if conn: conn.close()
+
+def forcar_expirar_carrinho(carrinho_id, local_id):
+    """
+    Força a expiração imediata de todas as reservas do carrinho no local informado.
+    Retorna a lista de produtos afetados com suas disponibilidades atualizadas.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # Transação explícita
+        cursor.execute("BEGIN IMMEDIATE")
+
+        # Limpa expiradas anteriores (boa higiene)
+        _executar_limpeza_reservas(cursor)
+
+        # Captura os produtos que serão afetados
+        cursor.execute("""
+            SELECT DISTINCT produto_id
+            FROM reservas_carrinho
+            WHERE carrinho_id = ? AND local_id = ?
+        """, (carrinho_id, local_id))
+        linhas = cursor.fetchall()
+        produtos_afetados_ids = [row[0] for row in linhas]
+
+        if produtos_afetados_ids:
+            # Marca como expiradas agora e executa limpeza
+            expira_agora = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+            cursor.execute("""
+                UPDATE reservas_carrinho
+                SET expires_at = ?
+                WHERE carrinho_id = ? AND local_id = ?
+            """, (expira_agora, carrinho_id, local_id))
+
+            # Remove todas as expiradas (incluindo estas)
+            _executar_limpeza_reservas(cursor)
+
+        conn.commit()
+
+        # Recalcula disponibilidade apenas dos produtos afetados
+        produtos_afetados = []
+        if produtos_afetados_ids:
+            disponibilidades = obter_disponibilidade_para_produtos(produtos_afetados_ids, local_id)
+            produtos_afetados = [
+                {'produto_id': pid, 'disponivel': disponibilidades.get(pid, 0)}
+                for pid in produtos_afetados_ids
+            ]
+
+        return {'sucesso': True, 'produtos_afetados': produtos_afetados}
+
+    except sqlite3.Error as e:
+        if conn:
+            conn.rollback()
+        print(f"ERRO ao forcar_expirar_carrinho: {e}")
+        return {'sucesso': False, 'mensagem': 'Erro ao expirar carrinho.'}
+    finally:
+        if conn:
+            conn.close()

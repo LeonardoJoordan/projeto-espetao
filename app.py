@@ -829,6 +829,28 @@ def api_renovar_carrinho():
     resultado = gerenciador_db.renovar_reservas_carrinho(carrinho_id, local_id)
     return jsonify(resultado)
 
+@app.route('/api/carrinho/forcar_expirar', methods=['POST'])
+def api_forcar_expirar_carrinho():
+    """ Endpoint para forçar a expiração imediata de todas as reservas de um carrinho no local atual. """
+    dados = request.get_json(silent=True) or {}
+    carrinho_id = dados.get('carrinho_id')
+    local_id = LOCAL_SESSAO_ATUAL
+
+    if not all([carrinho_id, local_id]):
+        return jsonify({"sucesso": False, "mensagem": "Dados incompletos."}), 400
+
+    resultado = gerenciador_db.forcar_expirar_carrinho(carrinho_id, local_id)
+
+    if resultado.get('sucesso') and resultado.get('produtos_afetados'):
+        emit_estoque_atualizado(
+            local_id=local_id,
+            updates=resultado.get('produtos_afetados', []),
+            origem='forcar_expirar'
+        )
+
+    return jsonify(resultado)
+
+
 @app.route('/')
 def index():
     # Redireciona a rota principal para a tela do cliente por padrão

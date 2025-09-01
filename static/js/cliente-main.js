@@ -315,7 +315,7 @@ async function abrirPopupSimples(productCard) { // <-- Adicionamos 'async'
                 quantidade++;
                 atualizarInterfaceSimples();
             } else {
-                await mostrarAlerta('Item Esgotado', resultadoReserva.mensagem || 'Não há mais unidades disponíveis.');
+                await mostrarAlerta(`Putz, acabou por aqui!`, resultadoReserva.mensagem || `Não há mais unidades deste item no momento.`);
             }
 
         } else if (target.id === 'btn-diminuir-simples') {
@@ -566,7 +566,7 @@ async function abrirPopupCustomizacao(productCard) { // Adicionamos 'async' aqui
                 quantidadeDisplay.textContent = quantidade;
                 precoTotalDisplay.textContent = formatCurrency(quantidade * precoProduto);
             } else {
-                await mostrarAlerta('Item Esgotado', resultadoReserva.mensagem || 'Não há mais unidades disponíveis.');
+                await mostrarAlerta(`Putz, acabou por aqui!`, resultadoReserva.mensagem || `Não há mais unidades deste item no momento.`);
             }
         } else if (target.closest('#btn-diminuir-popup')) {
             if (quantidade > 1) {
@@ -838,7 +838,7 @@ document.addEventListener('click', async (event) => { // <--- Função agora é 
     // PONTO DE ATENÇÃO #1 e #3: VERIFICAÇÃO PREVENTIVA
     const estoqueDisponivel = estoqueState.getEstoque(produtoId);
     if (estoqueDisponivel <= 0) {
-        await mostrarAlerta('Putz, esses são os últimos', `Infelizmente já foi quase tudo, esses são os últimos ${estoqueDisponivel} em estoque.`);
+        await mostrarAlerta(`Putz, acabou por aqui!`, `Não há mais unidades deste item no momento.`);
         return; // Impede a continuação
     }
 
@@ -869,7 +869,7 @@ document.addEventListener('click', async (event) => { // <--- Função agora é 
     } else {
         // Se a reserva falhou (concorrência), informa o usuário e atualiza a UI
         console.warn(`Reserva para produto ${produtoId} falhou:`, resultadoReserva.mensagem);
-        await mostrarAlerta('Item Esgotado', 'Desculpe, este item acabou de esgotar!');
+        await mostrarAlerta(`Putz, acabou por aqui!`, `Não há mais unidades deste item no momento.`);
 
         productCard.dataset.estoque = 0; // Sincroniza o data-attribute
         productCard.classList.add('possivel-esgotado'); // só visual, clique continua permitido

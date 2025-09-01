@@ -1928,7 +1928,7 @@ def gerenciar_reserva(carrinho_id, local_id, produto_id, quantidade_delta):
             
             if disponivel < nova_quantidade:
                 conn.rollback()
-                return {'sucesso': False, 'mensagem': 'Estoque insuficiente.', 'produtos_afetados': [{'produto_id': produto_id, 'disponibilidade_atual': disponivel}]}
+                return {'sucesso': False, 'mensagem': 'Não há mais unidades deste item no momento.', 'produtos_afetados': [{'produto_id': produto_id, 'disponibilidade_atual': disponivel}]}
 
         # PASSO 4: Aplicar a mudança
         agora_utc = datetime.now(timezone.utc)

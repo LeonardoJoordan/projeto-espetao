@@ -345,8 +345,6 @@ async function abrirPopupSimples(productCard) { // <-- Adicionamos 'async'
             adicionarItemAoPedido(novoItem);
             atualizarBotaoPrincipal();
             await fecharPopupSimples('confirm'); // <-- não libera reservas
-            modalSimples.classList.add('hidden');
-            mainContainer.classList.remove('content-blurred');
         }
     };
 
@@ -416,11 +414,65 @@ async function abrirPopupCustomizacao(productCard) { // Adicionamos 'async' aqui
     `;
 
     modalCustomizacao.classList.remove('hidden');
+    mainContainer.classList.add('content-blurred'); // NOVO
 
     const quantidadeDisplay = document.getElementById('quantidade-display-popup');
     const precoTotalDisplay = document.getElementById('preco-total-popup');
     const containerLinhas = document.getElementById('linhas-customizacao-popup');
     let quantidade = 1;
+
+    // === FECHAMENTO CENTRALIZADO (igual ao modal simples) ===
+    let popupCustomFechado = false;
+    let onBackdropClickCustom = null;
+    let onEscKeyCustom = null;
+
+    /**
+     * Fecha o popup garantindo:
+     * - Liberação total das reservas se não for "confirm"
+     * - Sincronização do estoque local (estoqueState)
+     * - Remoção de listeners e remoção do blur
+     */
+    const fecharPopupCustomizacao = async (reason) => {
+    if (popupCustomFechado) return;
+    popupCustomFechado = true;
+
+    const idProduto = parseInt(productCard.dataset.id, 10);
+
+    // Se NÃO confirmou, libera tudo que está reservado neste popup
+    if (reason !== 'confirm' && quantidade > 0) {
+        try {
+        const resultado = await gerenciarReservaAPI(idProduto, -quantidade);
+        if (resultado?.produtos_afetados?.length) {
+            const upd = resultado.produtos_afetados[0];
+            estoqueState.setEstoque(upd.produto_id, upd.disponivel);
+        }
+        } catch (e) {
+        console.warn('Falha ao liberar reservas no fechamento do popup custom:', e);
+        // Como é fechamento por cancel/external, seguimos fechando mesmo assim.
+        }
+    }
+
+    // Esconde UI e limpa blur
+    modalCustomizacao.classList.add('hidden');
+    mainContainer.classList.remove('content-blurred');
+
+    // Remove listener principal do popup
+    if (eventoPopupAtivo) {
+        modalCustomizacao.removeEventListener('click', eventoPopupAtivo);
+        eventoPopupAtivo = null;
+    }
+
+    // Remove listeners externos (backdrop/ESC)
+    if (onBackdropClickCustom) {
+        modalCustomizacao.removeEventListener('mousedown', onBackdropClickCustom);
+        onBackdropClickCustom = null;
+    }
+    if (onEscKeyCustom) {
+        window.removeEventListener('keydown', onEscKeyCustom);
+        onEscKeyCustom = null;
+    }
+    };
+
 
     // PASSO 2: A função de criar a linha agora RECEBE a lista de acompanhamentos.
     function criarLinhaHtml(numeroItem, acompanhamentos) {
@@ -478,18 +530,27 @@ async function abrirPopupCustomizacao(productCard) { // Adicionamos 'async' aqui
         precoTotalDisplay.textContent = `R$ ${total.toFixed(2).replace('.', ',')}`;
     }
 
+    // === Fechar por clique no backdrop ===
+    onBackdropClickCustom = (ev) => {
+    if (ev.target === modalCustomizacao) {
+        fecharPopupCustomizacao('external');
+    }
+    };
+    modalCustomizacao.addEventListener('mousedown', onBackdropClickCustom);
+
+    // === Fechar por tecla ESC ===
+    onEscKeyCustom = (ev) => {
+    if (ev.key === 'Escape') fecharPopupCustomizacao('external');
+    };
+    window.addEventListener('keydown', onEscKeyCustom);
+
+
     // A lógica de eventos permanece a mesma...
     eventoPopupAtivo = async (event) => { // <-- Função agora é async
         const target = event.target;
         const idProduto = parseInt(productCard.dataset.id);
         
         if (target.closest('#btn-aumentar-popup')) {
-            // PONTO DE ATENÇÃO #1 e #3: VERIFICAÇÃO PREVENTIVA
-            const estoqueDisponivel = estoqueState.getEstoque(idProduto);
-            if (estoqueDisponivel <= 0) {
-                await mostrarAlerta('Putz, esses são os últimos', `Infelizmente já foi quase tudo, esses são os últimos ${estoqueDisponivel} em estoque.`);
-                return;
-            }
 
             const resultadoReserva = await gerenciarReservaAPI(idProduto, 1);
             
@@ -509,17 +570,26 @@ async function abrirPopupCustomizacao(productCard) { // Adicionamos 'async' aqui
             }
         } else if (target.closest('#btn-diminuir-popup')) {
             if (quantidade > 1) {
-                await gerenciarReservaAPI(idProduto, -1); // Libera a reserva
+                const idProduto = parseInt(productCard.dataset.id, 10);
+                const resultadoLiberacao = await gerenciarReservaAPI(idProduto, -1);
+
+                if (resultadoLiberacao?.produtos_afetados?.length) {
+                const update = resultadoLiberacao.produtos_afetados[0];
+                estoqueState.setEstoque(update.produto_id, update.disponivel);
+                }
+
+                if (resultadoLiberacao?.sucesso) {
                 quantidade--;
                 if (containerLinhas.lastElementChild) containerLinhas.lastElementChild.remove();
                 quantidadeDisplay.textContent = quantidade;
                 precoTotalDisplay.textContent = formatCurrency(quantidade * precoProduto);
+                } else {
+                await mostrarAlerta('Erro de Comunicação', 'Não foi possível atualizar a quantidade. Tente novamente.');
+                }
             }
         } else if (target.closest('#btn-cancelar-item-popup')) {
-            // Libera a quantidade TOTAL que estava reservada neste popup
-            await gerenciarReservaAPI(idProduto, -quantidade);
-            modalCustomizacao.classList.add('hidden');
-            mainContainer.classList.remove('content-blurred');
+          await fecharPopupCustomizacao('cancel'); // libera tudo e fecha
+
         } else if (target.closest('#btn-adicionar-pedido-popup')) {
             document.querySelectorAll('.item-customizacao').forEach(itemNode => {
                 const ponto = itemNode.querySelector('input[name$="ponto"]:checked').value;
@@ -529,8 +599,8 @@ async function abrirPopupCustomizacao(productCard) { // Adicionamos 'async' aqui
                 adicionarItemAoPedido(novoItem);
             });
             atualizarBotaoPrincipal();
-            modalCustomizacao.classList.add('hidden');
-            mainContainer.classList.remove('content-blurred');
+            await fecharPopupCustomizacao('confirm'); // fecha sem liberar, pois a reserva vira item do pedido
+
         } else {
             // Lógica de UI para seleção de ponto/extras (mantida)
             const pontoOption = target.closest('.ponto-option');
@@ -802,9 +872,7 @@ document.addEventListener('click', async (event) => { // <--- Função agora é 
         await mostrarAlerta('Item Esgotado', 'Desculpe, este item acabou de esgotar!');
 
         productCard.dataset.estoque = 0; // Sincroniza o data-attribute
-        addButton.disabled = true;
-        addButton.style.backgroundColor = '#52525B';
-        addButton.style.cursor = 'not-allowed';
+        productCard.classList.add('possivel-esgotado'); // só visual, clique continua permitido
     }
 });
 

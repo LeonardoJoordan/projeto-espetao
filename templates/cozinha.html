@@ -70,8 +70,9 @@
         </div>
     </div>
 
-    <div id="modal-container" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden opacity-0">
-        <div id="modal-content" class="w-full max-w-md transform scale-95">
+    <div id="modal-container" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-start md:items-center justify-center p-4 md:p-6 z-50 hidden opacity-0 overflow-y-auto">
+        <div id="modal-content" class="w-full max-w-lg md:max-w-2xl transform scale-95">
+
         </div>
     </div>
 
@@ -241,7 +242,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 ${acaoPrincipalHtml}
                 <div class="p-4 flex-grow flex flex-col min-h-0 overflow-hidden">
                     <h2 class="text-2xl font-bold mb-3 text-center drop-shadow-lg flex-shrink-0">${pedido.nome_cliente}</h2>
-                    <ul class="space-y-2 text-white overflow-y-auto scroll-custom pr-2 flex-grow">${itemsListHtml}</ul>
+                    <ul class="space-y-2 text-white overflow-y-auto scroll-custom pr-2 flex-grow min-h-0">${itemsListHtml}</ul>
                     <div class="mt-auto pt-2 flex-shrink-0">
                         ${modalidadeHtml}
                         ${valorTotalHtml} 
@@ -252,6 +253,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 </button>
             </div>`;
     }
+
     // --- FUNÇÃO PRINCIPAL PARA ATUALIZAR O LAYOUT ---
     function updateLayout() {
         mainContainer.innerHTML = '';
@@ -268,15 +270,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const sectionNode = templates.querySelector('#secao-backlog-template > div').cloneNode(true);
             const cardContainer = sectionNode.querySelector('.linha-pedidos');
             backlogPedidos.forEach(pedido => {
-                const card = templates.querySelector('#card-template > div').cloneNode(true);
-                card.classList.add('h-[90vh]');
+                
+                const card = templates.querySelector('#card-template > div').cloneNode(true); // já tem h-full do template
                 card.dataset.id = pedido.id;
                 card.dataset.status = pedido.status;
                 card.innerHTML = buildCardContent(pedido, isSplitView);
-                if (isSplitView) {
-                card.classList.remove('h-[90vh]');
-                card.classList.add('max-h-[44vh]', 'h-auto');
-                }
+
                 cardContainer.appendChild(card);
             });
             mainContainer.appendChild(sectionNode);
@@ -286,16 +285,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const sectionNode = templates.querySelector('#secao-producao-template > div').cloneNode(true);
             const cardContainer = sectionNode.querySelector('.linha-pedidos');
             productionPedidos.forEach(pedido => {
-                const card = templates.querySelector('#card-template > div').cloneNode(true);
-                card.classList.add('h-[90vh]');
+                const card = templates.querySelector('#card-template > div').cloneNode(true); // h-full do template
                 card.dataset.id = pedido.id;
                 card.dataset.status = pedido.status;
                 card.dataset.timestampInicio = pedido.timestamp_inicio_preparo || '';
                 card.innerHTML = buildCardContent(pedido, isSplitView);
-                if (isSplitView) {
-                card.classList.remove('h-[90vh]');
-                card.classList.add('max-h-[44vh]', 'h-auto');
-                }
+
                 cardContainer.appendChild(card);
             });
             mainContainer.appendChild(sectionNode);
@@ -313,20 +308,32 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!pedido) return;
 
         const card = templates.querySelector('#card-template > div').cloneNode(true);
-        card.classList.add('h-[85vh]');
+
+        // ➜ Remover alturas/larguras do template que atrapalham no modal
+        card.classList.remove('h-full', 'w-72');
+        // ➜ Garantir largura cheia no modal e limite de altura com rolagem interna
+        card.classList.add('w-full', 'max-h-[85vh]', 'overflow-hidden');
+
         card.dataset.id = pedido.id;
         card.dataset.status = pedido.status;
         card.innerHTML = buildCardContent(pedido, false);
-        
+
+        // ➜ Soltar o conteúdo interno para o flex funcionar corretamente
+        const divInterno = card.querySelector('.relative.z-10');
+        if (divInterno) {
+            divInterno.classList.remove('h-full', 'min-h-full');
+        }
+
         modalContent.innerHTML = '';
         modalContent.appendChild(card);
-        
+
         modalContainer.classList.remove('hidden');
         setTimeout(() => {
             modalContainer.classList.remove('opacity-0');
             modalContent.classList.remove('scale-95');
         }, 10);
     }
+
 
     function hideModal() {
         modalContainer.classList.add('opacity-0');

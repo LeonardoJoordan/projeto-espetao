@@ -1901,30 +1901,36 @@ def gerenciar_reserva(carrinho_id, local_id, produto_id, quantidade_delta):
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
+        
+        # Iniciar transação explicitamente
+        cursor.execute("BEGIN IMMEDIATE")
 
         # PASSO 1: Limpeza de reservas expiradas
         _executar_limpeza_reservas(cursor)
 
-        # PASSO 2: Obter o estado atual antes de modificar
+        # PASSO 2 e 3: Validação e aplicação em uma única operação atômica
         cursor.execute("SELECT COALESCE(SUM(quantidade), 0) FROM estoque_movimentacoes WHERE produto_id = ?", (produto_id,))
         estoque_on_hand = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COALESCE(SUM(quantidade_reservada), 0) FROM reservas_carrinho WHERE produto_id = ? AND local_id = ?", (produto_id, local_id))
-        total_reservado_antes = cursor.fetchone()[0]
-
-        cursor.execute("SELECT quantidade_reservada FROM reservas_carrinho WHERE carrinho_id = ? AND produto_id = ?", (carrinho_id, produto_id))
+        cursor.execute("SELECT quantidade_reservada FROM reservas_carrinho WHERE carrinho_id = ? AND produto_id = ? AND local_id = ?", (carrinho_id, produto_id, local_id))
         reserva_carrinho_atual = cursor.fetchone()
         reserva_carrinho_atual = reserva_carrinho_atual[0] if reserva_carrinho_atual else 0
 
-        disponivel = estoque_on_hand - (total_reservado_antes - reserva_carrinho_atual)
-
-        # PASSO 3: Validar se a reserva é possível
-        if quantidade_delta > 0 and disponivel < quantidade_delta:
-            conn.rollback()
-            return {'sucesso': False, 'mensagem': 'Estoque insuficiente.', 'produtos_afetados': [{'produto_id': produto_id, 'disponibilidade_atual': disponivel}]}
+        # Calcular nova quantidade primeiro
+        nova_quantidade = reserva_carrinho_atual + quantidade_delta
+        
+        # Se for remoção total ou parcial, não precisa validar estoque
+        if quantidade_delta > 0:
+            cursor.execute("SELECT COALESCE(SUM(quantidade_reservada), 0) FROM reservas_carrinho WHERE produto_id = ? AND local_id = ? AND carrinho_id != ?", (produto_id, local_id, carrinho_id))
+            total_reservado_outros = cursor.fetchone()[0]
+            
+            disponivel = estoque_on_hand - total_reservado_outros
+            
+            if disponivel < nova_quantidade:
+                conn.rollback()
+                return {'sucesso': False, 'mensagem': 'Estoque insuficiente.', 'produtos_afetados': [{'produto_id': produto_id, 'disponibilidade_atual': disponivel}]}
 
         # PASSO 4: Aplicar a mudança
-        nova_quantidade = reserva_carrinho_atual + quantidade_delta
         agora_utc = datetime.now(timezone.utc)
         expires_at = agora_utc + timedelta(seconds=120)
 
@@ -1933,24 +1939,27 @@ def gerenciar_reserva(carrinho_id, local_id, produto_id, quantidade_delta):
                 INSERT INTO reservas_carrinho (carrinho_id, produto_id, local_id, quantidade_reservada, created_at, expires_at)
                 VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(carrinho_id, produto_id, local_id) DO UPDATE SET
-                quantidade_reservada = ?, expires_at = ?
-            ''', (carrinho_id, produto_id, local_id, nova_quantidade, agora_utc.isoformat(), expires_at.isoformat(), nova_quantidade, expires_at.isoformat()))
+                quantidade_reservada = excluded.quantidade_reservada, 
+                expires_at = excluded.expires_at
+            ''', (carrinho_id, produto_id, local_id, nova_quantidade, agora_utc.isoformat(), expires_at.isoformat()))
         else:
-            cursor.execute("DELETE FROM reservas_carrinho WHERE carrinho_id = ? AND produto_id = ?", (carrinho_id, produto_id))
+            cursor.execute("DELETE FROM reservas_carrinho WHERE carrinho_id = ? AND produto_id = ? AND local_id = ?", (carrinho_id, produto_id, local_id))
 
         conn.commit()
 
-        # PASSO 5: Retornar a nova disponibilidade do produto
+        # PASSO 5: Retornar a nova disponibilidade
         disponibilidade_final = obter_disponibilidade_para_produtos([produto_id], local_id)
         produto_afetado = {'produto_id': produto_id, 'disponivel': disponibilidade_final.get(produto_id, 0)}
         return {'sucesso': True, 'produtos_afetados': [produto_afetado]}
 
     except sqlite3.Error as e:
-        if conn: conn.rollback()
+        if conn: 
+            conn.rollback()
         print(f"ERRO ao gerenciar reserva: {e}")
-        return {'sucesso': False, 'mensagem': 'Erro no servidor.', 'disponibilidade_atual': 0}
+        return {'sucesso': False, 'mensagem': 'Erro no servidor.', 'produtos_afetados': [{'produto_id': produto_id, 'disponibilidade_atual': 0}]}
     finally:
-        if conn: conn.close()
+        if conn: 
+            conn.close()
 
 
 def renovar_reservas_carrinho(carrinho_id, local_id):

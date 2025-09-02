@@ -306,6 +306,14 @@ class PainelControle(QWidget):
             ip = s.getsockname()[0]
         except Exception:
             ip = '127.0.0.1'
+            # ALERTA VISUAL AO USUÁRIO
+            QMessageBox.warning(
+            self,
+            "Rede não encontrada",
+            "Nenhuma conexão de rede válida foi detectada.\n"
+            "O servidor será iniciado em modo LOCALHOST (127.0.0.1).\n\n"
+            "Nesse modo, outros dispositivos não conseguirão acessar."
+        )
         finally:
             s.close()
         return ip

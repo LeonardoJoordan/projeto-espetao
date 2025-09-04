@@ -126,6 +126,29 @@ window.addEventListener('focus', renovarSessaoDebounced);
 // 3. FUNÇÕES DE UI (Manipulação da Interface)
 // ==========================================================
 
+// INÍCIO DA ADIÇÃO
+let modalRenewTimer = null;
+
+function startModalRenew() {
+  stopModalRenew(); // Garante que não haja timers duplicados
+  // Renova a sessão a cada 60 segundos enquanto o modal estiver aberto
+  modalRenewTimer = setInterval(() => {
+    fetch('/api/carrinho/renovar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ carrinho_id: carrinhoId }) // carrinhoId já está disponível no escopo
+    }).catch(err => console.warn('Falha ao renovar sessão do modal:', err));
+  }, 60000);
+}
+
+function stopModalRenew() {
+  if (modalRenewTimer) {
+    clearInterval(modalRenewTimer);
+    modalRenewTimer = null;
+  }
+}
+// FIM DA ADIÇÃO
+
 async function mostrarAlerta(titulo, mensagem) {
     const modal = document.getElementById('modal-alerta');
     const tituloEl = document.getElementById('titulo-alerta');
@@ -228,6 +251,7 @@ async function abrirPopupSimples(productCard) { // <-- Adicionamos 'async'
     `;
 
     modalSimples.classList.remove('hidden');
+    startModalRenew(); // Inicia o keep-alive
 
     // NOVO: referenciar para remover depois
     let onBackdropClick = null;
@@ -266,8 +290,9 @@ async function abrirPopupSimples(productCard) { // <-- Adicionamos 'async'
      * @param {'cancel'|'confirm'|'external'} reason - motivo do fechamento
      */
     const fecharPopupSimples = async (reason) => {
-    if (popupFechado) return; // evita corrida/double call
-    popupFechado = true;
+        stopModalRenew(); // Para o keep-alive
+        if (popupFechado) return; // evita corrida/double call
+        popupFechado = true;
 
     const idProduto = parseInt(productCard.dataset.id);
 
@@ -426,6 +451,7 @@ async function abrirPopupCustomizacao(productCard) { // Adicionamos 'async' aqui
     `;
 
     modalCustomizacao.classList.remove('hidden');
+    startModalRenew(); // Inicia o keep-alive
     mainContainer.classList.add('content-blurred'); // NOVO
 
     const quantidadeDisplay = document.getElementById('quantidade-display-popup');
@@ -445,8 +471,9 @@ async function abrirPopupCustomizacao(productCard) { // Adicionamos 'async' aqui
      * - Remoção de listeners e remoção do blur
      */
     const fecharPopupCustomizacao = async (reason) => {
-    if (popupCustomFechado) return;
-    popupCustomFechado = true;
+        stopModalRenew(); // Para o keep-alive
+        if (popupCustomFechado) return;
+        popupCustomFechado = true;
 
     const idProduto = parseInt(productCard.dataset.id, 10);
 
@@ -963,7 +990,16 @@ if (modalConfirmacao) {
             try {
                 // 3. ENVIO DOS DADOS (NOTE O NOVO ARGUMENTO)
                 await salvarPedido(metodoPagamento, modalidadeEntrega);
-                modalConfirmacao.classList.add('hidden'); // <-- ADICIONE ESTA LINHA
+
+                // INÍCIO DA ADIÇÃO - Best-effort para expirar o carrinho no back-end
+                fetch('/api/carrinho/forcar_expirar', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ carrinho_id: carrinhoId })
+                }).catch(() => {});
+                // FIM DA ADIÇÃO
+
+                modalConfirmacao.classList.add('hidden');
                 // Se o pedido for salvo com sucesso, a página será recarregada
                 // pela função salvarPedido, então não precisamos reativar o botão.
             } catch (error) {

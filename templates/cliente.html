@@ -363,7 +363,7 @@
                     <div class="space-y-4">
                         
                         {% for produto in produtos_agrupados[categoria.id] %}
-                        <div class="product-card bg-zinc-800 rounded-xl p-4 flex items-center gap-4"
+                        <div class="product-card bg-zinc-800 rounded-xl p-4 flex gap-4 items-center"
                             data-id="{{ produto.id }}" 
                             data-nome="{{ produto.nome }}" 
                             data-preco="{{ produto.preco_venda }}"
@@ -373,31 +373,46 @@
                             data-categoria-ordem="{{ produto.categoria_ordem }}"
                             data-produto-ordem="{{ produto.produto_ordem }}">
 
+                        <!-- FOTO: travada quadrada, sem encolher -->
+                        <div class="w-20 h-20 md:w-24 md:h-24 bg-zinc-700 rounded-md shrink-0 overflow-hidden flex items-center justify-center"
+                            style="aspect-ratio: 1 / 1;">
                             {% if produto.foto_url %}
-                                <img src="{{ url_for('static', filename='images/produtos/' + produto.foto_url) }}" alt="Foto de {{ produto.nome }}" class="w-24 h-24 bg-zinc-700 rounded-md flex-shrink-0 object-cover">
+                            <img src="{{ url_for('static', filename='images/produtos/' + produto.foto_url) }}"
+                                alt="Foto de {{ produto.nome }}"
+                                class="w-full h-full object-cover block">
                             {% else %}
-                                <div class="w-24 h-24 bg-zinc-700 rounded-md flex-shrink-0 flex items-center justify-center">
-                                    <i class="fas fa-camera text-3xl text-zinc-500"></i>
-                                </div>
+                            <i class="fas fa-camera text-2xl md:text-3xl text-zinc-500"></i>
                             {% endif %}
+                        </div>
 
-                            <div class="flex-grow">
-                                <h4 class="text-xl font-semibold">{{ produto.nome }}</h4>
+                        <!-- Coluna da direita: nome + descrição + preço/botão -->
+                        <div class="flex-1 flex flex-col">
+                            <!-- NOME (topo) -->
+                            <div class="text-center">
+                                <h4 class="text-xl font-semibold leading-tight">{{ produto.nome }}</h4>
+                            </div>
 
+                            <!-- DESCRIÇÃO (meio - espaço fixo) -->
+                            <div class="min-h-[3rem] mt-2 flex items-center justify-center">
                                 {% if produto.descricao %}
-                                    <p class="text-zinc-400 text-sm mt-1">{{ produto.descricao }}</p>
+                                    <p class="text-zinc-400 text-[70%] leading-snug font-normal line-clamp-2 text-center">
+                                        {{ produto.descricao }}
+                                    </p>
                                 {% endif %}
                             </div>
 
-                            <div class="flex items-center gap-6">
-                                <span class="text-2xl font-semibold w-28 text-right">
-                                    R$ {{ "%.2f"|format(produto.preco_venda) | replace('.', ',') }}
+                            <!-- PREÇO + BOTÃO (base) -->
+                            <div class="mt-2 flex items-center justify-center gap-4">
+                                <span class="text-2xl font-semibold">
+                                R$ {{ "%.2f"|format(produto.preco_venda) | replace('.', ',') }}
                                 </span>
                                 <button class="add-button rounded-full w-14 h-14 flex items-center justify-center text-white text-2xl shadow-lg relative overflow-hidden">
-                                    <i class="fas fa-plus z-10"></i>
+                                <i class="fas fa-plus z-10"></i>
                                 </button>
                             </div>
                         </div>
+                        </div>
+
                         {% endfor %}
 
                     </div>

@@ -1,8 +1,57 @@
+# main.py
+
+# ===================================================================
+# CORREÇÃO CRÍTICA PARA EMPACOTAMENTO COM CX_FREEZE
+# ===================================================================
 import sys
+import os
+
+def fix_dns_rdtypes():
+    """
+    Corrige o problema do dns.rdtypes.__all__ no cx_Freeze.
+    Este é o bug específico que está causando o erro AttributeError.
+    """
+    try:
+        import dns.rdtypes
+        # Verifica se o atributo __all__ existe
+        if not hasattr(dns.rdtypes, '__all__'):
+            # Cria o atributo que está faltando no ambiente empacotado
+            dns.rdtypes.__all__ = []
+            print("DNS rdtypes __all__ corrigido para o cx_Freeze")
+    except ImportError as e:
+        print(f"Aviso: Não foi possível importar dns.rdtypes: {e}")
+    except Exception as e:
+        print(f"Erro ao corrigir dns.rdtypes: {e}")
+
+# Aplica a correção ANTES de qualquer importação do eventlet
+fix_dns_rdtypes()
+
+# ===================================================================
+# BLOCO DE INICIALIZAÇÃO DO EVENTLET - DEVE SER O PRIMEIRO DE TODOS
+# ===================================================================
+os.environ['EVENTLET_HUB'] = 'selects'
+# A "Regra de Ouro": Prepara o ambiente para ser assíncrono ANTES de
+# qualquer outra biblioteca de rede (socket, requests, PySide6, Flask) ser importada.
+import eventlet
+eventlet.monkey_patch()
+
+# Garante que os hubs sejam incluídos no build congelado
+import eventlet.hubs.selects   # noqa
+import eventlet.hubs.poll      # noqa
+import eventlet.hubs.epolls    # noqa
+import eventlet.hubs.kqueue    # noqa
+import engineio.async_drivers.eventlet  # noqa
+import greenlet  # noqa
+# ===================================================================
+
+
+# ===================================================================
+# AGORA, O RESTO DAS SUAS IMPORTACOES, EM QUALQUER ORDEM
+# ===================================================================
 import socket
 import threading
 import webbrowser
-import requests  # Importa a biblioteca de requisições
+import requests
 import os
 from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
                                QLabel, QTextEdit, QPushButton, QGroupBox, QGridLayout, 
@@ -12,13 +61,13 @@ from PySide6.QtCore import Qt, Signal, QObject, QTimer
 from PySide6.QtGui import QIcon, QPixmap
 import json
 # Importa o 'app' e o 'socketio' do seu arquivo app.py
-# app.py agora funciona como uma "biblioteca" para o nosso programa principal
 from app import app, socketio
 import gerenciador_db
-# Adicione esta importação no topo do main.py
 import signal
 import multiprocessing
-from queue import Empty 
+from queue import Empty
+# ===================================================================
+
 
 # --- Classe para redirecionar os logs para a interface ---
 class LogHandler(QObject):

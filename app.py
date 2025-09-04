@@ -15,40 +15,64 @@ from datetime import datetime, timedelta
 # Garante que o banco e as tabelas existam antes de o servidor iniciar.
 from database import inicializar_banco
 inicializar_banco()
-# -----------------------------------------
-
-# Determina o caminho base de forma universal
-if getattr(sys, 'frozen', False):
-    # Caminho para o executável (cx_Freeze, PyInstaller)
-    base_path = os.path.dirname(sys.executable)
-else:
-    # Caminho para o script .py (desenvolvimento)
-    base_path = os.path.dirname(os.path.abspath(__file__))
-
-# Constrói os caminhos para as pastas 'templates' e 'static'
-template_folder = os.path.join(base_path, 'templates')
-static_folder = os.path.join(base_path, 'static')
 
 # Inicializa o Flask com os caminhos corretos
-app = Flask(__name__, template_folder=template_folder, static_folder=static_folder)
 
-# Tenta diferentes modos até encontrar um que funcione
-socketio = None
-for mode in ['threading', 'gevent', None]:
+def resource_path(relative_path):
+    """ Obtém o caminho absoluto para o recurso, funciona para dev e para o cx_Freeze """
     try:
-        socketio = SocketIO(app, async_mode=mode, cors_allowed_origins='*')
-        print(f"SocketIO iniciado com async_mode='{mode}'")
-        break
-    except:
-        continue
+        # cx_Freeze cria uma pasta e armazena o caminho em sys.frozen
+        if getattr(sys, 'frozen', False):
+            # No cx_Freeze, o caminho base é onde o executável está
+            if hasattr(sys, '_MEIPASS'):
+                # PyInstaller path (caso precise no futuro)
+                base_path = sys._MEIPASS
+            else:
+                # cx_Freeze path
+                base_path = os.path.dirname(sys.executable)
+        else:
+            # Se não estiver empacotado, o caminho base é o do próprio script
+            base_path = os.path.dirname(os.path.abspath(__file__))
+    except Exception as e:
+        print(f"Erro ao detectar caminho base: {e}")
+        base_path = os.path.dirname(os.path.abspath(__file__))
 
-# Se nenhum modo funcionar, cria sem especificar
-if socketio is None:
-    socketio = SocketIO(app, cors_allowed_origins='*')
-    print("SocketIO iniciado com modo padrão")
+    full_path = os.path.join(base_path, relative_path)
+    print(f"DEBUG: Caminho solicitado: {relative_path}")
+    print(f"DEBUG: Caminho base: {base_path}")  
+    print(f"DEBUG: Caminho final: {full_path}")
+    print(f"DEBUG: Caminho existe? {os.path.exists(full_path)}")
+    
+    return full_path
+
+# Define os caminhos corretos usando nossa nova função
+static_folder_path = resource_path('static')
+template_folder_path = resource_path('templates')
+
+print(f"DEBUG: Static folder: {static_folder_path}")
+print(f"DEBUG: Template folder: {template_folder_path}")
+
+# Verifica se as pastas existem
+if not os.path.exists(static_folder_path):
+    print(f"ERRO: Pasta static não encontrada em: {static_folder_path}")
+if not os.path.exists(template_folder_path):
+    print(f"ERRO: Pasta templates não encontrada em: {template_folder_path}")
+
+# Cria a instância do Flask informando os caminhos corretos
+app = Flask(
+    __name__,
+    static_folder=static_folder_path,
+    template_folder=template_folder_path
+)
+
+# Inicializa o SocketIO de forma explícita e robusta com 'eventlet'
+socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins='*')
+print("SocketIO iniciado com async_mode='eventlet'")
 
 # Variável global para armazenar o ID do local da sessão atual
 LOCAL_SESSAO_ATUAL = None
+
+
 
 def emit_estoque_atualizado(local_id, updates, origem="desconhecida"):
     """
@@ -83,14 +107,27 @@ def handle_connect():
         print("AVISO: Cliente conectado, mas nenhum local de sessão foi definido.")
 
 @app.route('/api/definir_local_sessao', methods=['POST'])
+def definir_local_sessao_view():
+    """View HTTP: lê JSON {local_id: ...} e define a sessão."""
+    data = request.get_json(silent=True) or {}
+    local_id = data.get('local_id')
+    ok = definir_local_sessao(local_id)
+    if ok:
+        return jsonify({"status": "sucesso"}), 200
+    return jsonify({"status": "erro"}), 400
+
 def definir_local_sessao(local_id):
-    """Função para definir o local da sessão a partir de outro módulo."""
+    """Função utilitária: pode ser chamada direto (como você já faz no main.py)."""
     global LOCAL_SESSAO_ATUAL
-    if local_id:
+    try:
+        if local_id is None:
+            return False
         LOCAL_SESSAO_ATUAL = int(local_id)
         print(f"Sessão de trabalho definida para o local ID: {LOCAL_SESSAO_ATUAL}")
         return True
-    return False
+    except Exception as e:
+        print(f"Falha ao definir local de sessão: {e}")
+        return False
 
 @app.route('/api/locais')
 def api_obter_locais():

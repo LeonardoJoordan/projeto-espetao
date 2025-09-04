@@ -1,0 +1,46 @@
+/* static/css/teclado.css */
+
+.screen {
+    transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+}
+
+.screen.hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.95);
+}
+
+/* Estilo para o cursor piscando */
+.blinking-cursor {
+    display: inline-block;
+    width: 3px;
+    height: 2.5rem; /* Altura do cursor */
+    background-color: #F97316; /* Cor primária laranja */
+    animation: blink 1s step-end infinite;
+    margin-left: 4px;
+}
+
+@keyframes blink {
+    from, to { background-color: transparent; }
+    50% { background-color: #F97316; }
+}
+
+/* Estilo das teclas */
+.keyboard-key {
+    background-color: #27272A; /* surface-dark */
+    transition: all 0.1s ease-in-out;
+    box-shadow: 0 4px 0 #111113; /* Sombra para dar profundidade */
+    transform: translateY(0);
+}
+
+.keyboard-key:active {
+    background-color: #3f3f46;
+    box-shadow: 0 2px 0 #111113;
+    transform: translateY(2px);
+}
+
+/* Estilo para tecla de acento ativa */
+.keyboard-key.accent-active {
+    background-color: #FBBF24; /* primary-yellow */
+    color: #18181B; /* background-dark */
+}

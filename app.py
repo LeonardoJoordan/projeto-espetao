@@ -9,12 +9,21 @@ import threading
 import time
 import analytics
 import pytz
+import json
+import re
 from datetime import datetime, timedelta
 
 # --- INICIALIZAÇÃO DO BANCO DE DADOS ---
 # Garante que o banco e as tabelas existam antes de o servidor iniciar.
 from database import inicializar_banco
 inicializar_banco()
+
+# --- Dependência para Impressão ---
+try:
+    from escpos import printer
+    ESCPOS_INSTALADO = True
+except ImportError:
+    ESCPOS_INSTALADO = False
 
 # Inicializa o Flask com os caminhos corretos
 
@@ -90,6 +99,31 @@ def emit_estoque_atualizado(local_id, updates, origem="desconhecida"):
     room = f"local:{local_id}"
     socketio.emit('atualizacao_disponibilidade', payload, to=room)
     print(f"Emitido 'atualizacao_disponibilidade' para a sala {room}: {len(updates)} updates.")
+
+# --- CONFIGURAÇÃO DA IMPRESSORA ---
+CONFIG_IMPRESSORA_PATH = os.path.join(os.path.dirname(__file__), 'config_impressora.json')
+
+def _obter_config_impressora():
+    """Lê o arquivo de configuração da impressora e retorna como um dicionário."""
+    try:
+        if os.path.exists(CONFIG_IMPRESSORA_PATH):
+            with open(CONFIG_IMPRESSORA_PATH, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"ERRO ao ler config da impressora: {e}")
+    return {} # Retorna um dict vazio se o arquivo não existir ou der erro
+
+def _salvar_config_impressora(data):
+    """Salva o dicionário de configuração no arquivo JSON."""
+    try:
+        with open(CONFIG_IMPRESSORA_PATH, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4)
+        return True
+    except Exception as e:
+        print(f"ERRO ao salvar config da impressora: {e}")
+        return False
+
+
 
 
 @socketio.on('connect')
@@ -887,6 +921,145 @@ def api_forcar_expirar_carrinho():
 
     return jsonify(resultado)
 
+@app.route('/api/config/impressora', methods=['GET'])
+def api_obter_config_impressora():
+    """Retorna a configuração atual da impressora."""
+    config = _obter_config_impressora()
+    ip_salvo = config.get('ip', None)
+    return jsonify({'ip': ip_salvo})
+
+@app.route('/api/config/impressora', methods=['POST'])
+def api_salvar_config_impressora():
+    """Valida e salva a configuração da impressora."""
+    dados = request.get_json()
+    if not dados or 'ip' not in dados:
+        return jsonify({'mensagem': 'Dados ausentes no corpo da requisição.'}), 400
+
+    ip_novo = dados['ip'].strip()
+
+    # Expressão regular para validar IPv4 com porta opcional
+    ip_pattern = re.compile(r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\:[0-9]{1,5})?$')
+    
+    if not ip_pattern.match(ip_novo):
+        return jsonify({'mensagem': 'Formato de IP inválido. Use x.x.x.x ou x.x.x.x:porta'}), 400
+
+    config = {'ip': ip_novo}
+    sucesso = _salvar_config_impressora(config)
+
+    if sucesso:
+        return jsonify({'status': 'sucesso'})
+    else:
+        return jsonify({'mensagem': 'Erro interno ao salvar o arquivo de configuração.'}), 500
+
+@app.route('/api/diagnostico_impressora', methods=['GET'])
+def api_diagnostico_impressora():
+    """Tenta conectar na impressora configurada e envia um ticket de teste."""
+    if not ESCPOS_INSTALADO:
+        return jsonify({'sucesso': False, 'mensagem': 'Biblioteca python-escpos não instalada.'})
+
+    config = _obter_config_impressora()
+    ip_configurado = config.get('ip')
+
+    if not ip_configurado:
+        return jsonify({'sucesso': False, 'mensagem': 'IP da impressora não configurado.'})
+
+    try:
+        # Separa o IP e a Porta. Usa 9100 como padrão se a porta não for especificada.
+        if ':' in ip_configurado:
+            host, port_str = ip_configurado.split(':')
+            port = int(port_str)
+        else:
+            host = ip_configurado
+            port = 9100
+        
+        # Tenta conectar e imprimir
+        p = printer.Network(host=host, port=port, timeout=5)
+        p.set(align='center', text_type='B', width=2, height=2)
+        p.text("Espetao\n")
+        p.set(align='left', text_type='NORMAL')
+        p.text("Teste de impressao OK!\n")
+        p.cut()
+
+        return jsonify({'sucesso': True, 'mensagem': 'Teste de impressão enviado com sucesso!'})
+
+    except Exception as e:
+        print(f"ERRO DE IMPRESSAO: {e}")
+        return jsonify({'sucesso': False, 'mensagem': f'Falha na conexão: {e}'})
+
+def _formatar_e_imprimir_comanda(config_impressora, pedido):
+    """Função executada em uma thread para formatar e imprimir a comanda."""
+    try:
+        ip_configurado = config_impressora.get('ip')
+        if not ip_configurado:
+            print("LOG IMPRESSAO: IP não configurado na thread.")
+            return
+
+        # Parseia IP e Porta
+        host, port = (ip_configurado.split(':') + ['9100'])[:2]
+        port = int(port)
+
+        p = printer.Network(host=host, port=port, timeout=5)
+
+        # --- Formatação do Cupom ---
+        p.set(align='center', text_type='B', width=2, height=2)
+        p.text(f"SENHA: {pedido['senha_diaria']}\n")
+        p.set(align='center', text_type='NORMAL')
+        p.text(f"Pedido: {pedido['id']} - {pedido['nome_cliente']}\n")
+        
+        data_hora_local = pedido['timestamp_criacao'].astimezone(pytz.timezone('America/Sao_Paulo'))
+        p.text(data_hora_local.strftime('%d/%m/%Y %H:%M:%S') + "\n")
+        p.text("-" * 42 + "\n")
+
+        # Itens do Pedido
+        for item in pedido['itens']:
+            nome_item = f"{item['quantidade']}x {item['nome']}"
+            p.set(align='left', text_type='B')
+            p.text(nome_item + "\n")
+            
+            # Customizações
+            p.set(align='left', text_type='NORMAL')
+            if item.get('customizacao'):
+                custom = item['customizacao']
+                if custom.get('ponto'):
+                    p.text(f"  - Ponto: {custom['ponto'].title()}\n")
+                if custom.get('acompanhamentos'):
+                    for acomp in custom['acompanhamentos']:
+                        p.text(f"  - Com: {acomp}\n")
+                if custom.get('observacoes'):
+                    p.text(f"  - Obs: {custom['observacoes']}\n")
+        
+        p.text("-" * 42 + "\n")
+        if pedido['modalidade']:
+            modalidade_texto = "CONSUMO NO LOCAL" if pedido['modalidade'] == 'local' else "PARA VIAGEM"
+            p.set(align='center', text_type='B')
+            p.text(f"{modalidade_texto}\n")
+
+        p.cut()
+        print(f"LOG IMPRESSAO: Comanda para o pedido {pedido['id']} enviada com sucesso.")
+
+    except Exception as e:
+        print(f"LOG IMPRESSAO: ERRO na thread de impressão para o pedido {pedido['id']}: {e}")
+
+
+@app.route('/api/pedido/<int:pedido_id>/imprimir_comanda', methods=['POST'])
+def api_imprimir_comanda_pedido(pedido_id):
+    """Recebe a requisição para imprimir uma comanda e dispara em uma thread."""
+    if not ESCPOS_INSTALADO:
+        return jsonify({'status': 'erro_config', 'mensagem': 'Biblioteca de impressão não instalada no servidor.'}), 500
+
+    config = _obter_config_impressora()
+    if not config.get('ip'):
+        return jsonify({'status': 'erro_config', 'mensagem': 'IP da impressora não configurado no servidor.'}), 400
+
+    pedido = gerenciador_db.obter_pedido_por_id(pedido_id)
+    if not pedido:
+        return jsonify({'status': 'nao_encontrado', 'mensagem': 'Pedido não encontrado.'}), 404
+
+    # Dispara a impressão em uma nova thread para não bloquear a resposta
+    thread = threading.Thread(target=_formatar_e_imprimir_comanda, args=(config, pedido))
+    thread.start()
+
+    return jsonify({'status': 'impressao_enfileirada', 'mensagem': 'Comanda enviada para a fila de impressão.'})
 
 @app.route('/')
 def index():

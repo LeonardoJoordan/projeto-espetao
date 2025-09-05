@@ -1000,22 +1000,26 @@ def _formatar_e_imprimir_comanda(config_impressora, pedido):
 
         p = printer.Network(host=host, port=port, timeout=5)
 
-        # --- Formatação do Cupom ---
-        p.set(align='center', text_type='B', width=2, height=2)
-        p.text(f"SENHA: {pedido['senha_diaria']}\n")
-        p.set(align='center', text_type='NORMAL')
-        p.text(f"Pedido: {pedido['id']} - {pedido['nome_cliente']}\n")
-        
-        data_hora_local = pedido['timestamp_criacao'].astimezone(pytz.timezone('America/Sao_Paulo'))
-        p.text(data_hora_local.strftime('%d/%m/%Y %H:%M:%S') + "\n")
-        p.text("-" * 42 + "\n")
+        # --- Cabeçalho ---
+        p.set(align='center', text_type='NORMAL', width=2, height=2)
+        p.text("\n\n")  # <--- ADICIONADO: Duas linhas em branco antes da Senha
+        p.text(f"SENHA: {pedido['senha_diaria']}\n\n")  # Espaço extra após SENHA
 
-        # Itens do Pedido
-        for item in pedido['itens']:
+        p.set(align='center', text_type='B', width=2, height=2)
+        p.text(f"Pedido: {pedido['nome_cliente']}\n")
+
+        data_hora_local = pedido['timestamp_criacao'].astimezone(
+            pytz.timezone('America/Sao_Paulo')
+        )
+        p.text(data_hora_local.strftime('%d/%m/%Y - %H:%M:%S') + "\n")
+        p.text("_" * 42 + "\n\n")  # linha vazia depois do tracejado
+
+        # --- Itens ---
+        for idx, item in enumerate(pedido['itens']):
             nome_item = f"{item['quantidade']}x {item['nome']}"
             p.set(align='left', text_type='B')
             p.text(nome_item + "\n")
-            
+
             # Customizações
             p.set(align='left', text_type='NORMAL')
             if item.get('customizacao'):
@@ -1027,20 +1031,27 @@ def _formatar_e_imprimir_comanda(config_impressora, pedido):
                         p.text(f"  - Com: {acomp}\n")
                 if custom.get('observacoes'):
                     p.text(f"  - Obs: {custom['observacoes']}\n")
-        
-        p.text("-" * 42 + "\n")
+
+            # Linha vazia após cada item
+            p.text("\n")
+
+        p.text("_" * 42 + "\n")  # linha vazia depois do tracejado inferior
+
+        # --- Modalidade ---
         if pedido['modalidade']:
-            modalidade_texto = "CONSUMO NO LOCAL" if pedido['modalidade'] == 'local' else "PARA VIAGEM"
+            modalidade_texto = (
+                "CONSUMO NO LOCAL" if pedido['modalidade'] == 'local' else "PARA VIAGEM"
+            )
             p.set(align='center', text_type='B')
             p.text(f"{modalidade_texto}\n")
+            p.text("\n")  # <--- ADICIONADO: Duas linhas em branco antes do corte
 
+        # --- Finaliza ---
         p.cut()
         print(f"LOG IMPRESSAO: Comanda para o pedido {pedido['id']} enviada com sucesso.")
 
     except Exception as e:
         print(f"LOG IMPRESSAO: ERRO na thread de impressão para o pedido {pedido['id']}: {e}")
-
-
 @app.route('/api/pedido/<int:pedido_id>/imprimir_comanda', methods=['POST'])
 def api_imprimir_comanda_pedido(pedido_id):
     """Recebe a requisição para imprimir uma comanda e dispara em uma thread."""

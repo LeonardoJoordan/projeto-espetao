@@ -988,6 +988,12 @@ def api_diagnostico_impressora():
 
 def _formatar_e_imprimir_comanda(config_impressora, pedido):
     """Função executada em uma thread para formatar e imprimir a comanda."""
+    traducoes_ponto = {
+        "bem": "Bem passado",
+        "mal": "Mal passado",
+        "ponto": "Ao ponto"
+    }
+
     try:
         ip_configurado = config_impressora.get('ip')
         if not ip_configurado:
@@ -1025,7 +1031,9 @@ def _formatar_e_imprimir_comanda(config_impressora, pedido):
             if item.get('customizacao'):
                 custom = item['customizacao']
                 if custom.get('ponto'):
-                    p.text(f"  - Ponto: {custom['ponto'].title()}\n")
+                    ponto_original = custom['ponto']
+                    ponto_traduzido = traducoes_ponto.get(ponto_original, ponto_original.title())
+                    p.text(f"  - Ponto: {ponto_traduzido}\n")
                 if custom.get('acompanhamentos'):
                     for acomp in custom['acompanhamentos']:
                         p.text(f"  - Com: {acomp}\n")
@@ -1052,6 +1060,8 @@ def _formatar_e_imprimir_comanda(config_impressora, pedido):
 
     except Exception as e:
         print(f"LOG IMPRESSAO: ERRO na thread de impressão para o pedido {pedido['id']}: {e}")
+
+        
 @app.route('/api/pedido/<int:pedido_id>/imprimir_comanda', methods=['POST'])
 def api_imprimir_comanda_pedido(pedido_id):
     """Recebe a requisição para imprimir uma comanda e dispara em uma thread."""

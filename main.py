@@ -189,6 +189,98 @@ class ModalGerenciarLocais(QDialog):
             else:
                 QMessageBox.warning(self, "Erro", "Não foi possível excluir. Verifique se o local não está sendo usado em algum pedido.")
 
+# Coloque esta nova classe ANTES da classe PainelControle
+class ModalConfiguracoesImpressora(QDialog):
+    """Janela modal para configurar a impressora."""
+    def __init__(self, ip_servidor, porta, parent=None):
+        super().__init__(parent)
+        self.ip_servidor = ip_servidor
+        self.porta = porta
+        
+        self.setWindowTitle("Configurações da Impressora")
+        self.setMinimumWidth(450)
+        self.setStyleSheet(parent.styleSheet())
+
+        layout = QVBoxLayout(self)
+        grupo_ip = QGroupBox("Endereço da Impressora de Rede")
+        layout_ip = QGridLayout(grupo_ip)
+
+        self.input_ip_impressora = QLineEdit()
+        self.input_ip_impressora.setPlaceholderText("Ex: 192.168.0.50 ou 192.168.0.50:9100")
+        
+        self.btn_salvar = QPushButton("Salvar")
+        self.btn_testar = QPushButton("Testar Conexão")
+
+        layout_ip.addWidget(QLabel("IP e Porta (opcional):"), 0, 0, 1, 2)
+        layout_ip.addWidget(self.input_ip_impressora, 1, 0, 1, 2)
+        layout_ip.addWidget(self.btn_testar, 2, 0)
+        layout_ip.addWidget(self.btn_salvar, 2, 1)
+
+        self.label_status_modal = QLabel("")
+        self.label_status_modal.setAlignment(Qt.AlignCenter)
+        
+        layout.addWidget(grupo_ip)
+        layout.addWidget(self.label_status_modal)
+
+        self.btn_salvar.clicked.connect(self.salvar_configuracao)
+        self.btn_testar.clicked.connect(self.testar_conexao)
+
+        self.carregar_configuracao_atual()
+
+    def carregar_configuracao_atual(self):
+        """Busca a configuração de IP salva no servidor."""
+        try:
+            url = f'http://{self.ip_servidor}:{self.porta}/api/config/impressora'
+            response = requests.get(url, timeout=3)
+            if response.status_code == 200:
+                config = response.json()
+                ip_salvo = config.get('ip')
+                if ip_salvo:
+                    self.input_ip_impressora.setText(ip_salvo)
+            else:
+                self.label_status_modal.setText("<font color='#dc3545'>Servidor não respondeu corretamente.</font>")
+        except requests.exceptions.RequestException as e:
+            print(f"Erro ao carregar config da impressora: {e}")
+            self.label_status_modal.setText("<font color='#dc3545'>Erro ao conectar ao servidor.</font>")
+
+    def salvar_configuracao(self):
+        """Envia o novo IP para o servidor salvar."""
+        ip_digitado = self.input_ip_impressora.text().strip()
+        if not ip_digitado:
+            self.label_status_modal.setText("<font color='#FBBF24'>O campo de IP não pode estar vazio.</font>")
+            return
+            
+        try:
+            url = f'http://{self.ip_servidor}:{self.porta}/api/config/impressora'
+            payload = {'ip': ip_digitado}
+            response = requests.post(url, json=payload, timeout=3)
+            
+            if response.status_code == 200:
+                self.label_status_modal.setText("<font color='#28a745'>Configuração salva com sucesso!</font>")
+            else:
+                # Assumimos que o servidor retorna um erro útil em JSON
+                erro = response.json().get('mensagem', 'Erro desconhecido.')
+                self.label_status_modal.setText(f"<font color='#dc3545'>Falha ao salvar: {erro}</font>")
+        except requests.exceptions.RequestException:
+            self.label_status_modal.setText("<font color='#dc3545'>Erro de comunicação com o servidor.</font>")
+
+    def testar_conexao(self):
+        """Pede ao servidor para testar a conexão com a impressora."""
+        self.label_status_modal.setText("<font color='#FBBF24'>Testando conexão, aguarde...</font>")
+        QApplication.processEvents() # Força a UI a atualizar o texto
+        
+        try:
+            url = f'http://{self.ip_servidor}:{self.porta}/api/diagnostico_impressora'
+            response = requests.get(url, timeout=10) # Timeout maior para o teste
+            
+            resultado = response.json()
+            if resultado.get('sucesso'):
+                self.label_status_modal.setText(f"<font color='#28a745'>{resultado.get('mensagem')}</font>")
+            else:
+                self.label_status_modal.setText(f"<font color='#dc3545'>{resultado.get('mensagem')}</font>")
+        except requests.exceptions.RequestException:
+            self.label_status_modal.setText("<font color='#dc3545'>Erro de comunicação com o servidor.</font>")
+
 # --- Janela Principal do Aplicativo ---
 class PainelControle(QWidget):
     def __init__(self):
@@ -254,6 +346,10 @@ class PainelControle(QWidget):
         self.btn_gerenciar_locais.setObjectName("btn_gerenciar")
         self.btn_gerenciar_locais.clicked.connect(self.abrir_modal_locais)
 
+        self.btn_configuracoes = QPushButton("Configurações")
+        self.btn_configuracoes.setObjectName("btn_atalho")
+        self.btn_configuracoes.clicked.connect(self.abrir_modal_configuracoes)
+
         self.btn_iniciar = QPushButton("Iniciar Servidor")
         self.btn_iniciar.setObjectName("btn_iniciar")
         self.btn_iniciar.clicked.connect(self.gerenciar_servidor)
@@ -267,8 +363,9 @@ class PainelControle(QWidget):
         layout_controle.addWidget(label_local, 0, 1)
         layout_controle.addWidget(self.combo_locais, 1, 1)
         layout_controle.addWidget(self.btn_gerenciar_locais, 1, 2)
-        layout_controle.addWidget(self.btn_iniciar, 1, 3)
-        layout_controle.addWidget(self.btn_parar, 1, 4)
+        layout_controle.addWidget(self.btn_configuracoes, 1, 3)
+        layout_controle.addWidget(self.btn_iniciar, 1, 4)
+        layout_controle.addWidget(self.btn_parar, 1, 5)
         grupo_controle.setLayout(layout_controle)
 
         grupo_atalhos = QGroupBox("Atalhos de Acesso")
@@ -299,6 +396,10 @@ class PainelControle(QWidget):
         modal = ModalGerenciarLocais(self)
         modal.exec() # Abre o modal e espera ele ser fechado
         self.carregar_locais() # Recarrega o dropdown principal após o modal fechar
+
+    def abrir_modal_configuracoes(self):
+        modal = ModalConfiguracoesImpressora(self.ip_servidor, self.porta, self)
+        modal.exec() # Abre o modal e espera ele ser fechado
 
     def carregar_locais(self):
         """Busca a lista de locais diretamente do DB e popula o QComboBox."""

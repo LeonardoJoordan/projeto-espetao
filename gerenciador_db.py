@@ -1939,7 +1939,7 @@ def gerenciar_reserva(carrinho_id, produto_id, quantidade_delta):
             
             disponivel = estoque_on_hand - total_reservado_outros
             
-            if disponivel < quantidade_delta: # Validamos contra o delta, não a nova_quantidade total
+            if disponivel < nova_quantidade: # Validamos contra o delta, não a nova_quantidade total
                 conn.rollback()
                 # A nova disponibilidade real é o que sobrou
                 disponibilidade_real = estoque_on_hand - (total_reservado_outros + reserva_carrinho_atual)

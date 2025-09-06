@@ -518,7 +518,7 @@ class PainelControle(QWidget):
         self.atualizar_status_ui()
         print("Servidor parado com sucesso.")
 
-
+    
     
     def checar_status_servidor(self):
         """Verifica se o servidor está respondendo."""

@@ -11,6 +11,8 @@ import analytics
 import pytz
 import json
 import re
+import subprocess
+import platform
 from datetime import datetime, timedelta
 
 # --- INICIALIZAÇÃO DO BANCO DE DADOS ---
@@ -970,7 +972,12 @@ def api_salvar_config_impressora():
 
 @app.route('/api/diagnostico_impressora', methods=['GET'])
 def api_diagnostico_impressora():
-    """Tenta conectar na impressora configurada e envia um ticket de teste."""
+    """Diagnóstico completo da impressora com testes detalhados."""
+    import subprocess
+    import platform
+    import socket
+    import time
+    
     if not ESCPOS_INSTALADO:
         return jsonify({'sucesso': False, 'mensagem': 'Biblioteca python-escpos não instalada.'})
 
@@ -980,42 +987,97 @@ def api_diagnostico_impressora():
     if not ip_configurado:
         return jsonify({'sucesso': False, 'mensagem': 'IP da impressora não configurado.'})
 
-    p = None  # Garante que a variável 'p' exista fora do try
+    host, port = (ip_configurado.split(':') + ['9100'])[:2]
+    port = int(port)
+    
+    diagnosticos = []
+    
+    # TESTE 1: Ping
     try:
-        if ':' in ip_configurado:
-            host, port_str = ip_configurado.split(':')
-            port = int(port_str)
+        inicio_ping = time.time()
+        if platform.system().lower() == "windows":
+            resultado_ping = subprocess.run(['ping', '-n', '1', '-w', '3000', host], 
+                                          capture_output=True, timeout=5)
         else:
-            host = ip_configurado
-            port = 9100
+            resultado_ping = subprocess.run(['ping', '-c', '1', '-W', '3', host], 
+                                          capture_output=True, timeout=5)
         
-        p = printer.Network(host=host, port=port, timeout=5)
-
-        # --- AJUSTE DE CODIFICAÇÃO ---
-        p.charcode('CP860')  # Define a página de códigos para Português (Latin-1)
-
-        # --- TEXTO DE TESTE ---
-        p.set(align='center', bold=True, width=2, height=2)
-        p.text("Espetao\n\n")
+        tempo_ping = round((time.time() - inicio_ping) * 1000, 2)
         
-        p.set(align='left', bold=False, width=1, height=1)
-        p.text("Teste de acentuacao:\n")
-        p.text("Limão, Maionese, Açaí, Coração\n")
-        p.text("ç á é í ó ú â ê ô à\n\n")
-
-        p.text("Se esta mensagem foi impressa\n")
-        p.text("corretamente, o ajuste funcionou!\n")
-        p.cut()
-
-        return jsonify({'sucesso': True, 'mensagem': 'Teste de impressão com acentuação enviado!'})
-
+        if resultado_ping.returncode == 0:
+            diagnosticos.append(f"✓ PING: OK ({tempo_ping}ms)")
+        else:
+            diagnosticos.append(f"✗ PING: FALHOU ({tempo_ping}ms)")
+            
     except Exception as e:
-        print(f"ERRO DE IMPRESSAO: {e}")
-        return jsonify({'sucesso': False, 'mensagem': f'Falha na conexão: {e}'})
+        diagnosticos.append(f"✗ PING: ERRO - {e}")
+    
+    # TESTE 2: Porta TCP
+    try:
+        inicio_tcp = time.time()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5)
+        resultado_tcp = sock.connect_ex((host, port))
+        tempo_tcp = round((time.time() - inicio_tcp) * 1000, 2)
+        sock.close()
+        
+        if resultado_tcp == 0:
+            diagnosticos.append(f"✓ PORTA TCP {port}: ABERTA ({tempo_tcp}ms)")
+        else:
+            diagnosticos.append(f"✗ PORTA TCP {port}: FECHADA ({tempo_tcp}ms)")
+            
+    except Exception as e:
+        diagnosticos.append(f"✗ PORTA TCP: ERRO - {e}")
+    
+    # TESTE 3: Conexão ESC/POS
+    p = None
+    try:
+        inicio_escpos = time.time()
+        p = printer.Network(host=host, port=port, timeout=10)
+        tempo_escpos = round((time.time() - inicio_escpos) * 1000, 2)
+        diagnosticos.append(f"✓ CONEXÃO ESC/POS: OK ({tempo_escpos}ms)")
+        
+        # TESTE 4: Envio de dados
+        try:
+            inicio_envio = time.time()
+            p.charcode('CP860')
+            p.set(align='center', bold=True)
+            p.text("=== TESTE DIAGNOSTICO ===\n")
+            p.text(f"Data: {time.strftime('%d/%m/%Y %H:%M:%S')}\n")
+            p.text("Conexao OK!\n")
+            p.cut()
+            tempo_envio = round((time.time() - inicio_envio) * 1000, 2)
+            diagnosticos.append(f"✓ IMPRESSÃO: OK ({tempo_envio}ms)")
+            
+        except Exception as e:
+            diagnosticos.append(f"✗ IMPRESSÃO: ERRO - {e}")
+        
+    except Exception as e:
+        tempo_escpos = round((time.time() - inicio_escpos) * 1000, 2)
+        diagnosticos.append(f"✗ CONEXÃO ESC/POS: FALHOU ({tempo_escpos}ms) - {e}")
+    
     finally:
-        # Garante que a conexão seja sempre fechada
         if p:
-            p.close()
+            try:
+                p.close()
+                diagnosticos.append("✓ CONEXÃO FECHADA")
+            except:
+                diagnosticos.append("⚠ ERRO AO FECHAR CONEXÃO")
+
+    # Resultado final
+    erros = [d for d in diagnosticos if '✗' in d]
+    if erros:
+        return jsonify({
+            'sucesso': False, 
+            'mensagem': f'Diagnóstico encontrou {len(erros)} problema(s)',
+            'detalhes': diagnosticos
+        })
+    else:
+        return jsonify({
+            'sucesso': True, 
+            'mensagem': 'Todos os testes passaram!',
+            'detalhes': diagnosticos
+        })
 
 
 
@@ -1038,7 +1100,10 @@ def _formatar_e_imprimir_comanda(config_impressora, pedido):
 
         host, port = (ip_configurado.split(':') + ['9100'])[:2]
         port = int(port)
+
         p = printer.Network(host=host, port=port, timeout=5)
+
+        p.charcode('CP860')
 
         # --- Cabeçalho ---
         p.set(align='center', width=2, height=2)
@@ -1110,6 +1175,8 @@ def _formatar_e_imprimir_comanda(config_impressora, pedido):
         if p:
             p.close()
             print(f"LOG IMPRESSAO: Conexão com a impressora para o pedido {pedido['id']} foi fechada.")
+
+
 
 @app.route('/api/pedido/<int:pedido_id>/imprimir_comanda', methods=['POST'])
 def api_imprimir_comanda_pedido(pedido_id):

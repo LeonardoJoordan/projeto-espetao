@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fechamento de Caixa</title>
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind-output.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/fontawesome.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/flatpickr.min.css') }}">
+    
+    <script src="{{ url_for('static', filename='js/libs/flatpickr.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/libs/chart.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/libs/l10n/pt.js') }}"></script>
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #6B73FF 0%, #000DFF 100%);
+            min-height: 100vh;
+        }
+        .glass-container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+        }
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.5); }
+        
+        /* Estilos para botões da Sidebar */
+        .sidebar-btn.active {
+            background-color: rgba(255, 255, 255, 0.2);
+            font-weight: 600;
+        }
+
+        /* Estilos para os cards de KPI */
+        .kpi-card {
+            transition: all 0.3s ease;
+            border-bottom: 4px solid transparent;
+        }
+        .kpi-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.15);
+        }
+        .kpi-card.faturamento { border-color: #34D399; }
+        .kpi-card.lucro { border-color: #60A5FA; }
+        .kpi-card.pedidos { border-color: #FBBF24; }
+        .kpi-card.ticket { border-color: #A78BFA; }
+        .kpi-card.perdas { border-color: #F87171; }
+
+        /* Estilos para abas do relatório avançado */
+        .advanced-tab-btn.active {
+            border-color: #60A5FA;
+            color: #60A5FA;
+        }
+        
+        /* Estilos para o Flatpickr */
+        .flatpickr-calendar {
+            background: #2d3748;
+            border-radius: 0.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .flatpickr-day { color: #cbd5e0; }
+        .flatpickr-day.selected, .flatpickr-day.startRange, .flatpickr-day.endRange { background: #60A5FA; border-color: #60A5FA; }
+        .flatpickr-day:hover { background: #4a5568; }
+        .flatpickr-weekday, .flatpickr-monthDropdown-month, .numInput, .cur-month, .flatpickr-time input { color: white !important; }
+        .arrowUp:after { border-bottom-color: white !important; }
+        .arrowDown:after { border-top-color: white !important; }
+        .flatpickr-prev-month svg, .flatpickr-next-month svg { fill: white !important; }
+    </style>
+</head>
+<body class="p-4 md:p-8 text-white">
+
+<!-- WRAPPER DO LAYOUT: GRID 2 COLUNAS -->
+<div id="app-grid" class="relative grid gap-6 lg:grid-cols-[18rem,1fr]">
+
+  <!-- SIDEBAR (off-canvas em mobile, fixa em lg+) -->
+  <aside id="sidebar"
+         class="glass-container fixed inset-y-0 left-0 z-40 w-72 p-4 overflow-y-auto custom-scrollbar
+                transform -translate-x-full transition-transform lg:static lg:translate-x-0 rounded-2xl">
+    
+    <nav class="flex flex-col space-y-2">
+        <a href="#relatorio-simples" class="sidebar-btn flex items-center p-3 rounded-lg text-white hover:bg-white/10 transition-colors duration-200 active">
+            <i class="fas fa-chart-bar fa-fw w-6 mr-3"></i>
+            <span>Relatório simples</span>
+        </a>
+        <a href="#relatorio-avancado" class="sidebar-btn flex items-center p-3 rounded-lg text-white hover:bg-white/10 transition-colors duration-200">
+            <i class="fas fa-chart-area fa-fw w-6 mr-3"></i>
+            <span>Relatório avançado</span>
+        </a>
+        <a href="#insights" class="sidebar-btn flex items-center p-3 rounded-lg text-white hover:bg-white/10 transition-colors duration-200">
+            <i class="fas fa-lightbulb fa-fw w-6 mr-3"></i>
+            <span>Insights avançados</span>
+        </a>
+    </nav>
+
+  </aside>
+
+  <!-- BACKDROP da sidebar (somente mobile) -->
+  <div id="sidebar-backdrop" class="fixed inset-0 z-30 bg-black/50 hidden lg:hidden"></div>
+
+  <!-- COLUNA DE CONTEÚDO -->
+  <main id="content-main" class="space-y-8 min-h-screen min-w-0">
+    <header class="glass-container rounded-2xl p-6 space-y-6">
+        <div class="flex items-center justify-center relative">
+            <button id="btn-toggle-sidebar"
+                    class="lg:hidden inline-flex items-center justify-center w-10 h-10 mr-3 rounded-xl bg-white/10 hover:bg-white/20 absolute left-0"
+                    aria-label="Abrir menu">
+              <i class="fas fa-bars"></i>
+            </button>
+            <div class="flex items-center justify-center text-center">
+                 <i class="fas fa-chart-line text-white text-2xl md:text-3xl mr-4"></i>
+                 <h1 class="text-2xl md:text-4xl font-bold text-white">Fechamento e Relatórios</h1>
+            </div>
+        </div>
+        
+        <!-- SELETOR DE DATA ÚNICA -->
+        <div id="single-date-selector-container">
+            <div class="flex items-center justify-center gap-4">
+                <label for="report-date" class="font-semibold text-lg">Data:</label>
+                <input type="text" id="report-date" placeholder="Selecione uma data" class="bg-white/20 border border-white/30 rounded-lg p-2 text-white text-center w-48 cursor-pointer">
+                <button id="btn-analisar" class="bg-blue-500 hover:bg-blue-600 font-bold py-2 px-6 rounded-lg transition-colors flex items-center justify-center gap-2">
+                <i class="fa fa-search"></i>
+                <span>Analisar</span>
+            </button>            
+            </div>
+        </div>
+        
+        <!-- SELETOR DE COMPARAÇÃO DE PERÍODOS -->
+        <div id="comparison-date-selector-container" class="hidden">
+            <div class="flex flex-wrap items-center justify-center gap-x-6 gap-y-4">
+                <label for="periodo-a" class="font-semibold text-lg">Datas:</label>
+                <div class="flex items-center gap-2">
+                    <input type="text" id="periodo-a" placeholder="1ª data ou período" class="bg-white/20 border border-white/30 rounded-lg p-2 text-white text-center w-56 cursor-pointer">
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="text" id="periodo-b" placeholder="2ª data ou período" class="bg-white/20 border border-white/30 rounded-lg p-2 text-white text-center w-56 cursor-pointer">
+                </div>
+                <button id="btn-comparar" class="bg-blue-500 hover:bg-blue-600 font-bold py-2 px-6 rounded-lg transition-colors flex items-center justify-center gap-2">
+                    <i class="fa fa-exchange"></i>
+                    <span>Comparar</span>
+                </button>
+            </div>
+        </div>
+    </header>
+    
+    <!-- Container para os conteúdos das seções -->
+    <div id="main-content-area">
+
+        <!-- SEÇÃO: RELATÓRIO SIMPLES -->
+        <section id="content-relatorio-simples" class="main-content-section space-y-6">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+                <div class="kpi-card faturamento glass-container rounded-2xl p-5 text-center">
+                    <p class="text-sm text-white/80 uppercase">Faturamento Bruto</p>
+                    <p class="text-3xl font-extrabold mt-2">R$ <span id="kpi-faturamento-valor" data-state="idle">1.234,56</span></p>
+                </div>
+                <div class="kpi-card lucro glass-container rounded-2xl p-5 text-center">
+                    <p class="text-sm text-white/80 uppercase">Lucro Estimado</p>
+                    <p class="text-3xl font-extrabold mt-2">R$ <span id="kpi-lucro-valor" data-state="idle">567,89</span></p>
+                </div>
+                <div class="kpi-card perdas glass-container rounded-2xl p-5 text-center">
+                    <p class="text-sm text-white/80 uppercase">Perdas e Ajustes</p>
+                    <p class="text-3xl font-extrabold mt-2">-R$ <span id="kpi-perdas-valor" data-state="idle">50,00</span></p>
+                </div>
+                <div class="kpi-card pedidos glass-container rounded-2xl p-5 text-center">
+                    <p class="text-sm text-white/80 uppercase">Pedidos</p>
+                    <p id="kpi-pedidos" class="text-3xl font-extrabold mt-2"><span id="kpi-pedidos-valor" data-state="idle">42</span></p>
+                </div>
+                <div class="kpi-card ticket glass-container rounded-2xl p-5 text-center">
+                    <p class="text-sm text-white/80 uppercase">Ticket Médio</p>
+                    <p class="text-3xl font-extrabold mt-2">R$ <span id="kpi-ticket-valor" data-state="idle">29,39</span></p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SEÇÃO: RELATÓRIO AVANÇADO -->
+        <section id="content-relatorio-avancado" class="main-content-section hidden space-y-6">
+            <!-- Abas internas do relatório avançado -->
+            <div class="border-b border-white/20">
+                <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+                    <button class="advanced-tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-lg border-transparent active" data-tab-target="#advanced-tab-relatorio">
+                        Relatório
+                    </button>
+                    <button class="advanced-tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-lg border-transparent text-white/50 hover:text-white/75 hover:border-white/30" data-tab-target="#advanced-tab-balanco">
+                        Balanço
+                    </button>
+                    <button class="advanced-tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-lg border-transparent text-white/50 hover:text-white/75 hover:border-white/30" data-tab-target="#advanced-tab-pedidos">
+                        Pedidos
+                    </button>
+                </nav>
+            </div>
+
+            <!-- Conteúdo das abas avançadas -->
+            <div id="advanced-tabs-content">
+                <!-- Aba: Relatório -->
+                <div id="advanced-tab-relatorio" class="advanced-tab-content space-y-8">
+                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+                        <div class="glass-container rounded-xl p-3 text-center">
+                            <p class="text-xs text-white/70 uppercase">Faturamento</p>
+                            <p class="text-xl font-bold">R$ 1.234,56</p>
+                        </div>
+                        <div class="glass-container rounded-xl p-3 text-center">
+                            <p class="text-xs text-white/70 uppercase">Lucro</p>
+                            <p class="text-xl font-bold">R$ 567,89</p>
+                        </div>
+                        <div class="glass-container rounded-xl p-3 text-center">
+                            <p class="text-xs text-white/70 uppercase">Perdas</p>
+                            <p class="text-xl font-bold">-R$ 50,00</p>
+                        </div>
+                        <div class="glass-container rounded-xl p-3 text-center">
+                            <p class="text-xs text-white/70 uppercase">Pedidos</p>
+                            <p class="text-xl font-bold">42</p>
+                        </div>
+                        <div class="glass-container rounded-xl p-3 text-center">
+                            <p class="text-xs text-white/70 uppercase">Ticket Médio</p>
+                            <p class="text-xl font-bold">R$ 29,39</p>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                        <div class="lg:col-span-3 glass-container rounded-2xl p-6 flex flex-col h-96">
+                            <h3 class="text-xl font-bold mb-4">Vendas por Período</h3>
+                            <div class="relative flex-grow min-w-0"><canvas id="grafico-vendas"></canvas></div>
+                        </div>
+                        <div class="lg:col-span-2 glass-container rounded-2xl p-6 flex flex-col h-96">
+                            <h3 class="text-xl font-bold mb-4">Vendas por Pagamento</h3>
+                            <div class="relative flex-grow min-w-0"><canvas id="grafico-pagamentos"></canvas></div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Aba: Balanço -->
+                <div id="advanced-tab-balanco" class="advanced-tab-content hidden">
+                    <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                        <div class="glass-container rounded-2xl p-6">
+                            <h3 class="text-xl font-bold mb-4">Itens Mais Vendidos</h3>
+                            <div id="container-itens-top" class="overflow-auto custom-scrollbar max-h-96">
+                                </div>
+                        </div>
+                        <div class="glass-container rounded-2xl p-6">
+                            <h3 class="text-xl font-bold mb-4">Balanço de Estoque</h3>
+                            <div id="container-balanco-estoque" class="overflow-auto custom-scrollbar max-h-96">
+                                </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Aba: Pedidos -->
+                <div id="advanced-tab-pedidos" class="advanced-tab-content hidden space-y-8">
+                    <div class="glass-container rounded-2xl p-6">
+                        <h3 class="text-xl font-bold mb-4">Histórico de Pedidos</h3>
+                        <div id="container-historico-pedidos" class="overflow-x-auto custom-scrollbar">
+                            </div>
+                        <div id="paginacao-pedidos" class="flex justify-between items-center mt-4">
+                            </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SEÇÃO: INSIGHTS AVANÇADOS -->
+        <section id="content-insights" class="main-content-section hidden space-y-8">
+            <!-- Seção de Resultados da Comparação -->
+            <div id="comparison-results" class="hidden glass-container rounded-2xl p-6">
+                <h3 class="text-xl font-bold mb-6 text-center">Resultados da Comparação</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="bg-white/10 p-5 rounded-xl text-center">
+                        <p class="text-sm uppercase text-white/80">Faturamento</p>
+                        <p id="comp-faturamento-delta" class="text-3xl font-extrabold my-2 text-green-400">+15.2%</p>
+                        <p class="text-xs text-white/60">
+                            <span id="comp-faturamento-a">R$ 1.200,00</span> (A) vs <span id="comp-faturamento-b">R$ 1.041,68</span> (B)
+                        </p>
+                    </div>
+                    <div class="bg-white/10 p-5 rounded-xl text-center">
+                        <p class="text-sm uppercase text-white/80">Qtd. Vendas</p>
+                        <p id="comp-vendas-delta" class="text-3xl font-extrabold my-2 text-red-400">-5</p>
+                        <p class="text-xs text-white/60">
+                            <span id="comp-vendas-a">45</span> (A) vs <span id="comp-vendas-b">50</span> (B)
+                        </p>
+                    </div>
+                    <div class="bg-white/10 p-5 rounded-xl text-center">
+                        <p class="text-sm uppercase text-white/80">Ticket Médio</p>
+                        <p id="comp-ticket-delta" class="text-3xl font-extrabold my-2 text-green-400">+26.7%</p>
+                        <p class="text-xs text-white/60">
+                            <span id="comp-ticket-a">R$ 26,67</span> (A) vs <span id="comp-ticket-b">R$ 21,04</span> (B)
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div id="comparison-placeholder" class="glass-container rounded-2xl p-6 min-h-[50vh] flex items-center justify-center">
+                <p class="text-center text-white/70">Selecione dois períodos acima e clique em "Comparar" para ver os resultados.</p>
+            </div>
+        </section>
+
+    </div>
+  </main>
+</div>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // --- LÓGICA DE UI (SIDEBAR, ABAS) ---
+    // (Esta parte permanece a mesma da Etapa 2)
+    const sidebar = document.getElementById('sidebar');
+    const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+    const btnToggleSidebar = document.getElementById('btn-toggle-sidebar');
+    const bodyEl = document.body;
+    function abrirSidebar() { sidebar.classList.remove('-translate-x-full'); sidebarBackdrop.classList.remove('hidden'); if (window.innerWidth < 1024) { bodyEl.classList.add('overflow-hidden'); } }
+    function fecharSidebar() { sidebar.classList.add('-translate-x-full'); sidebarBackdrop.classList.add('hidden'); bodyEl.classList.remove('overflow-hidden'); }
+    btnToggleSidebar?.addEventListener('click', (e) => { e.stopPropagation(); if (sidebar.classList.contains('-translate-x-full')) { abrirSidebar(); } else { fecharSidebar(); } });
+    sidebarBackdrop?.addEventListener('click', fecharSidebar);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !sidebar.classList.contains('-translate-x-full')) { fecharSidebar(); } });
+    const sidebarButtons = document.querySelectorAll('.sidebar-btn');
+    const mainContentSections = document.querySelectorAll('.main-content-section');
+    const singleDateSelector = document.getElementById('single-date-selector-container');
+    const comparisonDateSelector = document.getElementById('comparison-date-selector-container');
+    sidebarButtons.forEach(button => {
+        button.addEventListener('click', function(e) {
+            e.preventDefault();
+            sidebarButtons.forEach(btn => btn.classList.remove('active')); this.classList.add('active');
+            const targetId = this.getAttribute('href').substring(1);
+            mainContentSections.forEach(section => section.classList.toggle('hidden', section.id !== `content-${targetId}`));
+            const isInsights = targetId === 'insights';
+            singleDateSelector.classList.toggle('hidden', isInsights);
+            comparisonDateSelector.classList.toggle('hidden', !isInsights);
+            if (window.innerWidth < 1024) { fecharSidebar(); }
+        });
+    });
+    const advancedTabButtons = document.querySelectorAll('.advanced-tab-btn');
+    const advancedTabContents = document.querySelectorAll('.advanced-tab-content');
+    advancedTabButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            advancedTabButtons.forEach(btn => { btn.classList.remove('active'); btn.classList.add('text-white/50', 'hover:text-white/75', 'hover:border-white/30'); });
+            this.classList.add('active'); this.classList.remove('text-white/50', 'hover:text-white/75', 'hover:border-white/30');
+            const targetId = this.getAttribute('data-tab-target');
+            advancedTabContents.forEach(content => { content.classList.toggle('hidden', content.id !== targetId.substring(1)); });
+        });
+    });
+
+    // --- CONFIGURAÇÃO E LÓGICA DE DADOS ---
+    
+    // 1. Configuração e Variáveis Globais
+    const API_FECHAMENTO_V2 = "{{ url_for('api_fechamento_dia_v2') }}";
+    const API_COMPARATIVOS_V2 = "{{ url_for('api_insights_comparativos_v2') }}";
+    let chartVendas = null;
+    let chartPagamentos = null;
+
+    const btnAnalisar = document.getElementById('btn-analisar');
+    const btnComparar = document.getElementById('btn-comparar');
+
+    flatpickr.localize(flatpickr.l10ns.pt);
+    const datePickerSimples = flatpickr("#report-date", { dateFormat: "Y-m-d", defaultDate: "today" });
+    const datePickerA = flatpickr("#periodo-a", { mode: "range", dateFormat: "Y-m-d", locale: "pt" });
+    const datePickerB = flatpickr("#periodo-b", { mode: "range", dateFormat: "Y-m-d", locale: "pt" });
+
+    // 2. Funções Utilitárias e de Adaptação
+    function formatarMoeda(valor) { return (valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
+    function setLoadingState(button, isLoading) {
+        if (isLoading) {
+            button.disabled = true;
+            button.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Carregando...`;
+        } else {
+            button.disabled = false;
+            const icon = button.id === 'btn-analisar' ? 'fa-search' : 'fa-exchange-alt';
+            const text = button.id === 'btn-analisar' ? 'Analisar' : 'Comparar';
+            button.innerHTML = `<i class="fas ${icon} mr-2"></i> ${text}`;
+        }
+    }
+
+    function preencherKPIs(kpis) {
+        document.getElementById('kpi-faturamento-valor').textContent = formatarMoeda(kpis.faturamentoBruto);
+        document.getElementById('kpi-lucro-valor').textContent = formatarMoeda(kpis.lucroEstimado);
+        document.getElementById('kpi-perdas-valor').textContent = formatarMoeda(Math.abs(kpis.perdasAjustes));
+        document.getElementById('kpi-pedidos-valor').textContent = kpis.pedidosRealizados;
+        document.getElementById('kpi-ticket-valor').textContent = formatarMoeda(kpis.ticketMedio);
+        document.querySelector('#advanced-tab-relatorio .glass-container:nth-child(1) p:last-child').textContent = `R$ ${formatarMoeda(kpis.faturamentoBruto)}`;
+        document.querySelector('#advanced-tab-relatorio .glass-container:nth-child(2) p:last-child').textContent = `R$ ${formatarMoeda(kpis.lucroEstimado)}`;
+        document.querySelector('#advanced-tab-relatorio .glass-container:nth-child(3) p:last-child').textContent = `-R$ ${formatarMoeda(Math.abs(kpis.perdasAjustes))}`;
+        document.querySelector('#advanced-tab-relatorio .glass-container:nth-child(4) p:last-child').textContent = kpis.pedidosRealizados;
+        document.querySelector('#advanced-tab-relatorio .glass-container:nth-child(5) p:last-child').textContent = `R$ ${formatarMoeda(kpis.ticketMedio)}`;
+    }
+
+    function preencherComparativos(kpis) {
+        const kpiMap = { faturamento: 'comp-faturamento', qtd_vendas: 'comp-vendas', ticket_medio: 'comp-ticket' };
+        Object.entries(kpis).forEach(([key, value]) => {
+            const prefixo = kpiMap[key];
+            const isCurrency = key !== 'qtd_vendas';
+            
+            document.getElementById(`${prefixo}-a`).textContent = isCurrency ? `R$ ${formatarMoeda(value.A)}` : value.A;
+            document.getElementById(`${prefixo}-b`).textContent = isCurrency ? `R$ ${formatarMoeda(value.B)}` : value.B;
+            
+            const deltaEl = document.getElementById(`${prefixo}-delta`);
+            const deltaValue = value.delta_pct ?? value.delta_abs;
+            const isPositive = deltaValue >= 0;
+
+            deltaEl.classList.toggle('text-green-400', isPositive);
+            deltaEl.classList.toggle('text-red-400', !isPositive);
+
+            let deltaText = '';
+            if (value.delta_pct !== undefined) {
+                deltaText = `${isPositive ? '+' : ''}${deltaValue.toFixed(1)}%`;
+            } else {
+                deltaText = `${isPositive ? '+' : ''}${deltaValue}`;
+            }
+            deltaEl.textContent = deltaText;
+        });
+
+        document.getElementById('comparison-results').classList.remove('hidden');
+        document.getElementById('comparison-placeholder').classList.add('hidden');
+    }
+
+    // 3. Funções de Controle dos Gráficos
+    const chartDefaultOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: 'white' } }, tooltip: { callbacks: { 
+        label: function(ctx) {
+            let label = ctx.dataset.label || '';
+            if (label) {
+                label += ': ';
+            }
+            // Usamos ctx.raw, que contém o valor numérico original do dataset.
+            // Number() é uma camada extra de segurança para garantir que o tipo é numérico.
+            const value = Number(ctx.raw);
+            label += new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+            return label;
+        } 
+
+        } } }, scales: { y: { ticks: { color: 'white' }, grid: { color: 'rgba(255, 255, 255, 0.2)' } }, x: { ticks: { color: 'white' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } } } };
+    function initOuUpdateChart(chartVar, canvasId, type, data, options) { if (chartVar) { chartVar.destroy(); } const ctx = document.getElementById(canvasId).getContext('2d'); return new Chart(ctx, { type, data, options }); }
+
+    // 4. Lógica Principal de Carregamento
+
+    // Função auxiliar para converter snake_case para camelCase
+    function toCamelCase(s) {
+        return s.replace(/([-_][a-z])/ig, ($1) => {
+            return $1.toUpperCase().replace('-', '').replace('_', '');
+        });
+    }
+
+    // O Adapter: nosso tradutor de payload
+    function adaptarRespostaFechamentoV2(data) {
+        console.debug('[FechamentoV2] Adaptando payload recebido:', data);
+        const raw = data || {};
+
+        // Mapeia chaves de um objeto para camelCase
+        const mapKeys = (obj) => {
+            if (typeof obj !== 'object' || obj === null) return obj;
+            return Object.keys(obj).reduce((acc, key) => {
+                acc[toCamelCase(key)] = obj[key];
+                return acc;
+            }, {});
+        };
+
+        // Adapta um array de objetos
+        const mapArray = (arr) => (arr || []).map(item => mapKeys(item));
+
+        // Ponto da correção: Aceita tanto o nome antigo (camelCase) quanto o novo (snake_case)
+        const rawHistorico = raw.historicoPedidos || raw.historico_pedidos || {};
+        const rawItensTop = raw.itensTop || raw.itens_top || [];
+        const rawEstoque = raw.estoque || raw.estoque || [];
+
+        return {
+            kpis: mapKeys(raw.kpis),
+            vendasPorPagamento: raw.vendasPorPagamento, 
+            vendasPorPeriodo: raw.vendasPorPeriodo,   
+            itensTop: mapArray(rawItensTop),
+            estoque: mapArray(rawEstoque),
+            historicoPedidos: {
+                ...mapKeys(rawHistorico), // Mapeia a raiz do histórico (page, limit, etc.)
+                items: mapArray(rawHistorico.items) // Mapeia os itens internos para camelCase
+            }
+        };
+    }
+
+    // Função para renderizar a aba "Balanço"
+    function preencherBalanco(itensTop, estoque) {
+        const containerItens = document.getElementById('container-itens-top');
+        const containerEstoque = document.getElementById('container-balanco-estoque');
+
+        // Renderiza Itens Mais Vendidos (lógica inalterada)
+        if (!itensTop || itensTop.length === 0) {
+            containerItens.innerHTML = '<p class="text-white/50 text-center py-4">Sem itens para exibir.</p>';
+        } else {
+            const tableHeadItens = `
+                <thead class="bg-white/10">
+                    <tr>
+                        <th class="px-4 py-2 text-left">Produto</th>
+                        <th class="px-4 py-2 text-center">Qtd</th>
+                        <th class="px-4 py-2 text-right">Receita</th>
+                        <th class="px-4 py-2 text-right">Lucro</th>
+                    </tr>
+                </thead>`;
+            const tableBodyItens = itensTop.map(item => `
+                <tr class="border-b border-white/10">
+                    <td class="px-4 py-2">${item.nome}</td>
+                    <td class="px-4 py-2 text-center">${item.quantidade}</td>
+                    <td class="px-4 py-2 text-right">R$ ${formatarMoeda(item.receita)}</td>
+                    <td class="px-4 py-2 text-right">R$ ${formatarMoeda(item.lucro)}</td>
+                </tr>`).join('');
+            containerItens.innerHTML = `<table class="w-full text-sm">${tableHeadItens}<tbody>${tableBodyItens}</tbody></table>`;
+        }
+
+        // Renderiza Balanço de Estoque (lógica ATUALIZADA)
+        if (!estoque || estoque.length === 0) {
+            containerEstoque.innerHTML = '<p class="text-white/50 text-center py-4">Sem movimentação de estoque no período.</p>';
+        } else {
+            // Cabeçalhos atualizados para o novo fluxo
+            const tableHead = `
+                <thead class="bg-white/10">
+                    <tr>
+                        <th class="px-4 py-2 text-left">Produto</th>
+                        <th class="px-4 py-2 text-center">Est. Anterior</th>
+                        <th class="px-4 py-2 text-center">Entradas</th>
+                        <th class="px-4 py-2 text-center">Est. Atual</th>
+                        <th class="px-4 py-2 text-center">Saídas</th>
+                        <th class="px-4 py-2 text-center">Est. Final</th>
+                    </tr>
+                </thead>`;
+            // Corpo da tabela mapeando para os novos campos da API
+            const tableBody = estoque.map(item => `
+                <tr class="border-b border-white/10">
+                    <td class="px-4 py-2">${item.nome}</td>
+                    <td class="px-4 py-2 text-center">${item.inicial}</td>
+                    <td class="px-4 py-2 text-center text-green-400">+${item.entradas}</td>
+                    <td class="px-4 py-2 text-center font-semibold">${item.estoqueAtual}</td>
+                    <td class="px-4 py-2 text-center text-red-400">-${item.saidas}</td>
+                    <td class="px-4 py-2 text-center font-bold">${item.final}</td>
+                </tr>`).join('');
+            containerEstoque.innerHTML = `<table class="w-full text-sm">${tableHead}<tbody>${tableBody}</tbody></table>`;
+        }
+    }
+
+    // Função para renderizar a aba "Pedidos" com botão de detalhes
+    function preencherPedidos(historicoPedidos) {
+        const container = document.getElementById('container-historico-pedidos');
+        // Removemos a paginação por enquanto
+        document.getElementById('paginacao-pedidos').innerHTML = '';
+        const dados = historicoPedidos || { items: [] };
+
+        if (!dados.items || dados.items.length === 0) {
+            container.innerHTML = '<p class="text-white/50 text-center py-4">Nenhum pedido encontrado para o período.</p>';
+            return;
+        }
+
+        const tableHead = `
+            <thead class="bg-white/10 sticky top-0">
+                <tr>
+                    <th class="p-3 text-center">Senha</th>
+                    <th class="p-3 text-left">Cliente</th>
+                    <th class="p-3 text-left">Horário</th>
+                    <th class="p-3 text-right">Valor Total</th>
+                    <th class="p-3 text-center">Detalhes</th>
+                </tr>
+            </thead>`;
+            
+        const tableBody = dados.items.map(p => {
+            const dataHora = new Date(p.horario).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            return `
+                <tr class="border-b border-white/10 hover:bg-white/5">
+                    <td class="p-3 text-center font-bold text-lg">${p.senhaDiaria}</td>
+                    <td class="p-3 text-left">${p.nomeCliente || 'N/A'}</td>
+                    <td class="p-3 text-left">${dataHora}</td>
+                    <td class="p-3 text-right font-semibold">R$ ${formatarMoeda(p.valorTotal)}</td>
+                    <td class="p-3 text-center">
+                        <button class="btn-detalhes-pedido text-blue-400 hover:text-blue-300 text-xl"
+                                data-id-pedido="${p.id}" 
+                                data-itens='${p.itensJson}'>
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </td>
+                </tr>`;
+        }).join('');
+        
+        container.innerHTML = `<table class="w-full text-sm whitespace-nowrap">${tableHead}<tbody>${tableBody}</tbody></table>`;
+    }
+
+    // --- LÓGICA DO MODAL DE DETALHES ---
+
+    const modalDetalhes = document.getElementById('modal-detalhes-pedido');
+    const modalTituloPedido = document.getElementById('modal-titulo-pedido');
+    const modalCorpoPedido = document.getElementById('modal-corpo-pedido');
+    const modalFecharPedido = document.getElementById('modal-fechar-pedido');
+
+    function abrirModalDetalhes(idPedido, itensJson) {
+        modalTituloPedido.textContent = `Detalhes do Pedido #${idPedido}`;
+        let htmlItens = '';
+        try {
+            const itens = JSON.parse(itensJson || '[]');
+            if (itens && itens.length > 0) {
+                htmlItens = itens.map(item => {
+                    const subtotal = (item.quantidade || 0) * (item.preco || 0);
+                    return `
+                        <div class="bg-white/10 p-3 rounded-lg">
+                            <div class="flex justify-between items-baseline">
+                               <span class="font-semibold text-lg">${item.quantidade}x ${item.nome}</span>
+                               <span class="font-bold">R$ ${formatarMoeda(subtotal)}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                htmlItens = '<p class="text-white/60">Não foi possível carregar os itens deste pedido.</p>';
+            }
+        } catch (e) {
+            console.error("Erro ao processar itens do pedido:", e);
+            htmlItens = '<p class="text-red-400">Erro ao ler os dados dos itens.</p>';
+        }
+        modalCorpoPedido.innerHTML = htmlItens;
+        modalDetalhes.classList.remove('hidden');
+    }
+
+    function fecharModalDetalhes() {
+        modalDetalhes.classList.add('hidden');
+    }
+
+    // Event listeners para o modal
+    modalFecharPedido.addEventListener('click', fecharModalDetalhes);
+    modalDetalhes.addEventListener('click', (event) => {
+        if (event.target === modalDetalhes) { // Fecha se clicar no fundo escuro
+            fecharModalDetalhes();
+        }
+    });
+
+    document.getElementById('container-historico-pedidos').addEventListener('click', function(event) {
+        const botaoDetalhes = event.target.closest('.btn-detalhes-pedido');
+        if (botaoDetalhes) {
+            const idPedido = botaoDetalhes.dataset.idPedido;
+            const itensJson = botaoDetalhes.dataset.itens;
+            abrirModalDetalhes(idPedido, itensJson);
+        }
+    });
+
+    async function carregarFechamentoDia() {
+        const datasSelecionadas = datePickerSimples.selectedDates;
+        if (datasSelecionadas.length === 0) { alert("Por favor, selecione uma data."); return; }
+        setLoadingState(btnAnalisar, true);
+        const dataSelecionada = datePickerSimples.input.value; // Pega o valor 'YYYY-MM-DD' direto do campo
+        const url = `${API_FECHAMENTO_V2}?data=${dataSelecionada}&local_id=todos`;
+
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`O servidor respondeu com um erro: ${response.status}`);
+            const dadosApi = await response.json();
+            
+            // PASSO 1: Usar o adapter
+            const d = adaptarRespostaFechamentoV2(dadosApi);
+
+            // PASSO 2: Usar os dados adaptados (d) para tudo
+            preencherKPIs(d.kpis);
+            preencherBalanco(d.itensTop, d.estoque);
+            preencherPedidos(d.historicoPedidos);
+
+            // Atualiza Gráficos (já usavam a estrutura correta)
+            chartVendas = initOuUpdateChart(chartVendas, 'grafico-vendas', 'bar', { labels: d.vendasPorPeriodo.labels, datasets: [{ label: 'Faturamento', data: d.vendasPorPeriodo.data.map(Number), backgroundColor: 'rgba(52, 211, 153, 0.7)', borderColor: '#34D399', borderWidth: 2, borderRadius: 5, }] }, chartDefaultOptions);
+            chartPagamentos = initOuUpdateChart(chartPagamentos, 'grafico-pagamentos', 'doughnut', { labels: d.vendasPorPagamento.labels.map(l => l.replace(/_/g, ' ').replace(/(^\w{1})|(\s+\w{1})/g, letra => letra.toUpperCase())), datasets: [{ label: 'Formas de Pagamento', data: d.vendasPorPagamento.data, backgroundColor: ['#60A5FA', '#FBBF24', '#A78BFA', '#34D399'], borderColor: 'rgba(255, 255, 255, 0.1)', borderWidth: 2, }] }, { ...chartDefaultOptions, scales: {} });
+
+        } catch (error) {
+            console.error("Falha ao carregar dados do fechamento:", error);
+            alert(`Não foi possível carregar os dados do relatório. Detalhes: ${error.message}`);
+        } finally {
+            setLoadingState(btnAnalisar, false);
+        }
+    }
+    
+    async function carregarComparativo() {
+        if (datePickerA.selectedDates.length < 2 || datePickerB.selectedDates.length < 2) {
+            alert("Por favor, selecione um intervalo de datas para ambos os períodos.");
+            return;
+        }
+        setLoadingState(btnComparar, true);
+        const [inicioA, fimA] = [datePickerA.selectedDates[0].toISOString(), datePickerA.selectedDates[1].toISOString()];
+        const [inicioB, fimB] = [datePickerB.selectedDates[0].toISOString(), datePickerB.selectedDates[1].toISOString()];
+        
+        const url = new URL(API_COMPARATIVOS_V2, window.location.origin);
+        url.searchParams.append('periodoA_inicio', inicioA);
+        url.searchParams.append('periodoA_fim', fimA);
+        url.searchParams.append('periodoB_inicio', inicioB);
+        url.searchParams.append('periodoB_fim', fimB);
+        url.searchParams.append('local_id', 'todos');
+
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`O servidor respondeu com um erro: ${response.status}`);
+            const dados = await response.json();
+            preencherComparativos(dados.kpis);
+        } catch (error) {
+            console.error("Falha ao carregar dados comparativos:", error);
+            alert(`Não foi possível carregar os dados comparativos. Detalhes: ${error.message}`);
+        } finally {
+            setLoadingState(btnComparar, false);
+        }
+    }
+
+    // 5. Event Listeners
+    btnAnalisar.addEventListener('click', carregarFechamentoDia);
+    btnComparar.addEventListener('click', carregarComparativo);
+
+    carregarFechamentoDia();
+});
+</script>
+
+<div id="modal-detalhes-pedido" class="fixed inset-0 bg-black bg-opacity-70 backdrop-blur-sm flex items-center justify-center p-4 hidden z-50">
+    <div class="glass-container rounded-2xl p-6 w-full max-w-lg text-white max-h-[80vh] flex flex-col">
+        <div class="flex justify-between items-center border-b border-white/20 pb-3 mb-4 flex-shrink-0">
+            <h2 id="modal-titulo-pedido" class="text-2xl font-bold">Detalhes do Pedido</h2>
+            <button id="modal-fechar-pedido" class="text-2xl hover:text-red-500 transition-colors">&times;</button>
+        </div>
+        <div id="modal-corpo-pedido" class="overflow-y-auto custom-scrollbar pr-2 space-y-3">
+            </div>
+    </div>
+</div>
+
+</body>
+</html>

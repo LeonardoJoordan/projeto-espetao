@@ -571,18 +571,19 @@ def _normalizar_e_ordenar_itens(itens_recebidos, cursor):
 def salvar_novo_pedido(dados_do_pedido, local_id):
     """
     Salva um novo pedido, registrando a saída de cada item no ledger de estoque
-    e fotografando o custo médio de cada produto no momento da transação.
+    e carimbando o local_id para fins de analytics.
     """
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # --- Lógica de Preparação do Pedido ---
-        proxima_senha = obter_proxima_senha_diaria(local_id)
+        # Chama a função de senha global, sem passar o local_id
+        proxima_senha = obter_proxima_senha_diaria()
         timestamp_atual = datetime.now(timezone.utc).isoformat()
         ids_dos_produtos = [item['id'] for item in dados_do_pedido['itens']]
         if not ids_dos_produtos: return None
+        
         placeholders = ','.join('?' for _ in ids_dos_produtos)
         cursor.execute(f"SELECT requer_preparo FROM produtos WHERE id IN ({placeholders})", ids_dos_produtos)
         resultados_preparo = cursor.fetchall()
@@ -590,7 +591,6 @@ def salvar_novo_pedido(dados_do_pedido, local_id):
         itens_ordenados = _normalizar_e_ordenar_itens(dados_do_pedido['itens'], cursor)
         valor_total = sum(item['preco'] * item['quantidade'] for item in dados_do_pedido['itens'])
 
-        # --- Inserção do Pedido ---
         cursor.execute('''
             INSERT INTO pedidos (nome_cliente, status, metodo_pagamento, modalidade, valor_total, timestamp_criacao, itens_json, fluxo_simples, senha_diaria, local_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -598,39 +598,26 @@ def salvar_novo_pedido(dados_do_pedido, local_id):
             dados_do_pedido['nome_cliente'], 'aguardando_pagamento',
             dados_do_pedido['metodo_pagamento'], dados_do_pedido['modalidade'],
             valor_total, timestamp_atual, json.dumps(itens_ordenados), 1 if fluxo_e_simples else 0, proxima_senha,
-            local_id
+            local_id # O local_id é usado aqui, como "carimbo"
         ))
         id_do_pedido_salvo = cursor.lastrowid
 
-        # --- NOVA LÓGICA DE REGISTRO NO LEDGER DE ESTOQUE ---
-
-        # 1. Busca o mapa de custos atualizado ANTES de registrar as saídas.
         mapa_custos = obter_mapa_custo_medio_atual()
-
-        # 2. Agrega os itens para registrar uma única saída por produto.
         ledger_agregado = {}
         for item in itens_ordenados:
             produto_id = item['id']
             quantidade = item['quantidade']
             ledger_agregado[produto_id] = ledger_agregado.get(produto_id, 0) + quantidade
 
-        # 3. Prepara as movimentações com o custo "fotografado".
         movimentacoes_ledger = []
         for produto_id, quantidade_total in ledger_agregado.items():
             custo_unitario_snap = mapa_custos.get(produto_id, 0)
             movimentacoes_ledger.append((
-                produto_id,
-                -quantidade_total,
-                0,                       # custo_total_movimentacao (0 para saídas)
-                custo_unitario_snap,     # custo_unitario_aplicado (o snapshot)
-                'pedido',
-                id_do_pedido_salvo,
-                None,
-                timestamp_atual,
-                local_id
+                produto_id, -quantidade_total, 0, custo_unitario_snap, 'pedido',
+                id_do_pedido_salvo, None, timestamp_atual,
+                local_id # O local_id também é carimbado aqui no ledger
             ))
 
-        # 4. Insere as movimentações no ledger com a query correta (9 colunas).
         cursor.executemany('''
             INSERT INTO estoque_movimentacoes
             (produto_id, quantidade, custo_total_movimentacao, custo_unitario_aplicado, origem, referencia_id, observacao, created_at, local_id)
@@ -1358,10 +1345,10 @@ def pular_pedido_para_retirada(id_do_pedido):
         if conn:
             conn.close()
 
-def obter_proxima_senha_diaria(local_id):
+def obter_proxima_senha_diaria():
     """
-    Calcula a próxima senha diária com base no horário de trabalho que
-    começa às 5h da manhã.
+    Calcula a próxima senha diária global com base no horário de trabalho
+    que começa às 5h da manhã.
     """
     conn = None
     try:
@@ -1371,30 +1358,26 @@ def obter_proxima_senha_diaria(local_id):
         agora = datetime.now()
         horario_corte = agora.replace(hour=5, minute=0, second=0, microsecond=0)
 
-        # Define a data de início da busca pela última senha
         if agora < horario_corte:
-            # Regra 1 (Antes das 5h): Busca nas últimas 8 horas
             data_inicio_busca = agora - timedelta(hours=8)
         else:
-            # Regra 2 (Depois das 5h): Busca a partir das 5h de hoje
             data_inicio_busca = horario_corte
 
-        # Busca a maior senha usada desde o início do ciclo de trabalho
+        # A query agora busca a maior senha do dia, sem filtrar por local
         cursor.execute(
-            "SELECT MAX(senha_diaria) FROM pedidos WHERE timestamp_criacao >= ? AND local_id = ?",
-            (data_inicio_busca.isoformat(), local_id)
+            "SELECT MAX(senha_diaria) FROM pedidos WHERE timestamp_criacao >= ?",
+            (data_inicio_busca.isoformat(),)
         )
         resultado = cursor.fetchone()
 
-        # Calcula a próxima senha
         if resultado and resultado[0] is not None:
             return resultado[0] + 1
         else:
-            return 1 # Se não houver pedidos no ciclo, começa do 1
+            return 1
 
     except sqlite3.Error as e:
         print(f"ERRO ao obter a próxima senha diária: {e}")
-        return 1 # Retorna 1 como segurança em caso de erro
+        return 1
     finally:
         if conn:
             conn.close()
@@ -1876,9 +1859,9 @@ def _executar_limpeza_reservas(cursor):
     cursor.execute("DELETE FROM reservas_carrinho WHERE expires_at < ?", (agora_utc,))
     return cursor.rowcount
 
-def obter_disponibilidade_para_produtos(produto_ids, local_id):
+def obter_disponibilidade_para_produtos(produto_ids):
     """
-    Calcula a disponibilidade real para uma lista de produtos,
+    Calcula a disponibilidade real e global para uma lista de produtos,
     considerando o estoque do ledger menos as reservas ativas.
     """
     if not produto_ids:
@@ -1894,7 +1877,7 @@ def obter_disponibilidade_para_produtos(produto_ids, local_id):
         disponibilidades = {}
         placeholders = ','.join('?' for _ in produto_ids)
 
-        # 1. Obter o estoque total (on_hand) do ledger
+        # 1. Obter o estoque total (on_hand) do ledger (já era global)
         cursor.execute(f'''
             SELECT produto_id, COALESCE(SUM(quantidade), 0) as on_hand
             FROM estoque_movimentacoes
@@ -1903,13 +1886,13 @@ def obter_disponibilidade_para_produtos(produto_ids, local_id):
         ''', produto_ids)
         estoque_on_hand = {row[0]: row[1] for row in cursor.fetchall()}
 
-        # 2. Obter o total de reservas ativas
+        # 2. Obter o total de reservas ativas (agora de forma global)
         cursor.execute(f'''
             SELECT produto_id, COALESCE(SUM(quantidade_reservada), 0) as total_reservado
             FROM reservas_carrinho
-            WHERE produto_id IN ({placeholders}) AND local_id = ?
+            WHERE produto_id IN ({placeholders})
             GROUP BY produto_id
-        ''', (*produto_ids, local_id))
+        ''', produto_ids)
         total_reservado = {row[0]: row[1] for row in cursor.fetchall()}
 
         # 3. Calcular a disponibilidade final
@@ -1927,64 +1910,59 @@ def obter_disponibilidade_para_produtos(produto_ids, local_id):
         if conn:
             conn.close()
 
-
-def gerenciar_reserva(carrinho_id, local_id, produto_id, quantidade_delta):
+def gerenciar_reserva(carrinho_id, produto_id, quantidade_delta):
     """
     Adiciona ou remove uma quantidade de reserva para um produto em um carrinho.
-    Operação atômica e transacional.
+    Operação atômica, transacional e global (independente de local).
     """
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
         
-        # Iniciar transação explicitamente
         cursor.execute("BEGIN IMMEDIATE")
 
-        # PASSO 1: Limpeza de reservas expiradas
         _executar_limpeza_reservas(cursor)
 
-        # PASSO 2 e 3: Validação e aplicação em uma única operação atômica
         cursor.execute("SELECT COALESCE(SUM(quantidade), 0) FROM estoque_movimentacoes WHERE produto_id = ?", (produto_id,))
         estoque_on_hand = cursor.fetchone()[0]
 
-        cursor.execute("SELECT quantidade_reservada FROM reservas_carrinho WHERE carrinho_id = ? AND produto_id = ? AND local_id = ?", (carrinho_id, produto_id, local_id))
+        cursor.execute("SELECT quantidade_reservada FROM reservas_carrinho WHERE carrinho_id = ? AND produto_id = ?", (carrinho_id, produto_id))
         reserva_carrinho_atual = cursor.fetchone()
         reserva_carrinho_atual = reserva_carrinho_atual[0] if reserva_carrinho_atual else 0
 
-        # Calcular nova quantidade primeiro
         nova_quantidade = reserva_carrinho_atual + quantidade_delta
         
-        # Se for remoção total ou parcial, não precisa validar estoque
         if quantidade_delta > 0:
-            cursor.execute("SELECT COALESCE(SUM(quantidade_reservada), 0) FROM reservas_carrinho WHERE produto_id = ? AND local_id = ? AND carrinho_id != ?", (produto_id, local_id, carrinho_id))
+            cursor.execute("SELECT COALESCE(SUM(quantidade_reservada), 0) FROM reservas_carrinho WHERE produto_id = ? AND carrinho_id != ?", (produto_id, carrinho_id))
             total_reservado_outros = cursor.fetchone()[0]
             
             disponivel = estoque_on_hand - total_reservado_outros
             
-            if disponivel < nova_quantidade:
+            if disponivel < quantidade_delta: # Validamos contra o delta, não a nova_quantidade total
                 conn.rollback()
-                return {'sucesso': False, 'mensagem': 'Não há mais unidades deste item no momento.', 'produtos_afetados': [{'produto_id': produto_id, 'disponibilidade_atual': disponivel}]}
+                # A nova disponibilidade real é o que sobrou
+                disponibilidade_real = estoque_on_hand - (total_reservado_outros + reserva_carrinho_atual)
+                return {'sucesso': False, 'mensagem': 'Não há mais unidades deste item no momento.', 'produtos_afetados': [{'produto_id': produto_id, 'disponibilidade_atual': disponibilidade_real}]}
 
-        # PASSO 4: Aplicar a mudança
         agora_utc = datetime.now(timezone.utc)
         expires_at = agora_utc + timedelta(seconds=120)
 
         if nova_quantidade > 0:
             cursor.execute('''
-                INSERT INTO reservas_carrinho (carrinho_id, produto_id, local_id, quantidade_reservada, created_at, expires_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(carrinho_id, produto_id, local_id) DO UPDATE SET
+                INSERT INTO reservas_carrinho (carrinho_id, produto_id, quantidade_reservada, created_at, expires_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(carrinho_id, produto_id) DO UPDATE SET
                 quantidade_reservada = excluded.quantidade_reservada, 
                 expires_at = excluded.expires_at
-            ''', (carrinho_id, produto_id, local_id, nova_quantidade, agora_utc.isoformat(), expires_at.isoformat()))
+            ''', (carrinho_id, produto_id, nova_quantidade, agora_utc.isoformat(), expires_at.isoformat()))
         else:
-            cursor.execute("DELETE FROM reservas_carrinho WHERE carrinho_id = ? AND produto_id = ? AND local_id = ?", (carrinho_id, produto_id, local_id))
+            cursor.execute("DELETE FROM reservas_carrinho WHERE carrinho_id = ? AND produto_id = ?", (carrinho_id, produto_id))
 
         conn.commit()
 
-        # PASSO 5: Retornar a nova disponibilidade
-        disponibilidade_final = obter_disponibilidade_para_produtos([produto_id], local_id)
+        # A chamada para obter a disponibilidade final agora é global
+        disponibilidade_final = obter_disponibilidade_para_produtos([produto_id])
         produto_afetado = {'produto_id': produto_id, 'disponivel': disponibilidade_final.get(produto_id, 0)}
         return {'sucesso': True, 'produtos_afetados': [produto_afetado]}
 
@@ -1997,8 +1975,7 @@ def gerenciar_reserva(carrinho_id, local_id, produto_id, quantidade_delta):
         if conn: 
             conn.close()
 
-
-def renovar_reservas_carrinho(carrinho_id, local_id):
+def renovar_reservas_carrinho(carrinho_id):
     """
     Estende o tempo de expiração de todas as reservas de um carrinho.
     """
@@ -2007,17 +1984,13 @@ def renovar_reservas_carrinho(carrinho_id, local_id):
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # Rate limit: Não fazemos update desnecessário no DB.
-        # Opcional, mas boa prática. O ideal é checar no app.py com cache.
-        # Aqui vamos sempre renovar para simplificar.
-
         novo_expires_at = (datetime.now(timezone.utc) + timedelta(seconds=120)).isoformat()
 
         cursor.execute("""
             UPDATE reservas_carrinho
             SET expires_at = ?
-            WHERE carrinho_id = ? AND local_id = ?
-        """, (novo_expires_at, carrinho_id, local_id))
+            WHERE carrinho_id = ?
+        """, (novo_expires_at, carrinho_id))
 
         conn.commit()
         return {'sucesso': True}
@@ -2029,9 +2002,9 @@ def renovar_reservas_carrinho(carrinho_id, local_id):
     finally:
         if conn: conn.close()
 
-def forcar_expirar_carrinho(carrinho_id, local_id):
+def forcar_expirar_carrinho(carrinho_id):
     """
-    Força a expiração imediata de todas as reservas do carrinho no local informado.
+    Força a expiração imediata de todas as reservas de um carrinho.
     Retorna a lista de produtos afetados com suas disponibilidades atualizadas.
     """
     conn = None
@@ -2039,39 +2012,32 @@ def forcar_expirar_carrinho(carrinho_id, local_id):
         conn = sqlite3.connect(NOME_BANCO_DADOS)
         cursor = conn.cursor()
 
-        # Transação explícita
         cursor.execute("BEGIN IMMEDIATE")
-
-        # Limpa expiradas anteriores (boa higiene)
         _executar_limpeza_reservas(cursor)
 
-        # Captura os produtos que serão afetados
         cursor.execute("""
             SELECT DISTINCT produto_id
             FROM reservas_carrinho
-            WHERE carrinho_id = ? AND local_id = ?
-        """, (carrinho_id, local_id))
+            WHERE carrinho_id = ?
+        """, (carrinho_id,))
         linhas = cursor.fetchall()
         produtos_afetados_ids = [row[0] for row in linhas]
 
         if produtos_afetados_ids:
-            # Marca como expiradas agora e executa limpeza
             expira_agora = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
             cursor.execute("""
                 UPDATE reservas_carrinho
                 SET expires_at = ?
-                WHERE carrinho_id = ? AND local_id = ?
-            """, (expira_agora, carrinho_id, local_id))
+                WHERE carrinho_id = ?
+            """, (expira_agora, carrinho_id))
 
-            # Remove todas as expiradas (incluindo estas)
             _executar_limpeza_reservas(cursor)
 
         conn.commit()
 
-        # Recalcula disponibilidade apenas dos produtos afetados
         produtos_afetados = []
         if produtos_afetados_ids:
-            disponibilidades = obter_disponibilidade_para_produtos(produtos_afetados_ids, local_id)
+            disponibilidades = obter_disponibilidade_para_produtos(produtos_afetados_ids)
             produtos_afetados = [
                 {'produto_id': pid, 'disponivel': disponibilidades.get(pid, 0)}
                 for pid in produtos_afetados_ids
@@ -2087,4 +2053,3 @@ def forcar_expirar_carrinho(carrinho_id, local_id):
     finally:
         if conn:
             conn.close()
-

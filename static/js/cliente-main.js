@@ -301,7 +301,8 @@ async function abrirPopupSimples(productCard) { // <-- Adicionamos 'async'
         const resultado = await gerenciarReservaAPI(idProduto, -quantidade);
         if (resultado?.produtos_afetados?.length) {
         const upd = resultado.produtos_afetados[0];
-        estoqueState.setEstoque(upd.produto_id, upd.disponivel);
+        const disponivel = upd.disponivel ?? upd.disponibilidade_atual ?? 0;
+        estoqueState.setEstoque(upd.produto_id, disponivel);
         }
     }
 
@@ -345,7 +346,8 @@ async function abrirPopupSimples(productCard) { // <-- Adicionamos 'async'
             // PONTO DE ATENÇÃO #5: Sincroniza o estado local com a resposta da API
             if (resultadoReserva.produtos_afetados && resultadoReserva.produtos_afetados.length > 0) {
                 const update = resultadoReserva.produtos_afetados[0];
-                estoqueState.setEstoque(update.produto_id, update.disponivel);
+                const disponivel = update.disponivel ?? update.disponibilidade_atual ?? 0;
+                estoqueState.setEstoque(update.produto_id, disponivel);
             }
 
             if (resultadoReserva.sucesso) {
@@ -362,7 +364,8 @@ async function abrirPopupSimples(productCard) { // <-- Adicionamos 'async'
                 // Sincroniza o estado local com a nova disponibilidade retornada pelo servidor.
                 if (resultadoLiberacao.produtos_afetados && resultadoLiberacao.produtos_afetados.length > 0) {
                     const update = resultadoLiberacao.produtos_afetados[0];
-                    estoqueState.setEstoque(update.produto_id, update.disponivel);
+                    const disponivel = update.disponivel ?? update.disponibilidade_atual ?? 0;
+                    estoqueState.setEstoque(update.produto_id, disponivel);
                 }
 
                 // Apenas decrementa a quantidade local se o servidor confirmar a liberação.
@@ -483,7 +486,8 @@ async function abrirPopupCustomizacao(productCard) { // Adicionamos 'async' aqui
         const resultado = await gerenciarReservaAPI(idProduto, -quantidade);
         if (resultado?.produtos_afetados?.length) {
             const upd = resultado.produtos_afetados[0];
-            estoqueState.setEstoque(upd.produto_id, upd.disponivel);
+            const disponivel = upd.disponivel ?? upd.disponibilidade_atual ?? 0;
+            estoqueState.setEstoque(upd.produto_id, disponivel);
         }
         } catch (e) {
         console.warn('Falha ao liberar reservas no fechamento do popup custom:', e);
@@ -596,7 +600,8 @@ async function abrirPopupCustomizacao(productCard) { // Adicionamos 'async' aqui
             // PONTO DE ATENÇÃO #5: Sincroniza o estado local com a resposta da API
             if (resultadoReserva.produtos_afetados && resultadoReserva.produtos_afetados.length > 0) {
                 const update = resultadoReserva.produtos_afetados[0];
-                estoqueState.setEstoque(update.produto_id, update.disponivel);
+                const disponivel = update.disponivel ?? update.disponibilidade_atual ?? 0;
+                estoqueState.setEstoque(update.produto_id, disponivel);
             }
 
             if (resultadoReserva.sucesso) {
@@ -614,7 +619,8 @@ async function abrirPopupCustomizacao(productCard) { // Adicionamos 'async' aqui
 
                 if (resultadoLiberacao?.produtos_afetados?.length) {
                 const update = resultadoLiberacao.produtos_afetados[0];
-                estoqueState.setEstoque(update.produto_id, update.disponivel);
+                const disponivel = update.disponivel ?? update.disponibilidade_atual ?? 0;
+                estoqueState.setEstoque(update.produto_id, disponivel);
                 }
 
                 if (resultadoLiberacao?.sucesso) {

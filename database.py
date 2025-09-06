@@ -179,33 +179,19 @@ def inicializar_banco():
         conn.commit()
         print("Alterações salvas no banco de dados.")
 
-        # Tabela de Reservas de Carrinho (NOVA)
+        # Tabela de Reservas de Carrinho (Refatorada para ser Global)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS reservas_carrinho (
                 carrinho_id TEXT NOT NULL,
                 produto_id INTEGER NOT NULL,
-                local_id INTEGER NOT NULL,
                 quantidade_reservada INTEGER NOT NULL,
                 expires_at TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                PRIMARY KEY (carrinho_id, produto_id, local_id),
-                FOREIGN KEY (produto_id) REFERENCES produtos(id) ON DELETE CASCADE,
-                FOREIGN KEY (local_id) REFERENCES locais(id)
+                PRIMARY KEY (carrinho_id, produto_id),
+                FOREIGN KEY (produto_id) REFERENCES produtos(id) ON DELETE CASCADE
             )
         ''')
-        print("Tabela 'reservas_carrinho' verificada/criada.")
-
-        cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_reservas_expires
-            ON reservas_carrinho (expires_at);
-        ''')
-        print("Índice para 'reservas_carrinho' (expires_at) verificado/criado.")
-
-        cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_reservas_produto_local
-            ON reservas_carrinho (produto_id, local_id);
-        ''')
-        print("Índice para 'reservas_carrinho' (produto_id, local_id) verificado/criado.")
+        print("Tabela 'reservas_carrinho' (global) verificada/criada.")
         
 
     except sqlite3.Error as e:

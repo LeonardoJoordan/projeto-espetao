@@ -83,22 +83,21 @@ LOCAL_SESSAO_ATUAL = None
 
 
 
-def emit_estoque_atualizado(local_id, updates, origem="desconhecida"):
+def emit_estoque_atualizado(updates, origem="desconhecida"):
     """
-    Agrega e emite atualizações de disponibilidade de estoque para um local específico.
+    Agrega e emite atualizações de disponibilidade de estoque globalmente para todos os clientes.
     """
-    if not updates or not local_id:
+    if not updates:
         return
 
     payload = {
-        "local_id": local_id,
         "origem": origem,
         "version": int(time.time() * 1000),
         "updates": updates
     }
-    room = f"local:{local_id}"
-    socketio.emit('atualizacao_disponibilidade', payload, to=room)
-    print(f"Emitido 'atualizacao_disponibilidade' para a sala {room}: {len(updates)} updates.")
+    # A ausência do parâmetro 'to' ou 'room' faz com que o emit seja um broadcast global
+    socketio.emit('atualizacao_disponibilidade', payload)
+    print(f"Emitido 'atualizacao_disponibilidade' globalmente: {len(updates)} updates.")
 
 # --- CONFIGURAÇÃO DA IMPRESSORA ---
 CONFIG_IMPRESSORA_PATH = os.path.join(os.path.dirname(__file__), 'config_impressora.json')
@@ -129,16 +128,10 @@ def _salvar_config_impressora(data):
 @socketio.on('connect')
 def handle_connect():
     """
-    Quando um cliente se conecta, ele entra em uma "sala" específica
-    para o local de trabalho atual. Isso garante que ele só receba
-    atualizações de estoque relevantes para o seu totem.
+    Quando um cliente se conecta, apenas registramos o evento.
+    Não há mais necessidade de salas por local.
     """
-    if LOCAL_SESSAO_ATUAL:
-        room = f"local:{LOCAL_SESSAO_ATUAL}"
-        join_room(room)
-        print(f"Cliente conectado e ingressou na sala: {room}")
-    else:
-        print("AVISO: Cliente conectado, mas nenhum local de sessão foi definido.")
+    print(f"Cliente conectado ao Socket.IO.")
 
 @app.route('/api/definir_local_sessao', methods=['POST'])
 def definir_local_sessao_view():
@@ -199,14 +192,13 @@ def tela_cliente():
     ]
 
     # 4. Busca o ID do próximo pedido a ser criado
-    proxima_senha = gerenciador_db.obter_proxima_senha_diaria(LOCAL_SESSAO_ATUAL)
+    
     
     # 5. Envia todos os dados, incluindo o novo ID, para o template renderizar
     return render_template(
         'cliente.html', 
         categorias=categorias_visiveis, 
-        produtos_agrupados=produtos_agrupados,
-        proxima_senha=proxima_senha
+        produtos_agrupados=produtos_agrupados
     )
     
 # --- NOVA ROTA DA COZINHA ---
@@ -416,42 +408,37 @@ def api_historico_produto(id_produto):
 @app.route('/salvar_pedido', methods=['POST'])
 def salvar_pedido():
     """
-    Esta é a rota "Porteiro". Ela recebe os dados do pedido do frontend,
-    confirma o recebimento e (futuramente) os envia para o gerenciador_db.
+    Recebe os dados do pedido do frontend, salva no banco carimbando o local
+    da sessão e notifica os clientes da atualização de estoque.
     """
-    # 1. Pega os dados JSON enviados pelo JavaScript
     dados_do_pedido = request.get_json()
-
-    # 2. (Temporário) Imprime os dados no terminal para depuração
-    # Isso nos permite ver no console do Flask se os dados chegaram corretamente.
     print("--- NOVO PEDIDO RECEBIDO ---")
     print(dados_do_pedido)
     print("-----------------------------")
 
-    # 3. Chama a função "trabalhadora" para salvar o pedido no banco de dados
+    # A função "trabalhadora" ainda recebe o local_id para o carimbo
     resultado_salvo = gerenciador_db.salvar_novo_pedido(dados_do_pedido, LOCAL_SESSAO_ATUAL)
 
-    # 4. Verifica se a operação foi bem-sucedida antes de responder
     if resultado_salvo is None:
         return jsonify({
             "status": "erro",
             "mensagem": "Ocorreu um erro ao processar o pedido no servidor."
         }), 500
 
-    # --- INÍCIO DA NOVA LÓGICA DE EXPIRAÇÃO E EMISSÃO ---
+    # Lógica de expiração e emissão agora usa as funções globais
     carrinho_id = dados_do_pedido.get('carrinho_id')
-    if carrinho_id and LOCAL_SESSAO_ATUAL:
+    if carrinho_id:
         try:
-            resultado_expiracao = gerenciador_db.forcar_expirar_carrinho(carrinho_id, LOCAL_SESSAO_ATUAL)
+            # Chama forcar_expirar_carrinho sem local_id
+            resultado_expiracao = gerenciador_db.forcar_expirar_carrinho(carrinho_id)
             if resultado_expiracao.get('sucesso') and resultado_expiracao.get('produtos_afetados'):
+                # Chama emit_estoque_atualizado sem local_id
                 emit_estoque_atualizado(
-                    local_id=LOCAL_SESSAO_ATUAL,
                     updates=resultado_expiracao['produtos_afetados'],
                     origem='salvar_pedido'
                 )
         except Exception as e:
             print(f"AVISO: A transação do pedido foi bem-sucedida, mas a emissão do socket falhou: {e}")
-    # --- FIM DA NOVA LÓGICA ---
 
     socketio.emit('novo_pedido', {'msg': 'Um novo pedido chegou!'})
     return jsonify({
@@ -488,39 +475,36 @@ def rota_entregar_pedido(id_do_pedido):
 @app.route('/pedido/cancelar/<int:id_do_pedido>', methods=['POST'])
 def rota_cancelar_pedido(id_do_pedido):
     """
-    Rota para cancelar um pedido, estornar o estoque e emitir a atualização de disponibilidade.
+    Rota para cancelar um pedido, estornar o estoque e emitir a atualização de disponibilidade global.
     """
-    # --- INÍCIO DA NOVA LÓGICA DE ATUALIZAÇÃO DE ESTOQUE ---
-    # 1. Primeiro, obtemos os IDs dos produtos ANTES que o pedido seja alterado.
+    # 1. Obtemos os IDs dos produtos ANTES que o pedido seja alterado.
     ids_produtos_afetados = gerenciador_db.obter_produtos_de_pedido(id_do_pedido)
 
     # 2. Executa a lógica de cancelamento principal no banco de dados.
     sucesso = gerenciador_db.cancelar_pedido(id_do_pedido)
 
     if sucesso:
-        # 3. Se o cancelamento foi bem-sucedido e afetou produtos, busca a nova disponibilidade.
-        if ids_produtos_afetados and LOCAL_SESSAO_ATUAL:
+        # 3. Se o cancelamento afetou produtos, busca a nova disponibilidade global.
+        if ids_produtos_afetados:
+            # Chama a função com a nova assinatura global
             disponibilidades = gerenciador_db.obter_disponibilidade_para_produtos(
-                ids_produtos_afetados,
-                LOCAL_SESSAO_ATUAL
+                ids_produtos_afetados
             )
-            # 4. Monta o payload no formato esperado pela função de emissão.
             updates = [
                 {'produto_id': pid, 'disponivel': disponivel}
                 for pid, disponivel in disponibilidades.items()
             ]
-            # 5. Emite o evento de atualização de estoque para a sala do local atual.
+            
             if updates:
                 try:
+                    # Emite a atualização de forma global
                     emit_estoque_atualizado(
-                        local_id=LOCAL_SESSAO_ATUAL,
                         updates=updates,
                         origem='cancelar_pedido'
                     )
                 except Exception as e:
                     print(f"AVISO: O cancelamento do pedido foi bem-sucedido, mas a emissão do socket falhou: {e}")
 
-        # A notificação antiga para a cozinha/monitor ainda é útil.
         socketio.emit('novo_pedido', {'msg': f'Pedido {id_do_pedido} foi cancelado!'})
         return jsonify({"status": "sucesso"})
     else:
@@ -909,17 +893,14 @@ def api_gerenciar_reserva_item():
     carrinho_id = dados.get('carrinho_id')
     produto_id = dados.get('produto_id')
     quantidade_delta = dados.get('quantidade_delta')
-    # Usamos o local da sessão como autoridade máxima
-    local_id = LOCAL_SESSAO_ATUAL 
 
-    if not all([carrinho_id, produto_id, quantidade_delta, local_id]):
+    if not all([carrinho_id, produto_id, quantidade_delta]):
         return jsonify({"sucesso": False, "mensagem": "Dados incompletos."}), 400
 
-    resultado = gerenciador_db.gerenciar_reserva(carrinho_id, local_id, produto_id, quantidade_delta)
+    resultado = gerenciador_db.gerenciar_reserva(carrinho_id, produto_id, quantidade_delta)
 
     if resultado.get('sucesso'):
         emit_estoque_atualizado(
-            local_id=local_id,
             updates=resultado.get('produtos_afetados', []),
             origem='reserva_item'
         )
@@ -931,34 +912,26 @@ def api_renovar_carrinho():
     """ Endpoint para estender a validade das reservas do carrinho. """
     dados = request.get_json()
     carrinho_id = dados.get('carrinho_id')
-    local_id = LOCAL_SESSAO_ATUAL
 
-    if not all([carrinho_id, local_id]):
+    if not carrinho_id:
         return jsonify({"sucesso": False, "mensagem": "Dados incompletos."}), 400
 
-    # Aplica o rate limit do servidor: ignora se chamado há menos de 5s
-    # Implementação simples sem cache:
-    # (uma implementação real usaria Redis ou um dict em memória com timestamps)
-    # Por agora, vamos delegar a lógica para o gerenciador_db.
-
-    resultado = gerenciador_db.renovar_reservas_carrinho(carrinho_id, local_id)
+    resultado = gerenciador_db.renovar_reservas_carrinho(carrinho_id)
     return jsonify(resultado)
 
 @app.route('/api/carrinho/forcar_expirar', methods=['POST'])
 def api_forcar_expirar_carrinho():
-    """ Endpoint para forçar a expiração imediata de todas as reservas de um carrinho no local atual. """
+    """ Endpoint para forçar a expiração imediata de todas as reservas de um carrinho. """
     dados = request.get_json(silent=True) or {}
     carrinho_id = dados.get('carrinho_id')
-    local_id = LOCAL_SESSAO_ATUAL
 
-    if not all([carrinho_id, local_id]):
+    if not carrinho_id:
         return jsonify({"sucesso": False, "mensagem": "Dados incompletos."}), 400
 
-    resultado = gerenciador_db.forcar_expirar_carrinho(carrinho_id, local_id)
+    resultado = gerenciador_db.forcar_expirar_carrinho(carrinho_id)
 
     if resultado.get('sucesso') and resultado.get('produtos_afetados'):
         emit_estoque_atualizado(
-            local_id=local_id,
             updates=resultado.get('produtos_afetados', []),
             origem='forcar_expirar'
         )

@@ -1017,6 +1017,9 @@ def _formatar_e_imprimir_comanda(config_impressora, pedido):
         "ponto": "Ao ponto"
     }
 
+    # Em app.py, dentro da função _formatar_e_imprimir_comanda
+
+    p = None  # Inicializamos a variável da impressora como nula
     try:
         ip_configurado = config_impressora.get('ip')
         if not ip_configurado:
@@ -1032,82 +1035,57 @@ def _formatar_e_imprimir_comanda(config_impressora, pedido):
         p.text("\n\n")
         p.text(f"SENHA: {pedido['senha_diaria']}\n\n")
 
-        p.set(bold=True)  # Ativa o negrito
+        p.set(bold=True)
         p.text(f"Pedido: {pedido['nome_cliente']}\n")
-        p.set(bold=False)  # Desativa o negrito
+        p.set(bold=False)
 
-        # 1. Converte o texto (string) de volta para um objeto datetime
         timestamp_obj = datetime.fromisoformat(pedido['timestamp_criacao'])
-
-        # 2. Agora sim, aplica a conversão de fuso horário no objeto datetime
-        data_hora_local = timestamp_obj.astimezone(
-            pytz.timezone('America/Sao_Paulo')
-        )
+        data_hora_local = timestamp_obj.astimezone(pytz.timezone('America/Sao_Paulo'))
         p.text(data_hora_local.strftime('%d/%m/%Y - %H:%M:%S') + "\n")
         p.text("_" * 42 + "\n\n")
 
         # --- Itens ---
-
-        # 1. Lê a string da coluna 'itens_json' de forma segura.
-        #    Se a chave não existir, usa '[]' como padrão para evitar mais erros.
-        itens_json_string = pedido.get('itens_json', '[]') 
-
-        # 2. Converte a string JSON em uma lista Python.
+        itens_json_string = pedido.get('itens_json', '[]')
         lista_de_itens = json.loads(itens_json_string)
-        # --- LÓGICA DE CONTAGEM (Pré-cálculo) ---
+        
         totais_por_id = {}
         for item in lista_de_itens:
             item_id = item['id']
             totais_por_id[item_id] = totais_por_id.get(item_id, 0) + 1
-
+        
         contadores_atuais = {}
-
-        # 3. Agora, itera sobre a lista de itens que acabamos de criar.
-        for idx, item in enumerate(lista_de_itens):
-            # --- LÓGICA DE FORMATAÇÃO DO NOME DO ITEM ---
+        for item in lista_de_itens:
             item_id = item['id']
             total_deste_item = totais_por_id.get(item_id, 1)
-
+            nome_item = f"{item['quantidade']}x {item['nome']}"
             if total_deste_item > 1:
-                # Incrementa o contador para este item
                 contadores_atuais[item_id] = contadores_atuais.get(item_id, 0) + 1
-                contador_atual = contadores_atuais[item_id]
-                # Monta a string no formato "1/3 Nome do Item"
-                nome_item = f"{contador_atual}/{total_deste_item} {item['nome']}"
-            else:
-                # Mantém o formato original se o item for único
-                nome_item = f"{item['quantidade']}x {item['nome']}"
-            p.set(align='left')
-            p.set(bold=True)  # Ativa o negrito
+                nome_item = f"{contadores_atuais[item_id]}/{total_deste_item} {item['nome']}"
+            
+            p.set(align='left', bold=True)
             p.text(nome_item + "\n")
-            p.set(bold=False)  # Desativa o negrito
+            p.set(bold=False)
 
-            # Customizações
             if item.get('customizacao'):
                 custom = item['customizacao']
                 if custom.get('ponto'):
-                    ponto_original = custom['ponto']
-                    ponto_traduzido = traducoes_ponto.get(ponto_original, ponto_original.title())
+                    ponto_traduzido = traducoes_ponto.get(custom['ponto'], custom['ponto'].title())
                     p.text(f"  - Ponto: {ponto_traduzido}\n")
                 if custom.get('acompanhamentos'):
                     for acomp in custom['acompanhamentos']:
                         p.text(f"  - Com: {acomp}\n")
                 if custom.get('observacoes'):
                     p.text(f"  - Obs: {custom['observacoes']}\n")
-
             p.text("\n")
 
         p.text("_" * 42 + "\n")
 
         # --- Modalidade ---
         if pedido['modalidade']:
-            modalidade_texto = (
-                "CONSUMO NO LOCAL" if pedido['modalidade'] == 'local' else "PARA VIAGEM"
-            )
-            p.set(align='center')
-            p.set(bold=True)  # Ativa o negrito
+            modalidade_texto = "CONSUMO NO LOCAL" if pedido['modalidade'] == 'local' else "PARA VIAGEM"
+            p.set(align='center', bold=True)
             p.text(f"{modalidade_texto}\n")
-            p.set(bold=False)  # Desativa o negrito
+            p.set(bold=False)
             p.text("\n")
 
         # --- Finaliza ---
@@ -1116,6 +1094,12 @@ def _formatar_e_imprimir_comanda(config_impressora, pedido):
 
     except Exception as e:
         print(f"LOG IMPRESSAO: ERRO na thread de impressão para o pedido {pedido['id']}: {e}")
+    
+    finally:
+        # Este bloco SEMPRE será executado, com ou sem erro.
+        if p:
+            p.close()
+            print(f"LOG IMPRESSAO: Conexão com a impressora para o pedido {pedido['id']} foi fechada.")
 
 @app.route('/api/pedido/<int:pedido_id>/imprimir_comanda', methods=['POST'])
 def api_imprimir_comanda_pedido(pedido_id):

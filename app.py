@@ -974,10 +974,16 @@ def api_diagnostico_impressora():
         
         # Tenta conectar e imprimir
         p = printer.Network(host=host, port=port, timeout=5)
-        p.set(align='center', text_type='B', width=2, height=2)
+
+        # Define o alinhamento e o tamanho da fonte
+        p.set(align='center', width=2, height=2) 
+        p.set(bold=True)  # Ativa o modo negrito
         p.text("Espetao\n")
-        p.set(align='left', text_type='NORMAL')
+
+        p.set(bold=False)  # Volta ao texto normal (desativa negrito)
+        p.set(align='left', width=1, height=1) # Volta ao tamanho padrão
         p.text("Teste de impressao OK!\n")
+
         p.cut()
 
         return jsonify({'sucesso': True, 'mensagem': 'Teste de impressão enviado com sucesso!'})
@@ -1000,34 +1006,47 @@ def _formatar_e_imprimir_comanda(config_impressora, pedido):
             print("LOG IMPRESSAO: IP não configurado na thread.")
             return
 
-        # Parseia IP e Porta
         host, port = (ip_configurado.split(':') + ['9100'])[:2]
         port = int(port)
-
         p = printer.Network(host=host, port=port, timeout=5)
 
         # --- Cabeçalho ---
-        p.set(align='center', text_type='NORMAL', width=2, height=2)
-        p.text("\n\n")  # <--- ADICIONADO: Duas linhas em branco antes da Senha
-        p.text(f"SENHA: {pedido['senha_diaria']}\n\n")  # Espaço extra após SENHA
+        p.set(align='center', width=2, height=2)
+        p.text("\n\n")
+        p.text(f"SENHA: {pedido['senha_diaria']}\n\n")
 
-        p.set(align='center', text_type='B', width=2, height=2)
+        p.set(bold=True)  # Ativa o negrito
         p.text(f"Pedido: {pedido['nome_cliente']}\n")
+        p.set(bold=False)  # Desativa o negrito
 
-        data_hora_local = pedido['timestamp_criacao'].astimezone(
+        # 1. Converte o texto (string) de volta para um objeto datetime
+        timestamp_obj = datetime.fromisoformat(pedido['timestamp_criacao'])
+
+        # 2. Agora sim, aplica a conversão de fuso horário no objeto datetime
+        data_hora_local = timestamp_obj.astimezone(
             pytz.timezone('America/Sao_Paulo')
         )
         p.text(data_hora_local.strftime('%d/%m/%Y - %H:%M:%S') + "\n")
-        p.text("_" * 42 + "\n\n")  # linha vazia depois do tracejado
+        p.text("_" * 42 + "\n\n")
 
         # --- Itens ---
-        for idx, item in enumerate(pedido['itens']):
+
+        # 1. Lê a string da coluna 'itens_json' de forma segura.
+        #    Se a chave não existir, usa '[]' como padrão para evitar mais erros.
+        itens_json_string = pedido.get('itens_json', '[]') 
+
+        # 2. Converte a string JSON em uma lista Python.
+        lista_de_itens = json.loads(itens_json_string)
+
+        # 3. Agora, itera sobre a lista de itens que acabamos de criar.
+        for idx, item in enumerate(lista_de_itens):
             nome_item = f"{item['quantidade']}x {item['nome']}"
-            p.set(align='left', text_type='B')
+            p.set(align='left')
+            p.set(bold=True)  # Ativa o negrito
             p.text(nome_item + "\n")
+            p.set(bold=False)  # Desativa o negrito
 
             # Customizações
-            p.set(align='left', text_type='NORMAL')
             if item.get('customizacao'):
                 custom = item['customizacao']
                 if custom.get('ponto'):
@@ -1040,19 +1059,20 @@ def _formatar_e_imprimir_comanda(config_impressora, pedido):
                 if custom.get('observacoes'):
                     p.text(f"  - Obs: {custom['observacoes']}\n")
 
-            # Linha vazia após cada item
             p.text("\n")
 
-        p.text("_" * 42 + "\n")  # linha vazia depois do tracejado inferior
+        p.text("_" * 42 + "\n")
 
         # --- Modalidade ---
         if pedido['modalidade']:
             modalidade_texto = (
                 "CONSUMO NO LOCAL" if pedido['modalidade'] == 'local' else "PARA VIAGEM"
             )
-            p.set(align='center', text_type='B')
+            p.set(align='center')
+            p.set(bold=True)  # Ativa o negrito
             p.text(f"{modalidade_texto}\n")
-            p.text("\n")  # <--- ADICIONADO: Duas linhas em branco antes do corte
+            p.set(bold=False)  # Desativa o negrito
+            p.text("\n")
 
         # --- Finaliza ---
         p.cut()
@@ -1061,7 +1081,6 @@ def _formatar_e_imprimir_comanda(config_impressora, pedido):
     except Exception as e:
         print(f"LOG IMPRESSAO: ERRO na thread de impressão para o pedido {pedido['id']}: {e}")
 
-        
 @app.route('/api/pedido/<int:pedido_id>/imprimir_comanda', methods=['POST'])
 def api_imprimir_comanda_pedido(pedido_id):
     """Recebe a requisição para imprimir uma comanda e dispara em uma thread."""

@@ -9,7 +9,7 @@ include_files = [
     ("espetao.db", "espetao.db"),
     ("icon.png", "icon.png"),
     ("analytics.py", "analytics.py"),
-    ("gerenciador_db.py", "gerenciador_db.py"), 
+    ("gerenciador_db.py", "gerenciador_db"), 
     ("database.py", "database.py"),
     ("serializers.py", "serializers.py")
 ]
@@ -31,6 +31,11 @@ packages = [
     "sqlite3",
     "pytz",
     "datetime",
+    
+    # Novos módulos para impressão
+    "re",
+    "subprocess",
+    "platform",
     
     # Eventlet e dependências
     "eventlet",
@@ -63,6 +68,10 @@ packages = [
     "werkzeug.utils",
     "jinja2",
     
+    # ESC/POS para impressão
+    "escpos",
+    "escpos.printer",
+    
     # Seus módulos
     "analytics",
     "gerenciador_db", 
@@ -76,7 +85,12 @@ includes = [
     "eventlet.hubs.poll",
     "eventlet.hubs.epolls", 
     "dns.rdtypes",
-    "greenlet._greenlet"
+    "greenlet._greenlet",
+    
+    # Novos includes para impressão
+    "escpos.printer",
+    "escpos.constants",
+    "escpos.exceptions"
 ]
 
 # Módulos a serem excluídos para reduzir tamanho

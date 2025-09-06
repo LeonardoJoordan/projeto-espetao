@@ -242,6 +242,7 @@ export async function salvarPedido(metodoPagamento, modalidade) { // <-- NOVO PA
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+                carrinho_id: carrinhoId,
                 nome_cliente: nomeClienteAtual,
                 itens: pedidoAtual, // A lista já está sempre ordenada
                 metodo_pagamento: metodoPagamento,

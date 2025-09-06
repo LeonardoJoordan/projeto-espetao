@@ -102,22 +102,46 @@ def emit_estoque_atualizado(updates, origem="desconhecida"):
     print(f"Emitido 'atualizacao_disponibilidade' globalmente: {len(updates)} updates.")
 
 # --- CONFIGURAÇÃO DA IMPRESSORA ---
-CONFIG_IMPRESSORA_PATH = os.path.join(os.path.dirname(__file__), 'config_impressora.json')
 
 def _obter_config_impressora():
     """Lê o arquivo de configuração da impressora e retorna como um dicionário."""
+    import os
+    
+    # Define o caminho no diretório do usuário
+    config_dir = os.path.expanduser('~/.espetao')
+    if not os.path.exists(config_dir):
+        try:
+            os.makedirs(config_dir)
+        except Exception as e:
+            print(f"ERRO ao criar diretório de config: {e}")
+    
+    config_path = os.path.join(config_dir, 'config_impressora.json')
+    
     try:
-        if os.path.exists(CONFIG_IMPRESSORA_PATH):
-            with open(CONFIG_IMPRESSORA_PATH, 'r', encoding='utf-8') as f:
+        if os.path.exists(config_path):
+            with open(config_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
     except Exception as e:
         print(f"ERRO ao ler config da impressora: {e}")
-    return {} # Retorna um dict vazio se o arquivo não existir ou der erro
+    return {}  # Retorna um dict vazio se o arquivo não existir ou der erro
 
 def _salvar_config_impressora(data):
     """Salva o dicionário de configuração no arquivo JSON."""
+    import os
+    
+    # Define o caminho no diretório do usuário
+    config_dir = os.path.expanduser('~/.espetao')
+    if not os.path.exists(config_dir):
+        try:
+            os.makedirs(config_dir)
+        except Exception as e:
+            print(f"ERRO ao criar diretório de config: {e}")
+            return False
+    
+    config_path = os.path.join(config_dir, 'config_impressora.json')
+    
     try:
-        with open(CONFIG_IMPRESSORA_PATH, 'w', encoding='utf-8') as f:
+        with open(config_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=4)
         return True
     except Exception as e:

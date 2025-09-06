@@ -427,6 +427,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (!response.ok) {
                     throw new Error('Falha ao confirmar pagamento');
                 }
+
+                // --- NOVA LÓGICA DE IMPRESSÃO ---
+                // Dispara a impressão em "fire-and-forget" e não espera a resposta
+                fetch(`/api/pedido/${pedidoId}/imprimir_comanda`, { method: 'POST' })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.status !== 'impressao_enfileirada') {
+                        console.warn('Aviso de Impressão:', data.mensagem);
+                        }
+                    })
+                    .catch(err => console.error('Erro ao tentar imprimir:', err));
+                // ------------------------------------
+
                 onSucesso();
                 hideModal();
             

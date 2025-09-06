@@ -140,6 +140,12 @@ def inicializar_banco():
         ''')
         print("Índice para 'estoque_movimentacoes' (produto, data) verificado/criado.")
 
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_movimentacoes_origem_ref
+            ON estoque_movimentacoes (origem, referencia_id);
+        ''')
+        print("Índice para 'estoque_movimentacoes' (origem, referencia) verificado/criado.")
+
         # Tabela de Acompanhamentos (NOVA)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS acompanhamentos (

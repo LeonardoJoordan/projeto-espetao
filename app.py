@@ -429,20 +429,35 @@ def salvar_pedido():
     print("-----------------------------")
 
     # 3. Chama a função "trabalhadora" para salvar o pedido no banco de dados
-    id_do_pedido_salvo = gerenciador_db.salvar_novo_pedido(dados_do_pedido, LOCAL_SESSAO_ATUAL)
+    resultado_salvo = gerenciador_db.salvar_novo_pedido(dados_do_pedido, LOCAL_SESSAO_ATUAL)
 
     # 4. Verifica se a operação foi bem-sucedida antes de responder
-    if id_do_pedido_salvo is None:
+    if resultado_salvo is None:
         return jsonify({
             "status": "erro",
             "mensagem": "Ocorreu um erro ao processar o pedido no servidor."
         }), 500
 
+    # --- INÍCIO DA NOVA LÓGICA DE EXPIRAÇÃO E EMISSÃO ---
+    carrinho_id = dados_do_pedido.get('carrinho_id')
+    if carrinho_id and LOCAL_SESSAO_ATUAL:
+        try:
+            resultado_expiracao = gerenciador_db.forcar_expirar_carrinho(carrinho_id, LOCAL_SESSAO_ATUAL)
+            if resultado_expiracao.get('sucesso') and resultado_expiracao.get('produtos_afetados'):
+                emit_estoque_atualizado(
+                    local_id=LOCAL_SESSAO_ATUAL,
+                    updates=resultado_expiracao['produtos_afetados'],
+                    origem='salvar_pedido'
+                )
+        except Exception as e:
+            print(f"AVISO: A transação do pedido foi bem-sucedida, mas a emissão do socket falhou: {e}")
+    # --- FIM DA NOVA LÓGICA ---
+
     socketio.emit('novo_pedido', {'msg': 'Um novo pedido chegou!'})
     return jsonify({
         "status": "sucesso",
         "mensagem": "Pedido recebido, em preparação!",
-        "senha_diaria": id_do_pedido_salvo['senha']
+        "senha_diaria": resultado_salvo['senha']
     })
 
 @app.route('/pedido/iniciar_preparo/<int:id_do_pedido>', methods=['POST'])
@@ -473,10 +488,39 @@ def rota_entregar_pedido(id_do_pedido):
 @app.route('/pedido/cancelar/<int:id_do_pedido>', methods=['POST'])
 def rota_cancelar_pedido(id_do_pedido):
     """
-    Rota para cancelar um pedido (remove da lista ativa).
+    Rota para cancelar um pedido, estornar o estoque e emitir a atualização de disponibilidade.
     """
+    # --- INÍCIO DA NOVA LÓGICA DE ATUALIZAÇÃO DE ESTOQUE ---
+    # 1. Primeiro, obtemos os IDs dos produtos ANTES que o pedido seja alterado.
+    ids_produtos_afetados = gerenciador_db.obter_produtos_de_pedido(id_do_pedido)
+
+    # 2. Executa a lógica de cancelamento principal no banco de dados.
     sucesso = gerenciador_db.cancelar_pedido(id_do_pedido)
+
     if sucesso:
+        # 3. Se o cancelamento foi bem-sucedido e afetou produtos, busca a nova disponibilidade.
+        if ids_produtos_afetados and LOCAL_SESSAO_ATUAL:
+            disponibilidades = gerenciador_db.obter_disponibilidade_para_produtos(
+                ids_produtos_afetados,
+                LOCAL_SESSAO_ATUAL
+            )
+            # 4. Monta o payload no formato esperado pela função de emissão.
+            updates = [
+                {'produto_id': pid, 'disponivel': disponivel}
+                for pid, disponivel in disponibilidades.items()
+            ]
+            # 5. Emite o evento de atualização de estoque para a sala do local atual.
+            if updates:
+                try:
+                    emit_estoque_atualizado(
+                        local_id=LOCAL_SESSAO_ATUAL,
+                        updates=updates,
+                        origem='cancelar_pedido'
+                    )
+                except Exception as e:
+                    print(f"AVISO: O cancelamento do pedido foi bem-sucedido, mas a emissão do socket falhou: {e}")
+
+        # A notificação antiga para a cozinha/monitor ainda é útil.
         socketio.emit('novo_pedido', {'msg': f'Pedido {id_do_pedido} foi cancelado!'})
         return jsonify({"status": "sucesso"})
     else:

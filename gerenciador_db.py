@@ -853,18 +853,34 @@ def entregar_pedido(id_do_pedido):
 
 def cancelar_pedido(id_do_pedido):
     """
-    Cancela um pedido. Busca as saídas originais no ledger para reverter o estoque
-    com o mesmo custo, e então muda o status do pedido para 'cancelado'.
+    Cancela um pedido de forma idempotente. Garante que o estoque só seja
+    estornado uma única vez, mesmo que a função seja chamada múltiplas vezes.
     """
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
-        conn.row_factory = sqlite3.Row # Facilita o acesso aos dados como dicionário
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
         timestamp_cancelamento = datetime.now(timezone.utc).isoformat()
 
-        # 1. Busca as movimentações de SAÍDA originais do pedido no ledger.
+        # PASSO 1: Tenta atomicamente mudar o status.
+        # A condição `status != 'cancelado'` é a chave para a idempotência.
+        cursor.execute("""
+            UPDATE pedidos
+            SET status = 'cancelado', timestamp_finalizacao = ?
+            WHERE id = ? AND status != 'cancelado'
+        """, (timestamp_cancelamento, id_do_pedido))
+
+        # PASSO 2: Verifica se a mudança de status realmente aconteceu.
+        # Se `rowcount` for 0, o pedido não foi encontrado ou já estava cancelado.
+        if cursor.rowcount == 0:
+            print(f"AVISO: Pedido #{id_do_pedido} não cancelado (já pode estar cancelado ou não existe). Nenhuma ação de estoque foi tomada.")
+            # Retornamos True porque o estado desejado ('cancelado') já foi alcançado.
+            return True
+
+        # PASSO 3: Se o status foi alterado, procede com o estorno do estoque.
+        # Esta parte do código agora só pode ser executada UMA VEZ.
         cursor.execute("""
             SELECT produto_id, quantidade, custo_unitario_aplicado, local_id
             FROM estoque_movimentacoes
@@ -872,18 +888,16 @@ def cancelar_pedido(id_do_pedido):
         """, (id_do_pedido,))
         saidas_originais = cursor.fetchall()
 
-        # 2. Prepara as movimentações de estorno (ENTRADA) com base nas saídas.
-        movimentacoes_estorno = []
         if saidas_originais:
+            movimentacoes_estorno = []
             for mov in saidas_originais:
                 quantidade_devolvida = abs(mov['quantidade'])
                 custo_da_saida = mov['custo_unitario_aplicado'] or 0
-
                 movimentacoes_estorno.append((
                     mov['produto_id'],
                     quantidade_devolvida,
                     quantidade_devolvida * custo_da_saida, # custo_total_movimentacao
-                    None,                                  # custo_unitario_aplicado (NULL para entradas)
+                    None,                                  # custo_unitario_aplicado
                     'cancelamento',                        # origem
                     id_do_pedido,                          # referencia_id
                     f"Estorno do pedido #{id_do_pedido}",  # observacao
@@ -891,19 +905,11 @@ def cancelar_pedido(id_do_pedido):
                     mov['local_id']                        # local_id
                 ))
 
-            # 3. Insere todos os estornos de uma vez no ledger.
             cursor.executemany('''
                 INSERT INTO estoque_movimentacoes
                 (produto_id, quantidade, custo_total_movimentacao, custo_unitario_aplicado, origem, referencia_id, observacao, created_at, local_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', movimentacoes_estorno)
-
-        # 4. Atualiza o status do pedido para 'cancelado', independentemente de ter itens.
-        cursor.execute("""
-            UPDATE pedidos
-            SET status = 'cancelado', timestamp_finalizacao = ?
-            WHERE id = ?
-        """, (timestamp_cancelamento, id_do_pedido))
 
         conn.commit()
         print(f"SUCESSO: Pedido #{id_do_pedido} cancelado e estoque estornado no ledger.")
@@ -1286,6 +1292,36 @@ def obter_pedido_por_id(id_do_pedido):
     except sqlite3.Error as e:
         print(f"Ocorreu um erro ao obter o pedido por ID: {e}")
         return None
+    finally:
+        if conn:
+            conn.close()
+
+def obter_produtos_de_pedido(id_do_pedido):
+    """
+    Busca no ledger as saídas de um pedido específico e retorna uma lista
+    dos IDs de produto únicos que foram afetados por ele.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        cursor = conn.cursor()
+
+        # Busca os IDs de produto distintos nas movimentações do pedido
+        cursor.execute("""
+            SELECT DISTINCT produto_id
+            FROM estoque_movimentacoes
+            WHERE origem = 'pedido' AND referencia_id = ?
+        """, (id_do_pedido,))
+
+        # Extrai os IDs da tupla e os coloca em uma lista simples
+        resultados = cursor.fetchall()
+        ids_produtos = [row[0] for row in resultados]
+
+        return ids_produtos
+
+    except sqlite3.Error as e:
+        print(f"ERRO ao obter produtos do pedido #{id_do_pedido}: {e}")
+        return [] # Retorna lista vazia em caso de erro
     finally:
         if conn:
             conn.close()
@@ -2051,3 +2087,4 @@ def forcar_expirar_carrinho(carrinho_id, local_id):
     finally:
         if conn:
             conn.close()
+

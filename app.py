@@ -973,7 +973,7 @@ def api_diagnostico_impressora():
             port = 9100
         
         # Tenta conectar e imprimir
-        p = printer.Network(host=host, port=port, timeout=5)
+        p = printer.Network(host=host, port=port, timeout=5, profile="TM-T88III")
 
         # Define o alinhamento e o tamanho da fonte
         p.set(align='center', width=2, height=2) 
@@ -1037,10 +1037,29 @@ def _formatar_e_imprimir_comanda(config_impressora, pedido):
 
         # 2. Converte a string JSON em uma lista Python.
         lista_de_itens = json.loads(itens_json_string)
+        # --- LÓGICA DE CONTAGEM (Pré-cálculo) ---
+        totais_por_id = {}
+        for item in lista_de_itens:
+            item_id = item['id']
+            totais_por_id[item_id] = totais_por_id.get(item_id, 0) + 1
+
+        contadores_atuais = {}
 
         # 3. Agora, itera sobre a lista de itens que acabamos de criar.
         for idx, item in enumerate(lista_de_itens):
-            nome_item = f"{item['quantidade']}x {item['nome']}"
+            # --- LÓGICA DE FORMATAÇÃO DO NOME DO ITEM ---
+            item_id = item['id']
+            total_deste_item = totais_por_id.get(item_id, 1)
+
+            if total_deste_item > 1:
+                # Incrementa o contador para este item
+                contadores_atuais[item_id] = contadores_atuais.get(item_id, 0) + 1
+                contador_atual = contadores_atuais[item_id]
+                # Monta a string no formato "1/3 Nome do Item"
+                nome_item = f"{contador_atual}/{total_deste_item} {item['nome']}"
+            else:
+                # Mantém o formato original se o item for único
+                nome_item = f"{item['quantidade']}x {item['nome']}"
             p.set(align='left')
             p.set(bold=True)  # Ativa o negrito
             p.text(nome_item + "\n")

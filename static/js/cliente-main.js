@@ -837,6 +837,31 @@ if (btnIniciar) {
     });
 }
 
+// Listener para o teclado físico
+window.addEventListener('keydown', (event) => {
+    // 1. Verifica se a tela do teclado está ativa. Se não estiver, ignora o evento.
+    if (!telaTeclado || telaTeclado.classList.contains('hidden')) {
+        return;
+    }
+
+    const key = event.key;
+
+    // 2. Lida com a tecla Backspace para apagar
+    if (key === 'Backspace') {
+        event.preventDefault(); // Impede o navegador de voltar a página anterior
+        nomeDigitadoTemp = nomeDigitadoTemp.slice(0, -1);
+    }
+    // 3. Lida com letras, cedilha e espaço
+    else if (/^[a-zA-ZçÇ ]$/.test(key) && nomeDigitadoTemp.length < 20) {
+        event.preventDefault(); // Impede que a tecla faça outras ações no navegador
+        nomeDigitadoTemp += key.toUpperCase();
+    }
+    // Teclas como Enter, Shift, Tab, etc., serão ignoradas pelo regex.
+
+    // 4. Atualiza a interface gráfica com o novo texto
+    atualizarTextoTeclado();
+});
+
 // Listener para o botão "Fechar" da tela de sucesso (antigo btnIrCardapio)
 if (btnIrCardapio) {
     btnIrCardapio.addEventListener('click', () => {

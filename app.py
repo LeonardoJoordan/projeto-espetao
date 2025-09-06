@@ -980,8 +980,8 @@ def api_diagnostico_impressora():
     if not ip_configurado:
         return jsonify({'sucesso': False, 'mensagem': 'IP da impressora não configurado.'})
 
+    p = None  # Garante que a variável 'p' exista fora do try
     try:
-        # Separa o IP e a Porta. Usa 9100 como padrão se a porta não for especificada.
         if ':' in ip_configurado:
             host, port_str = ip_configurado.split(':')
             port = int(port_str)
@@ -989,25 +989,35 @@ def api_diagnostico_impressora():
             host = ip_configurado
             port = 9100
         
-        # Tenta conectar e imprimir
-        p = printer.Network(host=host, port=port, timeout=5, profile="TM-T88III")
+        p = printer.Network(host=host, port=port, timeout=5)
 
-        # Define o alinhamento e o tamanho da fonte
-        p.set(align='center', width=2, height=2) 
-        p.set(bold=True)  # Ativa o modo negrito
-        p.text("Espetao\n")
+        # --- AJUSTE DE CODIFICAÇÃO ---
+        p.charcode('CP860')  # Define a página de códigos para Português (Latin-1)
 
-        p.set(bold=False)  # Volta ao texto normal (desativa negrito)
-        p.set(align='left', width=1, height=1) # Volta ao tamanho padrão
-        p.text("Teste de impressao OK!\n")
+        # --- TEXTO DE TESTE ---
+        p.set(align='center', bold=True, width=2, height=2)
+        p.text("Espetao\n\n")
+        
+        p.set(align='left', bold=False, width=1, height=1)
+        p.text("Teste de acentuacao:\n")
+        p.text("Limão, Maionese, Açaí, Coração\n")
+        p.text("ç á é í ó ú â ê ô à\n\n")
 
+        p.text("Se esta mensagem foi impressa\n")
+        p.text("corretamente, o ajuste funcionou!\n")
         p.cut()
 
-        return jsonify({'sucesso': True, 'mensagem': 'Teste de impressão enviado com sucesso!'})
+        return jsonify({'sucesso': True, 'mensagem': 'Teste de impressão com acentuação enviado!'})
 
     except Exception as e:
         print(f"ERRO DE IMPRESSAO: {e}")
         return jsonify({'sucesso': False, 'mensagem': f'Falha na conexão: {e}'})
+    finally:
+        # Garante que a conexão seja sempre fechada
+        if p:
+            p.close()
+
+
 
 def _formatar_e_imprimir_comanda(config_impressora, pedido):
     """Função executada em uma thread para formatar e imprimir a comanda."""

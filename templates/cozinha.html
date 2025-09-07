@@ -133,7 +133,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 `<button 
                     class="btn-imprimir-individual w-full text-left bg-white/10 hover:bg-white/20 p-3 rounded-lg text-lg transition-colors duration-200" 
                     data-id-pedido="${pedido.id}">
-                        <span class="font-bold">#${pedido.id}</span> - <span>${pedido.nome_cliente}</span>
+                        <span class="font-bold">#${pedido.senha_diaria}</span> - <span>${pedido.nome_cliente}</span>
                 </button>`
             ).join('');
 
@@ -338,8 +338,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 ${acaoPrincipalHtml}
                 <div class="p-4 flex-grow flex flex-col min-h-0 overflow-hidden">
                     <div class="text-center mb-3 flex-shrink-0">
-                        <h2 class="text-2xl font-bold drop-shadow-lg">${pedido.nome_cliente}</h2>
-                        <p class="text-base font-medium opacity-80 -mt-1">#${pedido.id}</p>
+                        <p class="text-base font-medium opacity-80 -mt-1">#${pedido.senha_diaria}</p>
+                        <h2 class="text-2xl font-bold drop-shadow-lg">${pedido.nome_cliente}</h2>                        
                     </div>
                     <ul class="space-y-2 text-white overflow-y-auto scroll-custom pr-2 flex-grow min-h-0">${itemsListHtml}</ul>
                     <div class="mt-auto pt-2 flex-shrink-0">

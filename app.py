@@ -1137,7 +1137,7 @@ def _formatar_e_imprimir_comanda(config_impressora, pedido):
 
         # Define tamanho duplo e negrito para o nome
         p.set(width=2, height=2, bold=True)
-        p.text(f"Pedido: {pedido['nome_cliente']}\n")
+        p.text(f"Cliente: {pedido['nome_cliente']}\n")
         # Reseta para o tamanho e estilo padrão
         p.set(width=1, height=1, bold=False)
 

@@ -13,6 +13,7 @@ import json
 import re
 import subprocess
 import platform
+import collections
 from datetime import datetime, timedelta
 
 # --- INICIALIZAÇÃO DO BANCO DE DADOS ---
@@ -1134,50 +1135,67 @@ def _formatar_e_imprimir_comanda(config_impressora, pedido):
         p.text("\n\n")
         p.text(f"SENHA: {pedido['senha_diaria']}\n\n")
 
-        p.set(bold=True)
+        # Define tamanho duplo e negrito para o nome
+        p.set(width=2, height=2, bold=True)
         p.text(f"Pedido: {pedido['nome_cliente']}\n")
-        p.set(bold=False)
+        # Reseta para o tamanho e estilo padrão
+        p.set(width=1, height=1, bold=False)
 
         timestamp_obj = datetime.fromisoformat(pedido['timestamp_criacao'])
         data_hora_local = timestamp_obj.astimezone(pytz.timezone('America/Sao_Paulo'))
         p.text(data_hora_local.strftime('%d/%m/%Y - %H:%M:%S') + "\n")
-        p.text("_" * 42 + "\n\n")
+        p.text("_" * 44 + "\n\n")
 
         # --- Itens ---
         itens_json_string = pedido.get('itens_json', '[]')
         lista_de_itens = json.loads(itens_json_string)
         
-        totais_por_id = {}
+        # 1. Agrupar itens por ID do produto
+        itens_agrupados = collections.defaultdict(list)
         for item in lista_de_itens:
-            item_id = item['id']
-            totais_por_id[item_id] = totais_por_id.get(item_id, 0) + 1
-        
-        contadores_atuais = {}
-        for item in lista_de_itens:
-            item_id = item['id']
-            total_deste_item = totais_por_id.get(item_id, 1)
-            nome_item = f"{item['quantidade']}x {item['nome']}"
-            if total_deste_item > 1:
-                contadores_atuais[item_id] = contadores_atuais.get(item_id, 0) + 1
-                nome_item = f"{contadores_atuais[item_id]}/{total_deste_item} {item['nome']}"
-            
-            p.set(align='left', bold=True)
-            p.text(nome_item + "\n")
-            p.set(bold=False)
+            itens_agrupados[item['id']].append(item)
 
-            if item.get('customizacao'):
-                custom = item['customizacao']
-                if custom.get('ponto'):
-                    ponto_traduzido = traducoes_ponto.get(custom['ponto'], custom['ponto'].title())
-                    p.text(f"  - Ponto: {ponto_traduzido}\n")
-                if custom.get('acompanhamentos'):
-                    for acomp in custom['acompanhamentos']:
-                        p.text(f"  - Com: {acomp}\n")
-                if custom.get('observacoes'):
-                    p.text(f"  - Obs: {custom['observacoes']}\n")
-            p.text("\n")
+        total_de_grupos = len(itens_agrupados)
+        grupo_atual_index = 0
 
-        p.text("_" * 42 + "\n")
+        # 2. Iterar sobre os grupos de itens
+        for id_item, lista_do_mesmo_item in itens_agrupados.items():
+            grupo_atual_index += 1
+            total_no_grupo = len(lista_do_mesmo_item)
+            contador_no_grupo = 0
+
+            # 3. Iterar sobre os itens dentro de cada grupo
+            for item in lista_do_mesmo_item:
+                contador_no_grupo += 1
+                
+                # Formata o nome do item com a contagem X/Total se houver mais de um
+                if total_no_grupo > 1:
+                    nome_item = f"{contador_no_grupo}/{total_no_grupo} {item['nome']}"
+                else:
+                    nome_item = f"{item['quantidade']}x {item['nome']}"
+                
+                p.set(align='left', bold=True)
+                p.text(nome_item + "\n")
+                p.set(bold=False)
+
+                if item.get('customizacao'):
+                    custom = item['customizacao']
+                    if custom.get('ponto'):
+                        ponto_traduzido = traducoes_ponto.get(custom['ponto'], custom['ponto'].title())
+                        p.text(f"  - Ponto: {ponto_traduzido}\n")
+                    if custom.get('acompanhamentos'):
+                        for acomp in custom['acompanhamentos']:
+                            p.text(f"  - Com: {acomp}\n")
+                    if custom.get('observacoes'):
+                        p.text(f"  - Obs: {custom['observacoes']}\n")
+                p.text("\n")
+
+            # 4. Imprime o separador entre os grupos, mas não após o último
+            if grupo_atual_index < total_de_grupos:
+                p.set(align='center')
+                p.text("- - - - - - - - - - - -\n\n")
+
+        p.text("_" * 44 + "\n\n")
 
         # --- Modalidade ---
         if pedido['modalidade']:

@@ -1135,11 +1135,17 @@ def _formatar_e_imprimir_comanda(config_impressora, pedido):
         p.text("\n\n")
         p.text(f"SENHA: {pedido['senha_diaria']}\n\n")
 
-        # Define tamanho duplo e negrito para o nome
-        p.set(width=2, height=2, bold=True)
-        p.text(f"Cliente: {pedido['nome_cliente']}\n")
-        # Reseta para o tamanho e estilo padrão
-        p.set(width=1, height=1, bold=False)
+         # --- Abordagem de baixo nível para máxima compatibilidade ---
+        # 1. Ativa os modos de formatação um a um
+        p.double_height()
+        p.double_width()
+        p.bold()
+        
+        # 2. Imprime o texto desejado
+        p.text(f"Pedido: {pedido['nome_cliente']}\n")
+        
+        # 3. Reseta TODOS os modos para o padrão
+        p.normal()
 
         timestamp_obj = datetime.fromisoformat(pedido['timestamp_criacao'])
         data_hora_local = timestamp_obj.astimezone(pytz.timezone('America/Sao_Paulo'))

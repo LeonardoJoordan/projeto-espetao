@@ -1135,17 +1135,18 @@ def _formatar_e_imprimir_comanda(config_impressora, pedido):
         p.text("\n\n")
         p.text(f"SENHA: {pedido['senha_diaria']}\n\n")
 
-         # --- Abordagem de baixo nível para máxima compatibilidade ---
-        # 1. Ativa os modos de formatação um a um
-        p.double_height()
-        p.double_width()
+        # --- Abordagem de comando RAW (nível mais baixo) para o nome ---
+        # Ativa o modo de negrito (este comando costuma ser seguro)
         p.bold()
+        # Envia o comando RAW para tamanho 2x altura e 2x largura
+        p._raw(b'\x1d\x21\x11') 
         
-        # 2. Imprime o texto desejado
         p.text(f"Pedido: {pedido['nome_cliente']}\n")
         
-        # 3. Reseta TODOS os modos para o padrão
-        p.normal()
+        # Envia o comando RAW para resetar o tamanho para o padrão
+        p._raw(b'\x1d\x21\x00')
+        # Desativa o modo de negrito de forma segura
+        p.set(bold=False)
 
         timestamp_obj = datetime.fromisoformat(pedido['timestamp_criacao'])
         data_hora_local = timestamp_obj.astimezone(pytz.timezone('America/Sao_Paulo'))

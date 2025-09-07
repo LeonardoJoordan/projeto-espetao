@@ -113,6 +113,79 @@ class LogWriter:
     def flush(self):
         pass
 
+# ===================================================================
+# COLE ESTA VERSÃO CORRIGIDA NO main.py
+# (Substitua a função _obter_config_impressora_localmente anterior)
+# ===================================================================
+def _obter_config_impressora_localmente():
+    """
+    Lê o arquivo de configuração da impressora diretamente do diretório
+    do usuário, garantindo consistência com o app.py.
+    """
+    try:
+        # Define o caminho no diretório do usuário, exatamente como em app.py
+        config_dir = os.path.expanduser('~/.espetao')
+        caminho_config = os.path.join(config_dir, 'config_impressora.json')
+
+        if os.path.exists(caminho_config):
+            with open(caminho_config, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                return config
+    except Exception as e:
+        print(f"[Keep-Alive] Erro ao ler config local da impressora: {e}")
+    return {} # Retorna um dict vazio se o arquivo não existir ou der erro
+# ===================================================================
+
+def keepalive_printer(stop_event):
+    """
+    Função para rodar em uma thread, enviando um comando de status
+    para a impressora em intervalos regulares para mantê-la ativa.
+    """
+    print("[Keep-Alive] Thread de monitoramento da impressora iniciada.")
+    intervalo_segundos = 45 # Intervalo entre as verificações
+
+    while not stop_event.is_set():
+        config = _obter_config_impressora_localmente()
+        ip_configurado = config.get('ip')
+
+        if not ip_configurado:
+            print("[Keep-Alive] IP da impressora não configurado. Aguardando...")
+            stop_event.wait(intervalo_segundos)
+            continue
+
+        try:
+            if ':' in ip_configurado:
+                host, port_str = ip_configurado.split(':')
+                port = int(port_str)
+            else:
+                host = ip_configurado
+                port = 9100
+
+            # Comando ESC/POS para solicitar status da impressora (DLE EOT n=1)
+            comando_status = b'\x10\x04\x01'
+
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(5) # Timeout de 5 segundos para conexão e resposta
+                s.connect((host, port))
+                s.sendall(comando_status)
+                resposta = s.recv(1) # Espera 1 byte de resposta
+                print(f"[Keep-Alive] Sucesso! Impressora {host}:{port} está online. Resposta: {resposta.hex()}")
+
+        except socket.timeout:
+            print(f"[Keep-Alive] ERRO: Timeout ao tentar conectar na impressora {ip_configurado}.")
+        except Exception as e:
+            print(f"[Keep-Alive] ERRO: Falha ao comunicar com a impressora {ip_configurado}. Detalhes: {e}")
+
+        # Aguarda o próximo ciclo, mas obedece ao evento de parada
+        stop_event.wait(intervalo_segundos)
+
+    print("[Keep-Alive] Thread de monitoramento da impressora finalizada.")
+
+# ===================================================================
+# FIM DO BLOCO PARA ADICIONAR
+# ===================================================================
+
+
 # Coloque esta nova classe ANTES da classe PainelControle
 class ModalGerenciarLocais(QDialog):
     """Janela modal para adicionar, visualizar e excluir locais."""
@@ -289,6 +362,8 @@ class PainelControle(QWidget):
         self.servidor_process = None # CORREÇÃO: Atributo correto inicializado
         self.ip_servidor = self.detectar_ip()
         self.porta = 5001
+        self.keepalive_stop_event = None # << ADICIONAR ESTA LINHA
+        self.keepalive_thread = None     # << ADICIONAR ESTA LINHA
         
         self.log_queue = multiprocessing.Queue()
         self.log_timer = QTimer(self)
@@ -496,6 +571,15 @@ class PainelControle(QWidget):
             self.servidor_process = ServidorProcess(self.ip_servidor, self.porta, self.log_queue, local_id_selecionado)
             self.servidor_process.start()
             self.servidor_rodando = True
+
+            # --- ADICIONE O BLOCO ABAIXO ---
+            print("[Painel] Iniciando thread de keep-alive da impressora...")
+            self.keepalive_stop_event = threading.Event()
+            self.keepalive_thread = threading.Thread(target=keepalive_printer, args=(self.keepalive_stop_event,))
+            self.keepalive_thread.daemon = True
+            self.keepalive_thread.start()
+            # --- FIM DO BLOCO ---
+
             self.atualizar_status_ui()
         except Exception as e:
             QMessageBox.critical(self, "Erro Fatal", f"Não foi possível iniciar o processo do servidor: {e}")
@@ -508,6 +592,15 @@ class PainelControle(QWidget):
             self.parar_servidor()
 
     def parar_servidor(self):
+
+        # --- ADICIONE O BLOCO ABAIXO NO INÍCIO DA FUNÇÃO ---
+        if self.keepalive_thread and self.keepalive_thread.is_alive():
+            print("[Painel] Encerrando a thread de keep-alive da impressora...")
+            self.keepalive_stop_event.set()
+            self.keepalive_thread.join(timeout=5) # Aguarda a thread finalizar
+        self.keepalive_thread = None
+        # --- FIM DO BLOCO ---
+
         print("Encerrando o processo do servidor...")
         if self.servidor_process and self.servidor_process.is_alive():
             self.servidor_process.terminate()

@@ -29,16 +29,28 @@
             to { opacity: 1; transform: scale(1); }
         }
         .card-pedido { animation: cardEnter 0.4s ease-out forwards; }
+        .glass-container {
+            background: rgba(255, 255, 255, 0.1); /* Bem transparente */
+            backdrop-filter: blur(20px); /* Efeito de desfoque intenso */
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.15);
+        }
     </style>
 </head>
 <body class="h-screen flex flex-col text-white overflow-hidden">
 
     <header class="flex-shrink-0 p-4 glass-header">
-        <div class="flex items-center justify-center">
-            <i class="fas fa-utensils text-2xl mr-3"></i>
-            <h1 class="text-3xl font-bold text-center">Painel da Cozinha</h1>
+        <div class="flex items-center justify-between">
+            <div class="flex items-center">
+                <i class="fas fa-utensils text-2xl mr-3"></i>
+                <h1 class="text-3xl font-bold">Painel da Cozinha</h1>
+            </div>
+            <a href="#" id="botao-imprimir-tudo" class="text-white hover:text-gray-300 transition-colors duration-200">
+                <i class="fas fa-print text-2xl"></i>
+            </a>
         </div>
     </header>
+
 
     <main id="main-content" class="flex-grow flex flex-col min-h-0">
     </main>
@@ -75,11 +87,95 @@
 
         </div>
     </div>
+    
+    <div id="modal-impressao" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-start md:items-center justify-center p-4 md:p-6 z-50 hidden opacity-0 transition-opacity duration-300">
+        <div class="glass-container rounded-2xl p-6 w-full max-w-md text-white transform scale-95 transition-transform duration-300">
+            <div class="flex justify-between items-center border-b border-white/20 pb-3 mb-4">
+                <h2 class="text-2xl font-bold flex items-center gap-3">
+                    <i class="fas fa-print"></i>
+                    Impressão
+                </h2>
+                <button id="modal-impressao-fechar" class="text-2xl hover:text-red-500 transition-colors">&times;</button>
+            </div>
+    
+            <div id="modal-impressao-corpo" class="space-y-2 max-h-[60vh] overflow-y-auto pr-2 scroll-custom">
+            </div>
+        </div>
+    </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // --- WEBSOCKET CONNECTION ---
     const socket = io();
+
+    // --- CONTROLE DO MODAL DE IMPRESSÃO ---
+    const botaoImprimir = document.getElementById('botao-imprimir-tudo');
+    const modalImpressao = document.getElementById('modal-impressao');
+    const modalImpressaoFechar = document.getElementById('modal-impressao-fechar');
+    const modalImpressaoConteudo = modalImpressao.querySelector('.glass-container');
+
+    async function carregarPedidosParaImpressao() {
+        const corpoModal = document.getElementById('modal-impressao-corpo');
+        corpoModal.innerHTML = '<p class="text-center opacity-70">Carregando pedidos...</p>';
+
+        try {
+            const response = await fetch('/api/pedidos_ativos');
+            if (!response.ok) throw new Error('Falha ao buscar pedidos');
+            const pedidos = await response.json();
+
+            if (pedidos.length === 0) {
+                corpoModal.innerHTML = '<p class="text-center opacity-70">Nenhum pedido ativo no momento.</p>';
+                return;
+            }
+
+            // Transformamos cada pedido em um botão clicável com o ID do pedido
+            const listaHtml = pedidos.map(pedido => 
+                `<button 
+                    class="btn-imprimir-individual w-full text-left bg-white/10 hover:bg-white/20 p-3 rounded-lg text-lg transition-colors duration-200" 
+                    data-id-pedido="${pedido.id}">
+                        <span class="font-bold">#${pedido.id}</span> - <span>${pedido.nome_cliente}</span>
+                </button>`
+            ).join('');
+
+            corpoModal.innerHTML = listaHtml;
+
+        } catch (error) {
+            console.error("Erro ao carregar pedidos para impressão:", error);
+            corpoModal.innerHTML = '<p class="text-center text-red-400">Erro ao carregar a lista de pedidos.</p>';
+        }
+    }
+
+    function abrirModalImpressao() {
+        modalImpressao.classList.remove('hidden');
+        setTimeout(() => {
+            modalImpressao.classList.remove('opacity-0');
+            modalImpressaoConteudo.classList.remove('scale-95');
+        }, 10);
+        carregarPedidosParaImpressao(); // Chamamos a função para buscar os dados
+    }
+
+    function fecharModalImpressao() {
+        modalImpressao.classList.add('opacity-0');
+        modalImpressaoConteudo.classList.add('scale-95');
+        setTimeout(() => {
+            modalImpressao.classList.add('hidden');
+            // Limpa o conteúdo ao fechar para garantir que ele seja recarregado da próxima vez
+            document.getElementById('modal-impressao-corpo').innerHTML = ''; 
+        }, 300);
+    }
+
+    botaoImprimir.addEventListener('click', (event) => {
+        event.preventDefault(); // Impede que o link '#' mude a URL
+        abrirModalImpressao();
+    });
+
+    modalImpressaoFechar.addEventListener('click', fecharModalImpressao);
+
+    modalImpressao.addEventListener('click', (event) => {
+        if (event.target === modalImpressao) {
+            fecharModalImpressao();
+        }
+    });
 
     socket.on('novo_pedido', function(data) {
         console.log('Evento "novo_pedido" recebido!', data);
@@ -505,6 +601,33 @@ document.addEventListener('DOMContentLoaded', function() {
             if (btnEntregarPedido) reabilitarBotao(btnEntregarPedido, 'fa-check-double', 'Confirmar Entrega');
             if (btnCancelarPedido) reabilitarBotao(btnCancelarPedido, 'fa-times-circle', 'Cancelar');
         }
+    });
+
+    // --- EVENT LISTENER PARA IMPRESSÃO INDIVIDUAL DENTRO DO MODAL ---
+    document.getElementById('modal-impressao-corpo').addEventListener('click', async (event) => {
+        const botaoPedido = event.target.closest('.btn-imprimir-individual');
+        if (!botaoPedido) return; // Se o clique não foi em um botão de pedido, ignora.
+
+        const pedidoId = botaoPedido.dataset.idPedido;
+
+        // Desabilita outros cliques e dá feedback visual imediato
+        botaoPedido.disabled = true;
+        botaoPedido.classList.remove('bg-white/10', 'hover:bg-white/20');
+        botaoPedido.classList.add('bg-green-500', 'text-white');
+        botaoPedido.innerHTML = `<div class="flex items-center justify-center"><i class="fas fa-check mr-3"></i> Impresso!</div>`;
+
+        try {
+            // Chama a API de impressão, exatamente como na confirmação de pagamento
+            fetch(`/api/pedido/${pedidoId}/imprimir_comanda`, { method: 'POST' });
+        } catch (error) {
+            console.error('Erro ao tentar imprimir comanda individualmente:', error);
+            // Mesmo com erro de rede, o fluxo continua para fechar o modal
+        }
+
+        // Fecha o modal após um pequeno atraso para o usuário ver o feedback
+        setTimeout(() => {
+            fecharModalImpressao();
+        }, 700);
     });
 
     // --- FUNÇÃO INICIAL PARA CARREGAR OS DADOS DA API ---

@@ -1142,7 +1142,9 @@ def _formatar_e_imprimir_comanda(config_impressora, pedido):
         timestamp_obj = datetime.fromisoformat(pedido['timestamp_criacao'])
         data_hora_local = timestamp_obj.astimezone(pytz.timezone('America/Sao_Paulo'))
         p.text(data_hora_local.strftime('%d/%m/%Y - %H:%M:%S') + "\n")
-        p.text("_" * 44 + "\n\n")
+        p.set(align='center')
+        p.text("_" * 45 + "\n\n")
+        p.set(align='left')
 
         # --- Itens ---
         itens_json_string = pedido.get('itens_json', '[]')
@@ -1193,7 +1195,9 @@ def _formatar_e_imprimir_comanda(config_impressora, pedido):
                 p.set(align='center')
                 p.text("- - - - - - - - - - - -\n\n")
 
-        p.text("_" * 44 + "\n\n")
+        p.set(align='center')
+        p.text("_" * 45 + "\n\n")
+        p.set(align='left')
 
         # --- Modalidade ---
         if pedido['modalidade']:

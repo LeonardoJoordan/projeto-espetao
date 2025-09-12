@@ -29,7 +29,7 @@ const navLinks = document.querySelectorAll('#nav-categorias a');
 const sections = document.querySelectorAll('.categoria-secao');
 const lastSection = sections.length > 0 ? sections[sections.length - 1] : null;
 
-// Elementos da tela de senha
+// Elementos da tela de 
 const telaSenha = document.getElementById('tela-senha');
 const btnIrCardapio = document.getElementById('btn-ir-cardapio');
 const placeholderNome = document.getElementById('placeholder-nome');

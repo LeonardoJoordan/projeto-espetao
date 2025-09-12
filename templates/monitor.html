@@ -98,7 +98,29 @@
         .card-em-preparacao .numero-pedido {
             font-size: 1.25rem;
         }
+        .flex-center {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            position: absolute;
+        }
+        .texto-animacao {
+            font-family: 'Roboto Condensed', sans-serif;
+            font-size: 12vw;
+            color: white;
+            text-transform: uppercase;
+            z-index: 110;
+            opacity: 0;
+            transform: scale(0.5);
+            text-shadow: 0 0 10px #fff, 0 0 20px #fff, 0 0 30px #F97316, 0 0 40px #F97316;
+            position: absolute;
 
+            max-width: 90vw;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
         #animacao-fogo-overlay {
             position: fixed;
             inset: 0;
@@ -117,17 +139,7 @@
             opacity: 0;
             animation: rise 3s infinite;
         }
-        .texto-animacao {
-            font-family: 'Roboto Condensed', sans-serif;
-            font-size: 12vw;
-            color: white;
-            text-transform: uppercase;
-            z-index: 110;
-            opacity: 0;
-            transform: scale(0.5);
-            text-shadow: 0 0 10px #fff, 0 0 20px #fff, 0 0 30px #F97316, 0 0 40px #F97316;
-            position: absolute;
-        }
+
         #animacao-fogo-overlay.ativo { display: flex; }
         #animacao-fogo-overlay.ativo #texto-pedido-pronto { animation: animacaoTexto1 9s forwards; }
         #animacao-fogo-overlay.ativo #texto-nome-cliente { animation: animacaoTexto2 9s forwards; }
@@ -179,8 +191,14 @@
 
     <div id="animacao-fogo-overlay">
         <div id="container-particulas"></div>
-        <div id="texto-pedido-pronto" class="texto-animacao">Pedido Pronto</div>
-        <div id="texto-nome-cliente" class="texto-animacao"></div>
+
+        <div class="flex-center">
+            <div id="texto-pedido-pronto" class="texto-animacao">Pedido Pronto</div>
+        </div>
+
+        <div class="flex-center">
+            <div id="texto-nome-cliente" class="texto-animacao"></div>
+        </div>
     </div>
 
 <script>
@@ -200,7 +218,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- FUNÇÕES DE RENDERIZAÇÃO ---
     function criarCardHtml(pedido, tipo) {
         const classeStatus = tipo === 'pronto' ? 'pronto' : 'card-em-preparacao entrando';
-        const nomeCliente = pedido.nome_cliente.split(' ')[0].toUpperCase(); // Pega só o primeiro nome
+        const nomeCliente = pedido.nome_cliente.toUpperCase(); // Pega só o primeiro nome
         const numeroPedido = String(pedido.senha_diaria).padStart(3, '0');
         return `<div class="card-pedido ${classeStatus}" data-id="${pedido.id}">
                     <div class="nome-cliente">${nomeCliente}</div>
@@ -244,7 +262,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function dispararAnimacaoPronto(pedido) {
-        const nomeCliente = pedido.nome_cliente.split(' ')[0].toUpperCase();
+        const nomeCliente = pedido.nome_cliente.toUpperCase();
         criarParticulas();
         textoNomeCliente.textContent = nomeCliente;
         fogoOverlay.classList.add('ativo');

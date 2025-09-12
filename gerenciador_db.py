@@ -1940,6 +1940,22 @@ def gerenciar_reserva(carrinho_id, produto_id, quantidade_delta):
             disponivel = estoque_on_hand - total_reservado_outros
             
             if disponivel < nova_quantidade: # Validamos contra o delta, não a nova_quantidade total
+
+                # ▼▼▼ INSIRA O NOVO CÓDIGO AQUI ▼▼▼
+                # --- INÍCIO: LOG DE DEBUG DETALHADO ---
+                log_mensagem = (
+                    f"\n[!!! FALHA NA RESERVA DE ESTOQUE !!!]\n"
+                    f"|-> Produto ID: {produto_id}\n"
+                    f"|-> Estoque Físico Total (on_hand): {estoque_on_hand}\n"
+                    f"|-> Reservado por OUTROS clientes: {total_reservado_outros}\n"
+                    f"|-> Já reservado por ESTE cliente: {reserva_carrinho_atual}\n"
+                    f"|-> Tentativa de nova quantidade total: {nova_quantidade}\n"
+                    f"|=> Condição da Falha: ({estoque_on_hand} - {total_reservado_outros}) < {nova_quantidade}\n"
+                )
+                print(log_mensagem)
+                # --- FIM: LOG DE DEBUG DETALHADO ---
+                # ▲▲▲ O NOVO CÓDIGO TERMINA AQUI ▲▲▲
+
                 conn.rollback()
                 # A nova disponibilidade real é o que sobrou
                 disponibilidade_real = estoque_on_hand - (total_reservado_outros + reserva_carrinho_atual)

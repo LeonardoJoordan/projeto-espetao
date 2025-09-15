@@ -2069,3 +2069,40 @@ def forcar_expirar_carrinho(carrinho_id):
     finally:
         if conn:
             conn.close()
+
+def obter_dados_completos_para_js():
+    """
+    Busca todos os dados necessários do banco de dados usando as funções
+    do próprio gerenciador e os formata para o gerador de JS.
+    """
+    # Passo 1: Buscar os dados brutos usando as funções existentes.
+    # Usamos obter_todos_produtos() pois ela já retorna apenas o que tem estoque visível.
+    todas_categorias = obter_todas_categorias()
+    todos_produtos = obter_todos_produtos() 
+    acompanhamentos_visiveis = obter_acompanhamentos_visiveis()
+
+    # Passo 2: Preparar a estrutura do cardápio para o site.
+    # Criamos um mapa de categorias para facilitar a inserção dos produtos.
+    mapa_categorias = {cat['id']: cat for cat in todas_categorias}
+    for cat in mapa_categorias.values():
+        cat['produtos'] = [] # Adiciona a lista de produtos em cada categoria
+
+    # Passo 3: Distribuir os produtos em suas respectivas categorias.
+    for produto in todos_produtos:
+        categoria_id = produto.get('categoria_id')
+        if categoria_id in mapa_categorias:
+            # Removemos chaves que o frontend não precisa para limpar os dados
+            produto.pop('estoque', None) 
+            produto.pop('categoria', None)
+            mapa_categorias[categoria_id]['produtos'].append(produto)
+
+    # Converte o mapa de volta para uma lista, mantendo a ordem original
+    cardapio_final_js = [cat for cat in mapa_categorias.values()]
+
+    # Passo 4: Retornar o dicionário final no formato esperado.
+    # Note que os IDs dos acompanhamentos agora serão os IDs numéricos do banco,
+    # o que é mais correto para a sincronização.
+    return {
+        "menuData": cardapio_final_js,
+        "acompanhamentosDisponiveis": acompanhamentos_visiveis
+    }

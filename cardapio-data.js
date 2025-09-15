@@ -1,100 +1,309 @@
-// Este arquivo foi gerado automaticamente. NÃO EDITE MANUALMENTE.
-// Gerado por: gerador_dicionario.py
+// Este arquivo foi gerado automaticamente pelo PDV. NÃO EDITE MANUALMENTE.
 
-// EDITAR AQUI: Esta é a lista principal do seu cardápio.
-// Adicione, remova ou altere as categorias e produtos conforme sua necessidade.
 export const menuData = [
     {
         "id": 1,
         "nome": "Espetinhos",
-        "ordem": 1,
         "produtos": [
             {
-                "id": 101,
-                "nome": "Filé Mignon",
+                "id": 4,
+                "nome": "Espetinho de Filé Mignon",
+                "descricao": "",
+                "foto_url": "",
                 "preco_venda": 15.0,
-                "descricao": "Corte nobre, macio e suculento, feito na brasa.",
-                "foto_url": "file_mignon.jpg",
+                "categoria_id": 1,
                 "requer_preparo": 1,
+                "categoria_ordem": 1,
                 "produto_ordem": 1
             },
             {
-                "id": 102,
-                "nome": "Alcatra",
+                "id": 13,
+                "nome": "Espetinho de Maminha",
+                "descricao": "",
+                "foto_url": "",
                 "preco_venda": 12.0,
-                "descricao": "Carne saborosa com uma fina capa de gordura que garante a suculência.",
-                "foto_url": "alcatra.jpg",
+                "categoria_id": 1,
                 "requer_preparo": 1,
-                "produto_ordem": 2
-            },
-            {
-                "id": 103,
-                "nome": "Coração de Frango",
-                "preco_venda": 10.0,
-                "descricao": "Temperado com um toque especial da casa.",
-                "foto_url": "coracao.jpg",
-                "requer_preparo": 0,
+                "categoria_ordem": 1,
                 "produto_ordem": 3
             },
             {
-                "id": 104,
-                "nome": "Pão de Alho",
-                "preco_venda": 8.0,
-                "descricao": "Cremoso por dentro e crocante por fora.",
-                "foto_url": "pao_alho.jpg",
-                "requer_preparo": 0,
+                "id": 34,
+                "nome": "Espetinho de Paleta Bovina",
+                "descricao": "",
+                "foto_url": "",
+                "preco_venda": 12.0,
+                "categoria_id": 1,
+                "requer_preparo": 1,
+                "categoria_ordem": 1,
                 "produto_ordem": 4
+            },
+            {
+                "id": 14,
+                "nome": "Espetinho de Pernil Suíno",
+                "descricao": "",
+                "foto_url": "",
+                "preco_venda": 10.0,
+                "categoria_id": 1,
+                "requer_preparo": 1,
+                "categoria_ordem": 1,
+                "produto_ordem": 5
+            },
+            {
+                "id": 15,
+                "nome": "Espetinho de Filé de Frango",
+                "descricao": "",
+                "foto_url": "",
+                "preco_venda": 10.0,
+                "categoria_id": 1,
+                "requer_preparo": 1,
+                "categoria_ordem": 1,
+                "produto_ordem": 6
+            },
+            {
+                "id": 16,
+                "nome": "Espetinho de Coração de Frango",
+                "descricao": "",
+                "foto_url": "",
+                "preco_venda": 10.0,
+                "categoria_id": 1,
+                "requer_preparo": 1,
+                "categoria_ordem": 1,
+                "produto_ordem": 7
+            }
+        ]
+    },
+    {
+        "id": 3,
+        "nome": "Aperitivos",
+        "produtos": [
+            {
+                "id": 10,
+                "nome": "Pão de Alho",
+                "descricao": "",
+                "foto_url": "",
+                "preco_venda": 8.0,
+                "categoria_id": 3,
+                "requer_preparo": 1,
+                "categoria_ordem": 2,
+                "produto_ordem": 0
             }
         ]
     },
     {
         "id": 2,
-        "nome": "Bebidas",
-        "ordem": 2,
+        "nome": "Refrigerantes",
         "produtos": [
             {
-                "id": 201,
-                "nome": "Heineken Long Neck",
-                "preco_venda": 8.0,
-                "descricao": "Cerveja puro malte refrescante 330ml.",
-                "foto_url": "heineken.jpg",
+                "id": 17,
+                "nome": "Coca Cola Lata",
+                "descricao": "",
+                "foto_url": "",
+                "preco_venda": 5.0,
+                "categoria_id": 2,
                 "requer_preparo": 0,
+                "categoria_ordem": 3,
                 "produto_ordem": 1
             },
             {
-                "id": 202,
-                "nome": "Brahma Duplo Malte",
-                "preco_venda": 7.0,
-                "descricao": "Lata 350ml.",
-                "foto_url": "brahma.jpg",
+                "id": 18,
+                "nome": "Coca Zero Lata",
+                "descricao": "",
+                "foto_url": "",
+                "preco_venda": 5.0,
+                "categoria_id": 2,
                 "requer_preparo": 0,
+                "categoria_ordem": 3,
                 "produto_ordem": 2
             },
             {
-                "id": 203,
-                "nome": "Refrigerante Lata",
+                "id": 19,
+                "nome": "Pepsi Lata",
+                "descricao": "",
+                "foto_url": "",
                 "preco_venda": 5.0,
-                "descricao": "Coca-Cola, Guaraná ou Fanta Laranja.",
-                "foto_url": "refri_lata.jpg",
+                "categoria_id": 2,
                 "requer_preparo": 0,
+                "categoria_ordem": 3,
                 "produto_ordem": 3
+            },
+            {
+                "id": 20,
+                "nome": "Pepsi Black Lata",
+                "descricao": "",
+                "foto_url": "",
+                "preco_venda": 5.0,
+                "categoria_id": 2,
+                "requer_preparo": 0,
+                "categoria_ordem": 3,
+                "produto_ordem": 4
+            },
+            {
+                "id": 21,
+                "nome": "Guaraná Antarctica Lata",
+                "descricao": "",
+                "foto_url": "",
+                "preco_venda": 5.0,
+                "categoria_id": 2,
+                "requer_preparo": 0,
+                "categoria_ordem": 3,
+                "produto_ordem": 5
+            },
+            {
+                "id": 22,
+                "nome": "Guaraná Antarctica Zero Lata",
+                "descricao": "",
+                "foto_url": "",
+                "preco_venda": 5.0,
+                "categoria_id": 2,
+                "requer_preparo": 0,
+                "categoria_ordem": 3,
+                "produto_ordem": 6
+            },
+            {
+                "id": 35,
+                "nome": "Guaraná Antarctica Mini",
+                "descricao": "",
+                "foto_url": "",
+                "preco_venda": 3.0,
+                "categoria_id": 2,
+                "requer_preparo": 0,
+                "categoria_ordem": 3,
+                "produto_ordem": 7
+            },
+            {
+                "id": 23,
+                "nome": "Fanta Laranja Lata",
+                "descricao": "",
+                "foto_url": "",
+                "preco_venda": 5.0,
+                "categoria_id": 2,
+                "requer_preparo": 0,
+                "categoria_ordem": 3,
+                "produto_ordem": 8
+            },
+            {
+                "id": 24,
+                "nome": "Fanta Uva Lata",
+                "descricao": "",
+                "foto_url": "",
+                "preco_venda": 5.0,
+                "categoria_id": 2,
+                "requer_preparo": 0,
+                "categoria_ordem": 3,
+                "produto_ordem": 9
+            },
+            {
+                "id": 25,
+                "nome": "Schweppes Lata",
+                "descricao": "",
+                "foto_url": "",
+                "preco_venda": 5.0,
+                "categoria_id": 2,
+                "requer_preparo": 0,
+                "categoria_ordem": 3,
+                "produto_ordem": 10
+            }
+        ]
+    },
+    {
+        "id": 4,
+        "nome": "Cervejas",
+        "produtos": [
+            {
+                "id": 26,
+                "nome": "Heineken Lata",
+                "descricao": "",
+                "foto_url": "",
+                "preco_venda": 7.0,
+                "categoria_id": 4,
+                "requer_preparo": 0,
+                "categoria_ordem": 4,
+                "produto_ordem": 1
+            },
+            {
+                "id": 27,
+                "nome": "Brahma Duplo Malte Lata",
+                "descricao": "",
+                "foto_url": "",
+                "preco_venda": 7.0,
+                "categoria_id": 4,
+                "requer_preparo": 0,
+                "categoria_ordem": 4,
+                "produto_ordem": 2
+            },
+            {
+                "id": 28,
+                "nome": "Brahma Chopp Lata",
+                "descricao": "",
+                "foto_url": "",
+                "preco_venda": 6.0,
+                "categoria_id": 4,
+                "requer_preparo": 0,
+                "categoria_ordem": 4,
+                "produto_ordem": 3
+            },
+            {
+                "id": 29,
+                "nome": "Antarctica Lata",
+                "descricao": "",
+                "foto_url": "",
+                "preco_venda": 6.0,
+                "categoria_id": 4,
+                "requer_preparo": 0,
+                "categoria_ordem": 4,
+                "produto_ordem": 4
+            },
+            {
+                "id": 30,
+                "nome": "Skol",
+                "descricao": "",
+                "foto_url": "",
+                "preco_venda": 6.0,
+                "categoria_id": 4,
+                "requer_preparo": 0,
+                "categoria_ordem": 4,
+                "produto_ordem": 5
+            }
+        ]
+    },
+    {
+        "id": 5,
+        "nome": "Bebidas Diversas",
+        "produtos": [
+            {
+                "id": 33,
+                "nome": "Água sem Gás",
+                "descricao": "",
+                "foto_url": "",
+                "preco_venda": 3.0,
+                "categoria_id": 5,
+                "requer_preparo": 0,
+                "categoria_ordem": 5,
+                "produto_ordem": 1
+            },
+            {
+                "id": 31,
+                "nome": "Água com Gás",
+                "descricao": "",
+                "foto_url": "",
+                "preco_venda": 3.0,
+                "categoria_id": 5,
+                "requer_preparo": 0,
+                "categoria_ordem": 5,
+                "produto_ordem": 2
             }
         ]
     }
 ];
 
-// EDITAR AQUI: Lista de acompanhamentos disponíveis para os espetinhos.
 export const acompanhamentosDisponiveis = [
     {
-        "id": "extra1",
+        "id": 1,
         "nome": "Farofa"
     },
     {
-        "id": "extra2",
-        "nome": "Vinagrete"
-    },
-    {
-        "id": "extra3",
-        "nome": "Maionese da Casa"
+        "id": 2,
+        "nome": "Limão"
     }
 ];

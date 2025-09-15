@@ -59,7 +59,7 @@ from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
                                QComboBox, QDialog, QListWidget, QLineEdit, 
                                QListWidgetItem, QMessageBox, QTabWidget)
 from PySide6.QtCore import Qt, Signal, QObject, QTimer
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtGui import QIcon, QPixmap, QFont
 import json
 # Importa o 'app' e o 'socketio' do seu arquivo app.py
 from app import app, socketio
@@ -206,6 +206,7 @@ class ModalConfiguracoesGerais(QDialog):
         # Criar e adicionar as abas
         self.criar_aba_impressora()
         self.criar_aba_locais()
+        self.criar_aba_js_site()
 
     # --- MÉTODOS DA ABA IMPRESSORA (Movidos para cá) ---
     def criar_aba_impressora(self):
@@ -334,6 +335,79 @@ class ModalConfiguracoesGerais(QDialog):
         else:
             QMessageBox.warning(self, "Erro", "Não foi possível excluir o local.")
 
+    # --- MÉTODOS DA ABA JS SITE (Adicionar este bloco) ---
+    def criar_aba_js_site(self):
+        widget_aba = QWidget()
+        layout = QVBoxLayout(widget_aba)
+        
+        grupo_gerador = QGroupBox("Gerador de Dicionário para o Site")
+        layout_gerador = QVBoxLayout(grupo_gerador)
+
+        self.btn_atualizar_js = QPushButton("1. Atualizar Dicionário a partir do PDV")
+        
+        self.text_area_js = QTextEdit()
+        self.text_area_js.setReadOnly(True)
+        self.text_area_js.setPlaceholderText("O conteúdo do arquivo 'cardapio-data.js' aparecerá aqui após a atualização...")
+        self.text_area_js.setFont(QFont("Courier New", 10))
+
+        self.btn_copiar_js = QPushButton("2. Copiar Conteúdo para a Área de Transferência")
+        
+        layout_gerador.addWidget(self.btn_atualizar_js)
+        layout_gerador.addWidget(self.text_area_js)
+        layout_gerador.addWidget(self.btn_copiar_js)
+
+        layout.addWidget(grupo_gerador)
+        self.tab_widget.addTab(widget_aba, "JS Site")
+
+        # Conectar os botões às suas funções
+        self.btn_atualizar_js.clicked.connect(self.atualizar_dicionario_js)
+        self.btn_copiar_js.clicked.connect(self.copiar_conteudo_js)
+
+    def atualizar_dicionario_js(self):
+        """Busca os dados do DB, gera o código JS e o exibe na tela."""
+        try:
+            # 1. Pega os dados mais recentes do banco de dados
+            dados_para_js = gerenciador_db.obter_dados_completos_para_js()
+            
+            # 2. Converte os dados para strings em formato JSON
+            json_cardapio = json.dumps(dados_para_js["menuData"], indent=4, ensure_ascii=False)
+            json_acompanhamentos = json.dumps(dados_para_js["acompanhamentosDisponiveis"], indent=4, ensure_ascii=False)
+            
+            # 3. Monta o template final do arquivo JavaScript
+            template_js = f"""
+// Este arquivo foi gerado automaticamente pelo PDV. NÃO EDITE MANUALMENTE.
+
+export const menuData = {json_cardapio};
+
+export const acompanhamentosDisponiveis = {json_acompanhamentos};
+"""
+            conteudo_final = template_js.strip()
+
+            # 4. Exibe o conteúdo na caixa de texto
+            self.text_area_js.setPlainText(conteudo_final)
+
+            # 5. (Opcional) Salva o arquivo no diretório do PDV para conveniência
+            with open('cardapio-data.js', 'w', encoding='utf-8') as f:
+                f.write(conteudo_final)
+            
+            QMessageBox.information(self, "Sucesso", 
+                "Dicionário JavaScript atualizado com sucesso!\n"
+                "O conteúdo foi exibido na tela e salvo no arquivo 'cardapio-data.js'.")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Erro", f"Ocorreu um erro ao gerar o dicionário: {e}")
+
+    def copiar_conteudo_js(self):
+        """Copia o conteúdo da caixa de texto para a área de transferência."""
+        conteudo = self.text_area_js.toPlainText()
+        if not conteudo:
+            QMessageBox.warning(self, "Aviso", "A caixa de texto está vazia. Atualize o dicionário primeiro.")
+            return
+            
+        clipboard = QApplication.clipboard()
+        clipboard.setText(conteudo)
+        QMessageBox.information(self, "Copiado!", "O conteúdo do arquivo JS foi copiado para sua área de transferência.")
+
 # --- Janela Principal do Aplicativo ---
 class PainelControle(QWidget):
     def __init__(self):
@@ -363,7 +437,19 @@ class PainelControle(QWidget):
                 background-color: #1e1e1e; color: #d4d4d4; font-family: 'Segoe UI';
             }
             QPushButton {
-                padding: 10px; border-radius: 5px; font-weight: bold; font-size: 14px;
+                background-color: #555; /* Cor de fundo padrão */
+                border: none; /* Remove bordas padrão */
+                padding: 10px; 
+                border-radius: 5px; 
+                font-weight: bold; 
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #666; /* Efeito ao passar o mouse */
+            }
+            QPushButton:disabled {
+                background-color: #444; /* Estilo para botão desabilitado */
+                color: #888;
             }
 
             QPushButton#btn_toggle_servidor_iniciar { background-color: #28a745; color: white; }

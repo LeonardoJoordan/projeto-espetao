@@ -10,7 +10,8 @@ import gerenciador_db  # <-- PASSO 1: Importamos nosso especialista em banco de 
 
 print("Buscando dados atualizados do banco de dados...")
 # PASSO 2: Chamamos a função que busca todos os dados reais do banco
-dados_do_banco = gerenciador_db.obter_dados_completos_para_js()
+menu_data_js = gerenciador_db.obter_dados_para_menu_data_js()
+acompanhamentos_js = gerenciador_db.obter_acompanhamentos_visiveis()
 
 # PASSO 3: Atribuímos os dados retornados a variáveis com os nomes que o resto do script espera
 CARDAPIO_PARA_JS = dados_do_banco["menuData"]
@@ -38,13 +39,13 @@ def gerar_script_javascript():
 
         # O template permanece o mesmo, mas agora será preenchido com dados reais
         template_js = f"""
-// Este arquivo foi gerado automaticamente pelo sistema. NÃO EDITE MANUALMENTE.
-// Gerado por: gerador_dicionario.py (lendo do banco de dados)
+        // Este arquivo foi gerado automaticamente pelo sistema. NÃO EDITE MANUALMENTE.
+        // Gerado por: gerador_dicionario.py (lendo do banco de dados)
 
-export const menuData = {json_cardapio};
+        export const MENU_DATA = {json.dumps(menu_data_js, indent=4, ensure_ascii=False)};
 
-export const acompanhamentosDisponiveis = {json_acompanhamentos};
-"""
+        export const acompanhamentosDisponiveis = {json.dumps(acompanhamentos_js, indent=4, ensure_ascii=False)};
+        """
         with open(ARQUIVO_SAIDA_JS, 'w', encoding='utf-8') as f:
             f.write(template_js.strip())
             

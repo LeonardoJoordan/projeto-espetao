@@ -1,20 +1,16 @@
 // static/js/protocolo-serializacao.js
 
 /**
- * Decodifica um código Base64 e o transforma em um objeto de pedido estruturado.
+ * Decodifica um código Base64 usando mapas dinâmicos fornecidos.
  * @param {string} codigoBase64 - O código do pedido vindo do cliente.
- * @param {object} menuCompleto - O mapa de todos os produtos para consulta de dados (chave = ID do produto).
- * @returns {{sucesso: boolean, erro?: string, nomeCliente?: string, metodoPagamento?: string, modalidade?: string, itens?: Array<object>}}
+ * @param {object} menuCompleto - O mapa de todos os produtos para consulta.
+ * @param {object} mapas - Um objeto contendo os mapas de tradução (pagamento, modalidade, ponto, acompanhamentos).
+ * @returns {{sucesso: boolean, erro?: string, ...}}
  */
-export function decodificarPedido(codigoBase64, menuCompleto) {
+export function decodificarPedido(codigoBase64, menuCompleto, mapas) {
     try {
-        // --- MAPEAMENTOS INVERSOS ---
-        const mapaPagamentoInverso = { 1: 'pix', 2: 'cartao_credito', 3: 'cartao_debito', 4: 'dinheiro' };
-        const mapaModalidadeInverso = { 1: 'local', 2: 'viagem' };
-        const mapaPontoInverso = { 1: 'mal', 2: 'ponto', 3: 'bem' };
-        const mapaAcompanhamentosInverso = { 1: 'Farofa', 2: 'Limão' }; // Bit 0, Bit 1...
+        const { mapaPagamentoInverso, mapaModalidadeInverso, mapaPontoInverso, mapaAcompanhamentosInverso } = mapas;
 
-        // --- DECODIFICAÇÃO E LEITURA DOS BYTES ---
         const binaryString = atob(codigoBase64);
         const bytes = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
@@ -23,7 +19,6 @@ export function decodificarPedido(codigoBase64, menuCompleto) {
 
         let offset = 0;
 
-        // --- LEITURA DO CABEÇALHO ---
         const tamanhoNome = bytes[offset++];
         if (offset + tamanhoNome > bytes.length) throw new Error("Cabeçalho de nome inválido.");
 
@@ -35,7 +30,6 @@ export function decodificarPedido(codigoBase64, menuCompleto) {
         const codPagamento = bytes[offset++];
         const codModalidade = bytes[offset++];
 
-        // --- LEITURA DO CORPO (ITENS) ---
         const itens = [];
         const bytesPorItem = 5;
 
@@ -52,11 +46,9 @@ export function decodificarPedido(codigoBase64, menuCompleto) {
             if (!produtoBase) throw new Error(`Produto com ID ${produtoId} não encontrado no cardápio.`);
 
             const customizacao = {};
-            // Decodifica ponto
             if (pontoCod > 0) {
                 customizacao.ponto = mapaPontoInverso[pontoCod] || 'indefinido';
             }
-            // Decodifica acompanhamentos (bitmask)
             const acompanhamentos = [];
             for (const [bitValue, nomeAcompanhamento] of Object.entries(mapaAcompanhamentosInverso)) {
                 if ((acompanhamentosMask & parseInt(bitValue)) !== 0) {
@@ -68,7 +60,7 @@ export function decodificarPedido(codigoBase64, menuCompleto) {
             }
 
             itens.push({
-                ...produtoBase, // Pega nome, preço, etc. do nosso mapa
+                ...produtoBase,
                 quantidade,
                 customizacao: Object.keys(customizacao).length > 0 ? customizacao : null
             });

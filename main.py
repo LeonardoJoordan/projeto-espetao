@@ -366,27 +366,51 @@ class ModalConfiguracoesGerais(QDialog):
     def atualizar_dicionario_js(self):
         """Busca os dados do DB, gera o código JS e o exibe na tela."""
         try:
-            # 1. Pega os dados mais recentes do banco de dados
-            dados_para_js = gerenciador_db.obter_dados_completos_para_js()
+            # --- Início da lógica corrigida (alinhada com o gerador_dicionario.py) ---
+
+            # 1. Busca os dados do banco
+            menu_data_plano = gerenciador_db.obter_dados_para_menu_data_js()
             
-            # 2. Converte os dados para strings em formato JSON
-            json_cardapio = json.dumps(dados_para_js["menuData"], indent=4, ensure_ascii=False)
-            json_acompanhamentos = json.dumps(dados_para_js["acompanhamentosDisponiveis"], indent=4, ensure_ascii=False)
+            # Cria o mapa de acompanhamentos dinamicamente
+            acompanhamentos = gerenciador_db.obter_acompanhamentos_visiveis()
+            mapa_acompanhamentos = {}
+            for i, acomp in enumerate(acompanhamentos):
+                mapa_acompanhamentos[acomp['nome']] = 1 << i # Gera 2^i (1, 2, 4, 8...)
+
+            # 2. Define os mapas estáticos
+            mapa_ponto = {"mal": 1, "ponto": 2, "bem": 3}
+            mapa_pagamento = {'PIX': 1, 'Cartão de Crédito': 2, 'Cartão de Débito': 3, 'Dinheiro': 4}
+            mapa_modalidade = {'local': 1, 'viagem': 2}
             
-            # 3. Monta o template final do arquivo JavaScript
+            # 3. Converte os dicionários Python para strings JSON
+            menu_json = json.dumps(menu_data_plano, indent=4, ensure_ascii=False)
+            mapa_acomp_json = json.dumps(mapa_acompanhamentos, indent=4, ensure_ascii=False)
+            mapa_ponto_json = json.dumps(mapa_ponto, indent=4, ensure_ascii=False)
+            mapa_pagamento_json = json.dumps(mapa_pagamento, indent=4, ensure_ascii=False)
+            mapa_modalidade_json = json.dumps(mapa_modalidade, indent=4, ensure_ascii=False)
+
+            # 4. Monta o template final do arquivo JavaScript
             template_js = f"""
-// Este arquivo foi gerado automaticamente pelo PDV. NÃO EDITE MANUALMENTE.
+            // ATENÇÃO: Este arquivo foi gerado automaticamente. NÃO EDITE MANUALMENTE.
+            // Gerado por: PDV main.py
 
-export const menuData = {json_cardapio};
+            export const MENU_DATA = {menu_json};
 
-export const acompanhamentosDisponiveis = {json_acompanhamentos};
-"""
+            export const MAPA_ACOMPANHAMENTOS = {mapa_acomp_json};
+
+            export const MAPA_PONTO = {mapa_ponto_json};
+
+            export const MAPA_PAGAMENTO = {mapa_pagamento_json};
+
+            export const MAPA_MODALIDADE = {mapa_modalidade_json};
+            """
             conteudo_final = template_js.strip()
+            # --- Fim da lógica corrigida ---
 
-            # 4. Exibe o conteúdo na caixa de texto
+            # 5. Exibe o conteúdo na caixa de texto
             self.text_area_js.setPlainText(conteudo_final)
 
-            # 5. (Opcional) Salva o arquivo no diretório do PDV para conveniência
+            # 6. Salva o arquivo no diretório do PDV
             with open('cardapio-data.js', 'w', encoding='utf-8') as f:
                 f.write(conteudo_final)
             
@@ -395,6 +419,9 @@ export const acompanhamentosDisponiveis = {json_acompanhamentos};
                 "O conteúdo foi exibido na tela e salvo no arquivo 'cardapio-data.js'.")
 
         except Exception as e:
+            # Fornece um erro mais detalhado para debug futuro
+            import traceback
+            traceback.print_exc()
             QMessageBox.critical(self, "Erro", f"Ocorreu um erro ao gerar o dicionário: {e}")
 
     def copiar_conteudo_js(self):

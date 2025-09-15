@@ -269,6 +269,46 @@ export async function salvarPedido(metodoPagamento, modalidade) { // <-- NOVO PA
     }
 }
 
+/**
+ * Pega um objeto de pedido decodificado e envia diretamente para a API /salvar_pedido.
+ * Usado no Cenário A, quando há estoque para todos os itens.
+ * @param {object} pedidoDecodificado - O objeto retornado pela função decodificarPedido.
+ * @returns {Promise<object>} - A resposta do servidor.
+ */
+export async function enviarPedidoDecodificado(pedidoDecodificado) {
+    // Recriamos a estrutura de dados que a API /salvar_pedido espera
+    const payload = {
+        carrinho_id: carrinhoId, // Usa o ID do carrinho da sessão atual
+        nome_cliente: pedidoDecodificado.nomeCliente,
+        itens: pedidoDecodificado.itens,
+        metodo_pagamento: pedidoDecodificado.metodoPagamento,
+        modalidade: pedidoDecodificado.modalidade
+    };
+
+    console.log("Enviando pedido decodificado diretamente para o servidor:", payload);
+
+    try {
+        const response = await fetch('/salvar_pedido', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            throw new Error('Erro ao salvar pedido direto. Status: ' + response.status);
+        }
+
+        const result = await response.json();
+        mostrarModalSucesso(payload.nome_cliente, result.senha_diaria); // Reutiliza o modal de sucesso
+        return result;
+
+    } catch (error) {
+        console.error("Falha ao enviar o pedido decodificado:", error);
+        alert("Não foi possível registrar o pedido pré-preenchido. Tente novamente.");
+        return Promise.reject(error);
+    }
+}
+
 // ==========================================================
 // 4. FUNÇÕES AUXILIARES (Helpers)
 // ==========================================================

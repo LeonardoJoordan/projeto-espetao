@@ -11,12 +11,16 @@ import {
     limparPedido,
     salvarPedido,
     formatCurrency,
-    carrinhoId, // NOVO
-    gerenciarReservaAPI, // NOVO
-    renovarSessaoDebounced // NOVO
+    carrinhoId,
+    gerenciarReservaAPI,
+    renovarSessaoDebounced,
+    enviarPedidoDecodificado // Adicionada aqui
 } from './cliente-logica.js';
 
 import * as estoqueState from './cliente-estoque.js';
+import { decodificarPedido } from './protocolo-serializacao.js'; // Adicionada aqui
+
+
 
 
 // ==========================================================
@@ -740,14 +744,21 @@ function atualizarVisualAcento() {
 }
 
 function atualizarTextoTeclado() {
-    if (campoTextoNome && placeholderNome) {
-        if (nomeDigitadoTemp === '') {
-            placeholderNome.classList.remove('hidden');
-            campoTextoNome.textContent = '';
-        } else {
-            placeholderNome.classList.add('hidden');
-            campoTextoNome.textContent = nomeDigitadoTemp;
-        }
+    const container = document.getElementById('campo-nome-container');
+    if (!campoTextoNome || !placeholderNome || !container) return;
+
+    if (nomeDigitadoTemp === '') {
+        placeholderNome.classList.remove('hidden');
+        campoTextoNome.textContent = '';
+        container.classList.remove('is-overflowing'); // Garante que a classe seja removida quando vazio
+    } else {
+        placeholderNome.classList.add('hidden');
+        campoTextoNome.textContent = nomeDigitadoTemp;
+
+        // --- LÓGICA DE DETECÇÃO DE OVERFLOW ---
+        // Compara a largura real do texto com a largura visível do container
+        const hasOverflow = campoTextoNome.scrollWidth > container.clientWidth;
+        container.classList.toggle('is-overflowing', hasOverflow);
     }
 }
 
@@ -766,6 +777,23 @@ if (btnNovoPedido) {
         ajustarLarguraTeclas();
     });
 }
+
+// Listener para o evento de COLAR (Ctrl+V)
+window.addEventListener('paste', (event) => {
+    // Só executa a lógica se a tela do teclado estiver visível
+    if (!telaTeclado || telaTeclado.classList.contains('hidden')) {
+        return;
+    }
+
+    event.preventDefault(); // Impede qualquer comportamento padrão do navegador
+    const pastedText = (event.clipboardData || window.clipboardData).getData('text');
+    
+    // Adiciona o texto colado ao final do que já foi digitado
+    nomeDigitadoTemp += pastedText;
+
+    // Atualiza a interface gráfica
+    atualizarTextoTeclado();
+});
 
 // Listener para as teclas do teclado
 if (tecladoContainer) {
@@ -808,9 +836,9 @@ if (tecladoContainer) {
         if (key === 'Backspace') {
             nomeDigitadoTemp = nomeDigitadoTemp.slice(0, -1);
         } else if (key === 'ESPAÇO') {
-            if (nomeDigitadoTemp.length < 20) nomeDigitadoTemp += ' ';
+            nomeDigitadoTemp += ' ';
         } else {
-            if (nomeDigitadoTemp.length < 20) nomeDigitadoTemp += charToAdd;
+            nomeDigitadoTemp += charToAdd;
         }
         atualizarTextoTeclado();
     });
@@ -819,21 +847,85 @@ if (tecladoContainer) {
 // Listener para o botão "Iniciar Pedido" do teclado
 if (btnIniciar) {
     btnIniciar.addEventListener('click', async () => {
-        const nomeFinal = nomeDigitadoTemp.trim();
-        if (nomeFinal === '') {
-            await mostrarAlerta("Nome Inválido", "Por favor, digite um nome para o pedido.");
+        const textoEntrada = nomeDigitadoTemp.trim();
+        if (textoEntrada === '') {
+            await mostrarAlerta("Entrada Inválida", "Por favor, digite um nome ou cole um código de pedido.");
             return;
         }
-        setNomeCliente(nomeFinal);
 
-        // AGORA, VAI DIRETO PARA O CARDÁPIO
-        if (telaTeclado) telaTeclado.classList.add('hidden');
-        if (mainContainer) mainContainer.classList.remove('content-blurred');
+        // --- LÓGICA DE DETECÇÃO DO CÓDIGO ---
+        // Um código Base64 válido para nós será longo e não terá espaços.
+        const pareceCodigo = textoEntrada.length > 20 && !textoEntrada.includes(' ');
 
-        // Limpa o nome temporário e atualiza a UI para o estado inicial do cardápio
-        nomeDigitadoTemp = '';
-        atualizarTextoTeclado();
-        atualizarBotaoPrincipal();
+        if (pareceCodigo) {
+            // --- FLUXO DE DECODIFICAÇÃO (CÓDIGO) ---
+            btnIniciar.disabled = true;
+            btnIniciar.textContent = "Processando...";
+
+            const resultado = decodificarPedido(textoEntrada, window.MENU_DATA);
+
+            if (!resultado.sucesso) {
+                await mostrarAlerta("Erro de Decodificação", resultado.erro || "O código informado é inválido ou está corrompido.");
+                btnIniciar.disabled = false;
+                btnIniciar.textContent = "Iniciar Pedido";
+                return;
+            }
+
+            // --- VALIDAÇÃO DE ESTOQUE ---
+            const discrepancias = [];
+            for (const item of resultado.itens) {
+                const estoqueDisponivel = estoqueState.getEstoque(item.id);
+                if (estoqueDisponivel < item.quantidade) {
+                    discrepancias.push({
+                        nome: item.nome,
+                        solicitado: item.quantidade,
+                        disponivel: estoqueDisponivel,
+                    });
+                }
+            }
+
+            if (discrepancias.length === 0) {
+                // --- CENÁRIO A: ESTOQUE OK ---
+                await enviarPedidoDecodificado(resultado);
+                // A função de envio já lida com o sucesso e recarrega a página.
+            } else {
+                // --- CENÁRIO B: FALTA DE ESTOQUE ---
+                setNomeCliente(resultado.nomeCliente);
+
+                // Adiciona o que for possível ao carrinho
+                for (const item of resultado.itens) {
+                    const estoqueDisponivel = estoqueState.getEstoque(item.id);
+                    const quantidadeParaAdicionar = Math.min(item.quantidade, estoqueDisponivel);
+
+                    if (quantidadeParaAdicionar > 0) {
+                        const itemCompleto = { ...window.MENU_DATA[item.id], ...item };
+                        itemCompleto.quantidade = quantidadeParaAdicionar;
+                        adicionarItemAoPedido(itemCompleto);
+                    }
+                }
+                
+                // Monta a mensagem de alerta
+                let mensagemAlerta = "Alguns itens não puderam ser adicionados por falta de estoque:\n\n";
+                discrepancias.forEach(d => {
+                    mensagemAlerta += `• ${d.nome}: Pedido de ${d.solicitado}, disponível apenas ${d.disponivel}.\n`;
+                });
+
+                // Transiciona para a tela principal e mostra o alerta
+                if (telaTeclado) telaTeclado.classList.add('hidden');
+                if (mainContainer) mainContainer.classList.remove('content-blurred');
+                atualizarBotaoPrincipal();
+                await mostrarAlerta("Ajuste de Estoque Necessário", mensagemAlerta);
+            }
+
+        } else {
+            // --- FLUXO NORMAL (NOME) ---
+            setNomeCliente(textoEntrada);
+            if (telaTeclado) telaTeclado.classList.add('hidden');
+            if (mainContainer) mainContainer.classList.remove('content-blurred');
+            nomeDigitadoTemp = '';
+            atualizarTextoTeclado();
+            atualizarBotaoPrincipal();
+        }
     });
 }
 
@@ -844,6 +936,13 @@ window.addEventListener('keydown', (event) => {
         return;
     }
 
+    // --- SUA CORREÇÃO INSERIDA AQUI ---
+    // Ignora se há teclas modificadoras pressionadas (Ctrl, Alt, Meta)
+    if (event.ctrlKey || event.altKey || event.metaKey) {
+        return; // Deixa o navegador lidar com shortcuts como Ctrl+V, Ctrl+C, etc.
+    }
+    // --- FIM DA CORREÇÃO ---
+
     const key = event.key;
 
     // 2. Lida com a tecla Backspace para apagar
@@ -852,9 +951,9 @@ window.addEventListener('keydown', (event) => {
         nomeDigitadoTemp = nomeDigitadoTemp.slice(0, -1);
     }
     // 3. Lida com letras, cedilha e espaço
-    else if (/^[a-zA-ZçÇ ]$/.test(key) && nomeDigitadoTemp.length < 20) {
+    else if (/^[a-zA-ZçÇ ]$/.test(key)) {
         event.preventDefault(); // Impede que a tecla faça outras ações no navegador
-        nomeDigitadoTemp += key.toUpperCase();
+        nomeDigitadoTemp += key;
     }
     // Teclas como Enter, Shift, Tab, etc., serão ignoradas pelo regex.
 

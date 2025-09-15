@@ -266,6 +266,25 @@
                respeitando a largura calculada. */
             flex-shrink: 0;
         }
+        /* Comportamento híbrido para o campo de nome */
+        #campo-nome-container {
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            /* Por padrão, o texto fica centralizado */
+            justify-content: center;
+            align-items: center;
+        }
+
+        #texto-nome {
+            white-space: nowrap; /* Impede a quebra de linha */
+        }
+
+        /* Quando a classe .is-overflowing é adicionada via JS... */
+        #campo-nome-container.is-overflowing {
+            /* ...o alinhamento muda para o final, empurrando o texto para a esquerda */
+            justify-content: flex-end;
+        }
     </style>
 </head>
 <body class="text-white">
@@ -499,6 +518,25 @@
     </div>
 
     <script src="{{ url_for('static', filename='js/libs/socket.io.min.js') }}"></script>
+
+    <script>
+        // Etapa 2: Expondo os dados do cardápio do servidor para o JavaScript
+        window.MENU_DATA = {};
+        {% for categoria in categorias %}
+            {% for produto in produtos_agrupados[categoria.id] %}
+                window.MENU_DATA[{{ produto.id }}] = {
+                    id: {{ produto.id }},
+                    nome: "{{ produto.nome | tojson | safe }}",
+                    preco: {{ produto.preco_venda }},
+                    // Adicione quaisquer outros campos do produto que possam ser úteis no futuro
+                    requer_preparo: {{ produto.requer_preparo }},
+                    categoria_ordem: {{ produto.categoria_ordem }},
+                    produto_ordem: {{ produto.produto_ordem }}
+                };
+            {% endfor %}
+        {% endfor %}
+    </script>
+
     <script type="module" src="{{ url_for('static', filename='js/cliente-main.js') }}"></script>
     
 </body>

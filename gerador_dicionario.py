@@ -102,6 +102,7 @@ CARDAPIO_PDV = [
     }
 ]
 
+
 # ==============================================================================
 # === CONFIGURAÇÕES DE SAÍDA ===
 # Nomes dos arquivos que serão gerados

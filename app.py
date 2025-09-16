@@ -237,6 +237,21 @@ export const MAPA_MODALIDADE = {mapa_modalidade_json};
     
 print(f"Rota /pdv-data.js registrada com endpoint: {rota_pdv_data_js.__name__}")
 
+@app.route('/api/produtos/disponibilidade', methods=['POST'])
+def api_obter_disponibilidade():
+    """
+    Recebe uma lista de IDs de produtos e retorna a disponibilidade real de cada um.
+    """
+    dados = request.get_json()
+    if not dados or 'produto_ids' not in dados:
+        return jsonify({"erro": "A lista de 'produto_ids' é necessária."}), 400
+
+    produto_ids = dados['produto_ids']
+
+    # Chama nosso especialista em banco de dados que já sabe como calcular isso
+    disponibilidades = gerenciador_db.obter_disponibilidade_para_produtos(produto_ids)
+
+    return jsonify({"disponibilidades": disponibilidades})
 
 @app.route('/debug-pdv')
 def debug_pdv():

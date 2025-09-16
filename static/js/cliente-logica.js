@@ -78,6 +78,40 @@ export async function gerenciarReservaAPI(produtoId, delta) {
     }
 }
 
+/**
+ * Consulta a API para obter a disponibilidade real de uma lista de produtos.
+ * @param {Array<object>} itens - A lista de itens do pedido.
+ * @returns {Promise<object>} - Um objeto mapeando ID do produto para sua quantidade disponível.
+ */
+async function verificarDisponibilidadeAPI(itens) {
+    if (!itens || itens.length === 0) {
+        return {};
+    }
+
+    const produtoIds = itens.map(item => item.id);
+
+    try {
+        const response = await fetch('/api/produtos/disponibilidade', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ produto_ids: produtoIds })
+        });
+
+        if (!response.ok) {
+            throw new Error('Falha na resposta do servidor ao verificar disponibilidade.');
+        }
+
+        const data = await response.json();
+        return data.disponibilidades || {};
+
+    } catch (error) {
+        console.error("Erro ao verificar disponibilidade via API:", error);
+        // Em caso de falha de rede, retorna um objeto vazio para não quebrar o fluxo.
+        // A lógica tratará como se não houvesse estoque.
+        return {};
+    }
+}
+
 // ==========================================================
 // 1. ESTADO DA APLICAÇÃO
 // (As variáveis centrais que controlam o funcionamento)
@@ -347,48 +381,51 @@ function mostrarModalSucesso(nomeCliente, senhaPedido) {
     }
 }
 
-export function processarPedidoDecodificado(pedidoDecodificado, menuData) {
-  console.log("Iniciando processamento do pedido decodificado:", pedidoDecodificado);
+export async function processarPedidoDecodificado(pedidoDecodificado) {
+    console.log("Iniciando processamento online do pedido:", pedidoDecodificado);
 
-  // Roteiro: Passo 2 - Definir o nome do cliente
-  setNomeCliente(pedidoDecodificado.nomeCliente);
+    // Passo 1: Consulta a disponibilidade real de todos os itens de uma vez.
+    const disponibilidadeReal = await verificarDisponibilidadeAPI(pedidoDecodificado.itens);
+    console.log("Disponibilidade real recebida do servidor:", disponibilidadeReal);
 
-  // Roteiro: Passo 3 - Verificar Itens e Estoque
-  const discrepancias = [];
+    // Passo 2: Define o nome do cliente.
+    setNomeCliente(pedidoDecodificado.nomeCliente);
 
-  for (const itemDecodificado of pedidoDecodificado.itens) {
-    const estoqueDisponivel = getEstoque(itemDecodificado.id);
-    const quantidadeDesejada = itemDecodificado.quantidade;
+    // Passo 3: Verifica Itens e Estoque usando os dados REAIS.
+    const discrepancias = [];
 
-    if (estoqueDisponivel >= quantidadeDesejada) {
-      // Cenário A: Estoque suficiente. Adiciona o item completo.
-      adicionarItemAoPedido(itemDecodificado);
-    } else {
-      // Cenário B: Estoque insuficiente.
-      discrepancias.push({
-        nome: itemDecodificado.nome,
-        solicitado: quantidadeDesejada,
-        disponivel: estoqueDisponivel,
-      });
+    for (const itemDecodificado of pedidoDecodificado.itens) {
+      const estoqueDisponivel = disponibilidadeReal[itemDecodificado.id] || 0;
+      const quantidadeDesejada = itemDecodificado.quantidade;
 
-      if (estoqueDisponivel > 0) {
-        // Adiciona o que for possível
-        const itemParcial = { ...itemDecodificado };
-        itemParcial.quantidade = estoqueDisponivel;
-        adicionarItemAoPedido(itemParcial);
+      if (estoqueDisponivel >= quantidadeDesejada) {
+        // Estoque suficiente. Adiciona o item completo.
+        adicionarItemAoPedido(itemDecodificado);
+      } else {
+        // Estoque insuficiente. Registra a discrepância.
+        discrepancias.push({
+          nome: itemDecodificado.nome,
+          solicitado: quantidadeDesejada,
+          disponivel: estoqueDisponivel,
+        });
+
+        if (estoqueDisponivel > 0) {
+          // Adiciona o que for possível.
+          const itemParcial = { ...itemDecodificado };
+          itemParcial.quantidade = estoqueDisponivel;
+          adicionarItemAoPedido(itemParcial);
+        }
       }
     }
-  }
 
-  // Roteiro: Passo 4 - Retornar o "relatório" para a interface decidir o que fazer.
-  if (discrepancias.length > 0) {
-    return { sucesso: false, pendencias: discrepancias };
-  } else {
-    // Se não houver pendências, já podemos incluir os dados para o salvamento automático.
-    return { 
-      sucesso: true, 
-      metodoPagamento: pedidoDecodificado.metodoPagamento,
-      modalidade: pedidoDecodificado.modalidade
-    };
+    // Passo 4: Retorna o relatório para a interface.
+    if (discrepancias.length > 0) {
+      return { sucesso: false, pendencias: discrepancias };
+    } else {
+      return { 
+        sucesso: true, 
+        metodoPagamento: pedidoDecodificado.metodoPagamento,
+        modalidade: pedidoDecodificado.modalidade
+      };
+    }
   }
-}

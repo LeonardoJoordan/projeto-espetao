@@ -894,7 +894,7 @@ if (btnIniciar) {
 
                 // --- VALIDAÇÃO DE ESTOQUE (lógica existente) ---
                 // Chama o orquestrador e aguarda o "relatório"
-                const relatorio = processarPedidoDecodificado(resultado, MENU_DATA);
+                const relatorio = await processarPedidoDecodificado(resultado);
 
                 // Esconde a tela do teclado e o blur para mostrar o resultado
                 if (telaTeclado) telaTeclado.classList.add('hidden');

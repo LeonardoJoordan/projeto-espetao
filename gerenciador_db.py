@@ -2072,51 +2072,50 @@ def forcar_expirar_carrinho(carrinho_id):
 
 def obter_dados_para_menu_data_js():
     """
-    Gera um dicionário no formato exato usado pelo cliente.html
-    Retorna um objeto plano indexado por produto.id
+    Gera um dicionário mestre, incluindo TODOS os produtos e os campos
+    adicionais para o site, mantendo a chave 'preco_venda'.
     """
     conn = None
     try:
         conn = sqlite3.connect(NOME_BANCO_DADOS)
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        _executar_limpeza_reservas(cursor)
-        
-        agora_utc = datetime.now(timezone.utc).isoformat()
+        # A consulta agora busca todos os produtos, sem filtrar por estoque,
+        # e inclui a coluna foto_url.
         cursor.execute('''
             SELECT 
-                p.id, p.nome, p.descricao, p.preco_venda, p.requer_preparo,
-                c.id as categoria_id, c.nome as categoria_nome,
-                c.ordem as categoria_ordem, p.ordem as produto_ordem,
-                (SELECT COALESCE(SUM(m.quantidade), 0) FROM estoque_movimentacoes m WHERE m.produto_id = p.id) as on_hand,
-                (SELECT COALESCE(SUM(r.quantidade_reservada), 0) 
-                 FROM reservas_carrinho r 
-                 WHERE r.produto_id = p.id AND r.expires_at > ?) as reservado
+                p.id, 
+                p.nome, 
+                p.descricao, 
+                p.preco_venda, 
+                p.requer_preparo,
+                p.foto_url,
+                c.id as categoria_id, 
+                c.nome as categoria_nome,
+                c.ordem as categoria_ordem, 
+                p.ordem as produto_ordem
             FROM produtos p
             LEFT JOIN categorias c ON p.categoria_id = c.id
-            GROUP BY p.id
-            HAVING (on_hand - reservado) > 0
             ORDER BY c.ordem, p.ordem, p.nome
-        ''', (agora_utc,))
+        ''')
         
         resultados = cursor.fetchall()
         
         menu_data = {}
         for row in resultados:
-            (produto_id, nome, descricao, preco_venda, requer_preparo, 
-             categoria_id, categoria_nome, categoria_ordem, produto_ordem, 
-             on_hand, reservado) = row
-            
+            produto_id = row['id']
             menu_data[produto_id] = {
                 "id": produto_id,
-                "nome": nome,
-                "descricao": descricao,
-                "preco_venda": preco_venda,
-                "requer_preparo": requer_preparo,
-                "categoria_id": categoria_id,
-                "categoria_nome": categoria_nome,
-                "categoria_ordem": categoria_ordem,
-                "produto_ordem": produto_ordem
+                "nome": row['nome'],
+                "preco_venda": row['preco_venda'], # <-- CORRIGIDO: Mantido como 'preco_venda'
+                "descricao": row['descricao'],
+                "foto_url": row['foto_url'],
+                "requer_preparo": row['requer_preparo'],
+                "categoria_id": row['categoria_id'],
+                "categoria_nome": row['categoria_nome'],
+                "categoria_ordem": row['categoria_ordem'],
+                "produto_ordem": row['produto_ordem']
             }
         
         return menu_data

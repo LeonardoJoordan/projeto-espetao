@@ -882,7 +882,7 @@ if (btnIniciar) {
 
         // --- LÓGICA DE DETECÇÃO DO CÓDIGO ---
         // Um código Base64 válido para nós será longo e não terá espaços.
-        const pareceCodigo = textoEntrada.length >= 14 && !textoEntrada.includes(' ') && /[a-z]/.test(textoEntrada) && /[A-Z]/.test(textoEntrada);
+        const pareceCodigo = textoEntrada.length >= 12 && !textoEntrada.includes(' ') && /[a-z]/.test(textoEntrada) && /[A-Z]/.test(textoEntrada);
 
         if (pareceCodigo) {
             // --- FLUXO DE DECODIFICAÇÃO (CÓDIGO) ---

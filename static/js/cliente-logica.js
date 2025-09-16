@@ -420,7 +420,12 @@ export async function processarPedidoDecodificado(pedidoDecodificado) {
 
     // Passo 4: Retorna o relatório para a interface.
     if (discrepancias.length > 0) {
-      return { sucesso: false, pendencias: discrepancias };
+      return { 
+            sucesso: false, 
+            pendencias: discrepancias,
+            metodoPagamento: pedidoDecodificado.metodoPagamento,
+            modalidade: pedidoDecodificado.modalidade
+        };
     } else {
       return { 
         sucesso: true, 

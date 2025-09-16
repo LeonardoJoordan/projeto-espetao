@@ -57,6 +57,7 @@ const modalConfirmacao = document.getElementById('modal-confirmacao-pedido');
 // Variáveis de controle de listeners para evitar duplicação
 let eventoPopupSimplesAtivo = null;
 let eventoPopupAtivo = null;
+let preSelecoesPedido = null;
 
 // ==========================================================
 // 2.5. LÓGICA DE SESSÃO E TEMPO REAL (SOCKET.IO)
@@ -169,7 +170,7 @@ async function mostrarAlerta(titulo, mensagem) {
 
     return new Promise(resolve => {
         tituloEl.textContent = titulo;
-        mensagemEl.textContent = mensagem;
+        mensagemEl.innerHTML = mensagem;
 
         modal.classList.remove('hidden');
         mainContainer.classList.add('content-blurred');
@@ -715,6 +716,30 @@ function abrirPopupConfirmacao() {
             </div>`;
     }).join('');
 
+    // Lógica para pré-selecionar opções de um pedido decodificado com pendências
+    if (preSelecoesPedido) {
+        const { metodo, modalidade } = preSelecoesPedido;
+
+        // Pré-seleciona o método de pagamento
+        const pagtoInput = document.querySelector(`input[name="metodo_pagamento"][value="${metodo}"]`);
+        if (pagtoInput) {
+            pagtoInput.checked = true;
+            document.querySelectorAll('#opcoes-pagamento .ponto-option').forEach(opt => opt.classList.remove('selected'));
+            pagtoInput.closest('.ponto-option').classList.add('selected');
+        }
+
+        // Pré-seleciona a modalidade
+        const modInput = document.querySelector(`input[name="modalidade_entrega"][value="${modalidade}"]`);
+        if (modInput) {
+            modInput.checked = true;
+            document.querySelectorAll('#opcoes-modalidade .ponto-option').forEach(opt => opt.classList.remove('selected'));
+            modInput.closest('.ponto-option').classList.add('selected');
+        }
+        
+        // Limpa a memória para não afetar o próximo pedido manual
+        preSelecoesPedido = null;
+    }
+
     modalConfirmacao.classList.remove('hidden');
     mainContainer.classList.add('content-blurred');
 }
@@ -908,11 +933,21 @@ if (btnIniciar) {
                 await salvarPedido(relatorio.metodoPagamento, relatorio.modalidade);
                 } else {
                 // Cenário A (Pendências): Monta e exibe o modal para o atendente
-                let mensagemAlerta = "Alguns itens não puderam ser adicionados por falta de estoque:\n\n";
-                relatorio.pendencias.forEach(d => {
-                    mensagemAlerta += `• ${d.nome}: Pedido de ${d.solicitado}, disponível apenas ${d.disponivel}.\n`;
-                });
-                await mostrarAlerta("Ajuste de Estoque Necessário", mensagemAlerta);
+                preSelecoesPedido = { metodo: relatorio.metodoPagamento, modalidade: relatorio.modalidade };
+                // Monta a nova mensagem formatada em HTML
+                const itensHtml = relatorio.pendencias.map(d => {
+                    const faltou = d.solicitado - d.disponivel;
+                    return `<li><strong>${d.nome}:</strong> Adicionado ${d.disponivel} de ${d.solicitado}, faltou ${faltou}.</li>`;
+                }).join('');
+
+                const mensagemHtml = `
+                    <p class="text-left mb-4">O pedido foi preenchido com os itens disponíveis. As seguintes pendências precisam de atenção:</p>
+                    <ul class="list-disc list-inside text-left space-y-2">
+                        ${itensHtml}
+                    </ul>
+                    <p class="text-center mt-6 text-zinc-400">Verifique com o cliente antes de finalizar.</p>
+                `;
+                await mostrarAlerta("Ajuste de Estoque Necessário", mensagemHtml);
                 }
             } catch (error) {
                 await mostrarAlerta("Erro de Decodificação", error.message);

@@ -59,11 +59,19 @@ export function decodificarPedido(codigoBase64, menuCompleto, mapas) {
                 customizacao.acompanhamentos = acompanhamentos;
             }
 
-            itens.push({
-                ...produtoBase,
-                quantidade,
-                customizacao: Object.keys(customizacao).length > 0 ? customizacao : null
-            });
+            const itemReconstruido = {
+               ...produtoBase,
+               quantidade,
+               customizacao: Object.keys(customizacao).length > 0 ? customizacao : null
+           };
+
+           // Nosso "Adaptador" entra em ação aqui!
+           if (itemReconstruido.preco_venda !== undefined) {
+               itemReconstruido.preco = itemReconstruido.preco_venda;
+               delete itemReconstruido.preco_venda;
+           }
+
+           itens.push(itemReconstruido);
             
             offset += bytesPorItem;
         }

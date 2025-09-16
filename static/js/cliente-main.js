@@ -14,7 +14,8 @@ import {
     carrinhoId,
     gerenciarReservaAPI,
     renovarSessaoDebounced,
-    enviarPedidoDecodificado // Adicionada aqui
+    enviarPedidoDecodificado,
+    processarPedidoDecodificado // Adicionada aqui
 } from './cliente-logica.js';
 
 import * as estoqueState from './cliente-estoque.js';
@@ -892,43 +893,26 @@ if (btnIniciar) {
                 }
 
                 // --- VALIDAÇÃO DE ESTOQUE (lógica existente) ---
-                const discrepancias = [];
-                for (const item of resultado.itens) {
-                    const estoqueDisponivel = estoqueState.getEstoque(item.id);
-                    if (estoqueDisponivel < item.quantidade) {
-                        discrepancias.push({
-                            nome: item.nome,
-                            solicitado: item.quantidade,
-                            disponivel: estoqueDisponivel,
-                        });
-                    }
-                }
+                // Chama o orquestrador e aguarda o "relatório"
+                const relatorio = processarPedidoDecodificado(resultado, MENU_DATA);
 
-                if (discrepancias.length === 0) {
-                    // --- CENÁRIO A: ESTOQUE OK ---
-                    await enviarPedidoDecodificado(resultado);
+                // Esconde a tela do teclado e o blur para mostrar o resultado
+                if (telaTeclado) telaTeclado.classList.add('hidden');
+                if (mainContainer) mainContainer.classList.remove('content-blurred');
+                atualizarBotaoPrincipal();
+
+                // Decide o que fazer com base no relatório
+                if (relatorio.sucesso) {
+                // Cenário B (Tudo OK): Finaliza o pedido automaticamente
+                console.log("Todos os itens em estoque. Finalizando pedido automaticamente...");
+                await salvarPedido(relatorio.metodoPagamento, relatorio.modalidade);
                 } else {
-                    // --- CENÁRIO B: FALTA DE ESTOQUE ---
-                    setNomeCliente(resultado.nomeCliente);
-                    for (const item of resultado.itens) {
-                        const estoqueDisponivel = estoqueState.getEstoque(item.id);
-                        const quantidadeParaAdicionar = Math.min(item.quantidade, estoqueDisponivel);
-                        if (quantidadeParaAdicionar > 0) {
-                            const itemCompleto = { ...MENU_DATA[item.id], ...item };
-                            itemCompleto.quantidade = quantidadeParaAdicionar;
-                            adicionarItemAoPedido(itemCompleto);
-                        }
-                    }
-                    
-                    let mensagemAlerta = "Alguns itens não puderam ser adicionados por falta de estoque:\n\n";
-                    discrepancias.forEach(d => {
-                        mensagemAlerta += `• ${d.nome}: Pedido de ${d.solicitado}, disponível apenas ${d.disponivel}.\n`;
-                    });
-
-                    if (telaTeclado) telaTeclado.classList.add('hidden');
-                    if (mainContainer) mainContainer.classList.remove('content-blurred');
-                    atualizarBotaoPrincipal();
-                    await mostrarAlerta("Ajuste de Estoque Necessário", mensagemAlerta);
+                // Cenário A (Pendências): Monta e exibe o modal para o atendente
+                let mensagemAlerta = "Alguns itens não puderam ser adicionados por falta de estoque:\n\n";
+                relatorio.pendencias.forEach(d => {
+                    mensagemAlerta += `• ${d.nome}: Pedido de ${d.solicitado}, disponível apenas ${d.disponivel}.\n`;
+                });
+                await mostrarAlerta("Ajuste de Estoque Necessário", mensagemAlerta);
                 }
             } catch (error) {
                 await mostrarAlerta("Erro de Decodificação", error.message);

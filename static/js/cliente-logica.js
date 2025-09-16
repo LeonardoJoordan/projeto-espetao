@@ -1,3 +1,5 @@
+import { getEstoque } from './cliente-estoque.js';
+
 // static/js/cliente-logica.js
 
 // ==========================================================
@@ -343,4 +345,50 @@ function mostrarModalSucesso(nomeCliente, senhaPedido) {
         telaSenha.classList.remove('hidden');
         mainContainer.classList.add('content-blurred');
     }
+}
+
+export function processarPedidoDecodificado(pedidoDecodificado, menuData) {
+  console.log("Iniciando processamento do pedido decodificado:", pedidoDecodificado);
+
+  // Roteiro: Passo 2 - Definir o nome do cliente
+  setNomeCliente(pedidoDecodificado.nomeCliente);
+
+  // Roteiro: Passo 3 - Verificar Itens e Estoque
+  const discrepancias = [];
+
+  for (const itemDecodificado of pedidoDecodificado.itens) {
+    const estoqueDisponivel = getEstoque(itemDecodificado.id);
+    const quantidadeDesejada = itemDecodificado.quantidade;
+
+    if (estoqueDisponivel >= quantidadeDesejada) {
+      // Cenário A: Estoque suficiente. Adiciona o item completo.
+      adicionarItemAoPedido(itemDecodificado);
+    } else {
+      // Cenário B: Estoque insuficiente.
+      discrepancias.push({
+        nome: itemDecodificado.nome,
+        solicitado: quantidadeDesejada,
+        disponivel: estoqueDisponivel,
+      });
+
+      if (estoqueDisponivel > 0) {
+        // Adiciona o que for possível
+        const itemParcial = { ...itemDecodificado };
+        itemParcial.quantidade = estoqueDisponivel;
+        adicionarItemAoPedido(itemParcial);
+      }
+    }
+  }
+
+  // Roteiro: Passo 4 - Retornar o "relatório" para a interface decidir o que fazer.
+  if (discrepancias.length > 0) {
+    return { sucesso: false, pendencias: discrepancias };
+  } else {
+    // Se não houver pendências, já podemos incluir os dados para o salvamento automático.
+    return { 
+      sucesso: true, 
+      metodoPagamento: pedidoDecodificado.metodoPagamento,
+      modalidade: pedidoDecodificado.modalidade
+    };
+  }
 }

@@ -19,6 +19,7 @@ import {
 
 import * as estoqueState from './cliente-estoque.js';
 import { decodificarPedido } from './protocolo-serializacao.js'; // Adicionada aqui
+import { MENU_DATA } from '/pdv-data.js';
 
 
 
@@ -862,61 +863,79 @@ if (btnIniciar) {
             btnIniciar.disabled = true;
             btnIniciar.textContent = "Processando...";
 
-            const resultado = decodificarPedido(textoEntrada, window.MENU_DATA);
+            try {
+                // 1. BUSCAR MAPAS DINÂMICOS DA API
+                const response = await fetch('/api/acompanhamentos_visiveis');
+                if (!response.ok) throw new Error('Falha ao buscar dados de acompanhamentos.');
+                const acompanhamentosApi = await response.json();
 
-            if (!resultado.sucesso) {
-                await mostrarAlerta("Erro de Decodificação", resultado.erro || "O código informado é inválido ou está corrompido.");
-                btnIniciar.disabled = false;
-                btnIniciar.textContent = "Iniciar Pedido";
-                return;
-            }
+                // 2. CONSTRUIR OS MAPAS INVERSOS
+                const mapasDinamicos = {
+                    mapaPagamentoInverso: { 1: 'pix', 2: 'cartao_credito', 3: 'cartao_debito', 4: 'dinheiro' },
+                    mapaModalidadeInverso: { 1: 'local', 2: 'viagem' },
+                    mapaPontoInverso: { 1: 'mal', 2: 'ponto', 3: 'bem' },
+                    mapaAcompanhamentosInverso: {}
+                };
 
-            // --- VALIDAÇÃO DE ESTOQUE ---
-            const discrepancias = [];
-            for (const item of resultado.itens) {
-                const estoqueDisponivel = estoqueState.getEstoque(item.id);
-                if (estoqueDisponivel < item.quantidade) {
-                    discrepancias.push({
-                        nome: item.nome,
-                        solicitado: item.quantidade,
-                        disponivel: estoqueDisponivel,
-                    });
+                // Constrói o mapa de acompanhamentos com bitmask dinamicamente
+                acompanhamentosApi.forEach((acomp, index) => {
+                    const bitValue = 1 << index; // 1, 2, 4, 8...
+                    mapasDinamicos.mapaAcompanhamentosInverso[bitValue] = acomp.nome;
+                });
+                
+                console.log('Verificando o cardápio antes de decodificar:', MENU_DATA);
+                // 3. CHAMAR O DECODIFICADOR COM OS MAPAS CORRETOS (O TERCEIRO ARGUMENTO)
+                const resultado = decodificarPedido(textoEntrada, MENU_DATA, mapasDinamicos);
+
+                if (!resultado.sucesso) {
+                    throw new Error(resultado.erro || "O código informado é inválido ou está corrompido.");
                 }
-            }
 
-            if (discrepancias.length === 0) {
-                // --- CENÁRIO A: ESTOQUE OK ---
-                await enviarPedidoDecodificado(resultado);
-                // A função de envio já lida com o sucesso e recarrega a página.
-            } else {
-                // --- CENÁRIO B: FALTA DE ESTOQUE ---
-                setNomeCliente(resultado.nomeCliente);
-
-                // Adiciona o que for possível ao carrinho
+                // --- VALIDAÇÃO DE ESTOQUE (lógica existente) ---
+                const discrepancias = [];
                 for (const item of resultado.itens) {
                     const estoqueDisponivel = estoqueState.getEstoque(item.id);
-                    const quantidadeParaAdicionar = Math.min(item.quantidade, estoqueDisponivel);
-
-                    if (quantidadeParaAdicionar > 0) {
-                        const itemCompleto = { ...window.MENU_DATA[item.id], ...item };
-                        itemCompleto.quantidade = quantidadeParaAdicionar;
-                        adicionarItemAoPedido(itemCompleto);
+                    if (estoqueDisponivel < item.quantidade) {
+                        discrepancias.push({
+                            nome: item.nome,
+                            solicitado: item.quantidade,
+                            disponivel: estoqueDisponivel,
+                        });
                     }
                 }
-                
-                // Monta a mensagem de alerta
-                let mensagemAlerta = "Alguns itens não puderam ser adicionados por falta de estoque:\n\n";
-                discrepancias.forEach(d => {
-                    mensagemAlerta += `• ${d.nome}: Pedido de ${d.solicitado}, disponível apenas ${d.disponivel}.\n`;
-                });
 
-                // Transiciona para a tela principal e mostra o alerta
-                if (telaTeclado) telaTeclado.classList.add('hidden');
-                if (mainContainer) mainContainer.classList.remove('content-blurred');
-                atualizarBotaoPrincipal();
-                await mostrarAlerta("Ajuste de Estoque Necessário", mensagemAlerta);
+                if (discrepancias.length === 0) {
+                    // --- CENÁRIO A: ESTOQUE OK ---
+                    await enviarPedidoDecodificado(resultado);
+                } else {
+                    // --- CENÁRIO B: FALTA DE ESTOQUE ---
+                    setNomeCliente(resultado.nomeCliente);
+                    for (const item of resultado.itens) {
+                        const estoqueDisponivel = estoqueState.getEstoque(item.id);
+                        const quantidadeParaAdicionar = Math.min(item.quantidade, estoqueDisponivel);
+                        if (quantidadeParaAdicionar > 0) {
+                            const itemCompleto = { ...MENU_DATA[item.id], ...item };
+                            itemCompleto.quantidade = quantidadeParaAdicionar;
+                            adicionarItemAoPedido(itemCompleto);
+                        }
+                    }
+                    
+                    let mensagemAlerta = "Alguns itens não puderam ser adicionados por falta de estoque:\n\n";
+                    discrepancias.forEach(d => {
+                        mensagemAlerta += `• ${d.nome}: Pedido de ${d.solicitado}, disponível apenas ${d.disponivel}.\n`;
+                    });
+
+                    if (telaTeclado) telaTeclado.classList.add('hidden');
+                    if (mainContainer) mainContainer.classList.remove('content-blurred');
+                    atualizarBotaoPrincipal();
+                    await mostrarAlerta("Ajuste de Estoque Necessário", mensagemAlerta);
+                }
+            } catch (error) {
+                await mostrarAlerta("Erro de Decodificação", error.message);
+            } finally {
+                btnIniciar.disabled = false;
+                btnIniciar.textContent = "Iniciar Pedido";
             }
-
         } else {
             // --- FLUXO NORMAL (NOME) ---
             setNomeCliente(textoEntrada);

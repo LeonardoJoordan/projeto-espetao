@@ -519,23 +519,7 @@
 
     <script src="{{ url_for('static', filename='js/libs/socket.io.min.js') }}"></script>
 
-    <script>
-        // Etapa 2: Expondo os dados do cardápio do servidor para o JavaScript
-        window.MENU_DATA = {};
-        {% for categoria in categorias %}
-            {% for produto in produtos_agrupados[categoria.id] %}
-                window.MENU_DATA[{{ produto.id }}] = {
-                    id: {{ produto.id }},
-                    nome: "{{ produto.nome | tojson | safe }}",
-                    preco: {{ produto.preco_venda }},
-                    // Adicione quaisquer outros campos do produto que possam ser úteis no futuro
-                    requer_preparo: {{ produto.requer_preparo }},
-                    categoria_ordem: {{ produto.categoria_ordem }},
-                    produto_ordem: {{ produto.produto_ordem }}
-                };
-            {% endfor %}
-        {% endfor %}
-    </script>
+    <script type="module" src="{{ url_for('rota_pdv_data_js') }}"></script>
 
     <script type="module" src="{{ url_for('static', filename='js/cliente-main.js') }}"></script>
     

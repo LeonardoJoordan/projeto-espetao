@@ -14,6 +14,7 @@ import re
 import subprocess
 import platform
 import collections
+import serializers
 from datetime import datetime, timedelta
 
 # --- INICIALIZAÇÃO DO BANCO DE DADOS ---
@@ -188,6 +189,63 @@ def api_obter_locais():
     """API que retorna a lista de todos os locais cadastrados."""
     locais = gerenciador_db.obter_todos_locais()
     return jsonify(locais)
+
+@app.route('/pdv-data.js')
+def rota_pdv_data_js():
+    """
+    Rota especial que gera um arquivo JavaScript dinâmico contendo
+    os dados do cardápio e os mapas de codificação.
+    """
+    try:
+        # 1. Busca os dados mais recentes do banco
+        menu_data_plano = gerenciador_db.obter_dados_para_menu_data_js()
+        acompanhamentos = gerenciador_db.obter_acompanhamentos_visiveis()
+
+        # 2. Cria os mapas dinamicamente, exatamente como no gerador
+        mapa_acompanhamentos = {}
+        for i, acomp in enumerate(acompanhamentos):
+            mapa_acompanhamentos[acomp['nome']] = 1 << i
+
+        mapa_ponto = {"mal": 1, "ponto": 2, "bem": 3}
+        mapa_pagamento = {'pix': 1, 'cartao_credito': 2, 'cartao_debito': 3, 'dinheiro': 4}
+        mapa_modalidade = {'local': 1, 'viagem': 2}
+        
+        # 3. Converte para strings JSON
+        menu_json = json.dumps(menu_data_plano, indent=4, ensure_ascii=False)
+        mapa_acomp_json = json.dumps(mapa_acompanhamentos, indent=4, ensure_ascii=False)
+        mapa_ponto_json = json.dumps(mapa_ponto, indent=4, ensure_ascii=False)
+        mapa_pagamento_json = json.dumps(mapa_pagamento, indent=4, ensure_ascii=False)
+        mapa_modalidade_json = json.dumps(mapa_modalidade, indent=4, ensure_ascii=False)
+
+        # 4. Monta a string final do arquivo JavaScript
+        js_content = f"""
+// Arquivo gerado dinamicamente pelo servidor Flask.
+export const MENU_DATA = {menu_json};
+export const MAPA_ACOMPANHAMENTOS = {mapa_acomp_json};
+export const MAPA_PONTO = {mapa_ponto_json};
+export const MAPA_PAGAMENTO = {mapa_pagamento_json};
+export const MAPA_MODALIDADE = {mapa_modalidade_json};
+"""
+        # 5. Retorna o conteúdo com o 'Content-Type' correto para JavaScript
+        return js_content, 200, {'Content-Type': 'application/javascript; charset=utf-8'}
+
+    except Exception as e:
+        print(f"ERRO ao gerar /pdv-data.js: {e}")
+        # Retorna um módulo JS vazio com um erro no console para facilitar o debug
+        js_error = "console.error('Falha ao gerar dados do PDV.'); export const MENU_DATA = {};"
+        return js_error, 500, {'Content-Type': 'application/javascript; charset=utf-8'}
+    
+print(f"Rota /pdv-data.js registrada com endpoint: {rota_pdv_data_js.__name__}")
+
+
+@app.route('/debug-pdv')
+def debug_pdv():
+    try:
+        from flask import url_for
+        url_gerada = url_for('rota_pdv_data_js')
+        return f"URL gerada: {url_gerada}<br>Função registrada: OK"
+    except Exception as e:
+        return f"Erro: {e}"
 
 @app.route('/cliente', methods=['GET', 'POST'])
 def tela_cliente():
@@ -1241,6 +1299,8 @@ def api_imprimir_comanda_pedido(pedido_id):
     thread.start()
 
     return jsonify({'status': 'impressao_enfileirada', 'mensagem': 'Comanda enviada para a fila de impressão.'})
+
+
 
 @app.route('/')
 def index():

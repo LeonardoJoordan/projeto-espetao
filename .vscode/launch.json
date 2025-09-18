@@ -1,0 +1,36 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Flask",
+            "type": "python",
+            "request": "launch",
+            "module": "flask",
+            "env": {
+                "FLASK_APP": "app.py",
+                "FLASK_ENV": "development",
+                "FLASK_DEBUG": "1"
+            },
+            "args": [
+                "run",
+                "--no-debugger",
+                "--no-reload"
+            ],
+            "justMyCode": true,
+            "subProcess": true
+        },
+        {
+            "name": "Web: Chrome",
+            "request": "launch",
+            "type": "chrome",
+            "url": "http://127.0.0.1:5000",
+            "webRoot": "${workspaceFolder}"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Fullstack: Flask & Chrome",
+            "configurations": ["Python: Flask", "Web: Chrome"]
+        }
+    ]
+}

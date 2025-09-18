@@ -6,6 +6,7 @@
 import sys
 import os
 
+
 def fix_dns_rdtypes():
     """
     Corrige o problema do dns.rdtypes.__all__ no cx_Freeze.
@@ -56,9 +57,9 @@ import os
 from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
                                QLabel, QTextEdit, QPushButton, QGroupBox, QGridLayout, 
                                QComboBox, QDialog, QListWidget, QLineEdit, 
-                               QListWidgetItem, QMessageBox)
+                               QListWidgetItem, QMessageBox, QTabWidget)
 from PySide6.QtCore import Qt, Signal, QObject, QTimer
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtGui import QIcon, QPixmap, QFont
 import json
 # Importa o 'app' e o 'socketio' do seu arquivo app.py
 from app import app, socketio
@@ -186,173 +187,253 @@ def keepalive_printer(stop_event):
 # ===================================================================
 
 
-# Coloque esta nova classe ANTES da classe PainelControle
-class ModalGerenciarLocais(QDialog):
-    """Janela modal para adicionar, visualizar e excluir locais."""
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Gerenciar Locais de Trabalho")
-        self.setMinimumSize(400, 300)
-        self.setStyleSheet(parent.styleSheet())
-
-        layout = QVBoxLayout(self)
-
-        self.lista_locais = QListWidget()
-        self.carregar_locais() # Agora chama a função interna
-
-        layout_botoes = QHBoxLayout()
-        self.input_novo_local = QLineEdit()
-        self.input_novo_local.setPlaceholderText("Nome do novo local")
-        self.btn_adicionar = QPushButton("Adicionar")
-        self.btn_adicionar.clicked.connect(self.adicionar_local)
-
-        layout_botoes.addWidget(self.input_novo_local)
-        layout_botoes.addWidget(self.btn_adicionar)
-
-        self.btn_excluir = QPushButton("Excluir Selecionado")
-        self.btn_excluir.setObjectName("btn_parar")
-        self.btn_excluir.clicked.connect(self.excluir_local)
-
-        layout.addLayout(layout_botoes)
-        layout.addWidget(self.lista_locais)
-        layout.addWidget(self.btn_excluir)
-
-    def carregar_locais(self):
-        """Busca locais diretamente do banco de dados e popula a lista do modal."""
-        self.lista_locais.clear() # CORREÇÃO: Usa self.lista_locais
-        locais = gerenciador_db.obter_todos_locais()
-        if not locais:
-            self.lista_locais.addItem("Nenhum local cadastrado.")
-        else:
-            for local in locais:
-                item = QListWidgetItem(local['nome'])
-                item.setData(Qt.UserRole, local['id']) # Armazena o ID no item
-                self.lista_locais.addItem(item)
-
-    def adicionar_local(self):
-        """Adiciona local diretamente no banco de dados."""
-        nome_local = self.input_novo_local.text().strip()
-        if not nome_local:
-            return
-
-        sucesso = gerenciador_db.adicionar_local(nome_local) # CHAMADA DIRETA
-        if sucesso:
-            self.input_novo_local.clear()
-            self.carregar_locais()
-        else:
-            QMessageBox.warning(self, "Erro", "Não foi possível adicionar o local. Ele já pode existir.")
-
-    def excluir_local(self):
-        """Exclui local diretamente do banco de dados."""
-        item_selecionado = self.lista_locais.currentItem()
-        if not item_selecionado or not item_selecionado.data(Qt.UserRole):
-            return
-
-        id_local = item_selecionado.data(Qt.UserRole)
-        nome_local = item_selecionado.text()
-
-        confirmacao = QMessageBox.question(self, "Confirmar Exclusão", 
-            f"Tem certeza que deseja excluir o local '{nome_local}'?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-
-        if confirmacao == QMessageBox.StandardButton.Yes:
-            sucesso = gerenciador_db.excluir_local(id_local) # CHAMADA DIRETA
-            if sucesso:
-                self.carregar_locais()
-            else:
-                QMessageBox.warning(self, "Erro", "Não foi possível excluir. Verifique se o local não está sendo usado em algum pedido.")
-
-# Coloque esta nova classe ANTES da classe PainelControle
-class ModalConfiguracoesImpressora(QDialog):
-    """Janela modal para configurar a impressora."""
+class ModalConfiguracoesGerais(QDialog):
+    """Nova janela de configurações com abas para Impressora e Locais."""
     def __init__(self, ip_servidor, porta, parent=None):
         super().__init__(parent)
         self.ip_servidor = ip_servidor
         self.porta = porta
-        
-        self.setWindowTitle("Configurações da Impressora")
-        self.setMinimumWidth(450)
+
+        self.setWindowTitle("Configurações Gerais")
+        self.setMinimumSize(500, 400)
         self.setStyleSheet(parent.styleSheet())
 
-        layout = QVBoxLayout(self)
+        # Layout principal com abas
+        layout_principal = QVBoxLayout(self)
+        self.tab_widget = QTabWidget()
+        layout_principal.addWidget(self.tab_widget)
+
+        # Criar e adicionar as abas
+        self.criar_aba_impressora()
+        self.criar_aba_locais()
+        self.criar_aba_js_site()
+
+    # --- MÉTODOS DA ABA IMPRESSORA (Movidos para cá) ---
+    def criar_aba_impressora(self):
+        widget_aba = QWidget()
+        layout = QVBoxLayout(widget_aba)
+        
         grupo_ip = QGroupBox("Endereço da Impressora de Rede")
         layout_ip = QGridLayout(grupo_ip)
 
         self.input_ip_impressora = QLineEdit()
         self.input_ip_impressora.setPlaceholderText("Ex: 192.168.0.50 ou 192.168.0.50:9100")
         
-        self.btn_salvar = QPushButton("Salvar")
-        self.btn_testar = QPushButton("Testar Conexão")
+        self.btn_salvar_impressora = QPushButton("Salvar")
+        self.btn_testar_impressora = QPushButton("Testar Conexão")
 
         layout_ip.addWidget(QLabel("IP e Porta (opcional):"), 0, 0, 1, 2)
         layout_ip.addWidget(self.input_ip_impressora, 1, 0, 1, 2)
-        layout_ip.addWidget(self.btn_testar, 2, 0)
-        layout_ip.addWidget(self.btn_salvar, 2, 1)
+        layout_ip.addWidget(self.btn_testar_impressora, 2, 0)
+        layout_ip.addWidget(self.btn_salvar_impressora, 2, 1)
 
-        self.label_status_modal = QLabel("")
-        self.label_status_modal.setAlignment(Qt.AlignCenter)
+        self.label_status_impressora = QLabel("")
+        self.label_status_impressora.setAlignment(Qt.AlignCenter)
         
         layout.addWidget(grupo_ip)
-        layout.addWidget(self.label_status_modal)
+        layout.addWidget(self.label_status_impressora)
+        layout.addStretch() # Empurra o conteúdo para cima
 
-        self.btn_salvar.clicked.connect(self.salvar_configuracao)
-        self.btn_testar.clicked.connect(self.testar_conexao)
+        self.btn_salvar_impressora.clicked.connect(self.salvar_configuracao_impressora)
+        self.btn_testar_impressora.clicked.connect(self.testar_conexao_impressora)
+        
+        self.tab_widget.addTab(widget_aba, "Impressora")
+        self.carregar_configuracao_atual_impressora()
 
-        self.carregar_configuracao_atual()
-
-    def carregar_configuracao_atual(self):
-        """Busca a configuração de IP salva no servidor."""
+    def carregar_configuracao_atual_impressora(self):
         try:
             url = f'http://{self.ip_servidor}:{self.porta}/api/config/impressora'
             response = requests.get(url, timeout=3)
             if response.status_code == 200:
-                config = response.json()
-                ip_salvo = config.get('ip')
-                if ip_salvo:
-                    self.input_ip_impressora.setText(ip_salvo)
+                self.input_ip_impressora.setText(response.json().get('ip', ''))
             else:
-                self.label_status_modal.setText("<font color='#dc3545'>Servidor não respondeu corretamente.</font>")
-        except requests.exceptions.RequestException as e:
-            print(f"Erro ao carregar config da impressora: {e}")
-            self.label_status_modal.setText("<font color='#dc3545'>Erro ao conectar ao servidor.</font>")
+                self.label_status_impressora.setText("<font color='#dc3545'>Servidor não respondeu.</font>")
+        except requests.exceptions.RequestException:
+            self.label_status_impressora.setText("<font color='#dc3545'>Erro ao conectar ao servidor.</font>")
 
-    def salvar_configuracao(self):
-        """Envia o novo IP para o servidor salvar."""
+    def salvar_configuracao_impressora(self):
         ip_digitado = self.input_ip_impressora.text().strip()
-        if not ip_digitado:
-            self.label_status_modal.setText("<font color='#FBBF24'>O campo de IP não pode estar vazio.</font>")
-            return
-            
         try:
             url = f'http://{self.ip_servidor}:{self.porta}/api/config/impressora'
-            payload = {'ip': ip_digitado}
-            response = requests.post(url, json=payload, timeout=3)
-            
+            response = requests.post(url, json={'ip': ip_digitado}, timeout=3)
             if response.status_code == 200:
-                self.label_status_modal.setText("<font color='#28a745'>Configuração salva com sucesso!</font>")
+                self.label_status_impressora.setText("<font color='#28a745'>Configuração salva!</font>")
             else:
-                # Assumimos que o servidor retorna um erro útil em JSON
-                erro = response.json().get('mensagem', 'Erro desconhecido.')
-                self.label_status_modal.setText(f"<font color='#dc3545'>Falha ao salvar: {erro}</font>")
+                self.label_status_impressora.setText(f"<font color='#dc3545'>Falha: {response.json().get('mensagem', 'Erro')}</font>")
         except requests.exceptions.RequestException:
-            self.label_status_modal.setText("<font color='#dc3545'>Erro de comunicação com o servidor.</font>")
+            self.label_status_impressora.setText("<font color='#dc3545'>Erro de comunicação.</font>")
 
-    def testar_conexao(self):
-        """Pede ao servidor para testar a conexão com a impressora."""
-        self.label_status_modal.setText("<font color='#FBBF24'>Testando conexão, aguarde...</font>")
-        QApplication.processEvents() # Força a UI a atualizar o texto
-        
+    def testar_conexao_impressora(self):
+        self.label_status_impressora.setText("<font color='#FBBF24'>Testando, aguarde...</font>")
+        QApplication.processEvents()
         try:
             url = f'http://{self.ip_servidor}:{self.porta}/api/diagnostico_impressora'
-            response = requests.get(url, timeout=10) # Timeout maior para o teste
-            
+            response = requests.get(url, timeout=10)
             resultado = response.json()
             if resultado.get('sucesso'):
-                self.label_status_modal.setText(f"<font color='#28a745'>{resultado.get('mensagem')}</font>")
+                self.label_status_impressora.setText(f"<font color='#28a745'>{resultado.get('mensagem')}</font>")
             else:
-                self.label_status_modal.setText(f"<font color='#dc3545'>{resultado.get('mensagem')}</font>")
+                self.label_status_impressora.setText(f"<font color='#dc3545'>{resultado.get('mensagem')}</font>")
         except requests.exceptions.RequestException:
-            self.label_status_modal.setText("<font color='#dc3545'>Erro de comunicação com o servidor.</font>")
+            self.label_status_impressora.setText("<font color='#dc3545'>Erro de comunicação.</font>")
+
+    # --- MÉTODOS DA ABA LOCAIS (Movidos para cá) ---
+    def criar_aba_locais(self):
+        widget_aba = QWidget()
+        layout = QVBoxLayout(widget_aba)
+        
+        self.lista_locais = QListWidget()
+        self.carregar_locais()
+
+        layout_botoes = QHBoxLayout()
+        self.input_novo_local = QLineEdit()
+        self.input_novo_local.setPlaceholderText("Nome do novo local")
+        self.btn_adicionar_local = QPushButton("Adicionar")
+        layout_botoes.addWidget(self.input_novo_local)
+        layout_botoes.addWidget(self.btn_adicionar_local)
+
+        self.btn_excluir_local = QPushButton("Excluir Selecionado")
+        self.btn_excluir_local.setObjectName("btn_parar")
+
+        layout.addLayout(layout_botoes)
+        layout.addWidget(self.lista_locais)
+        layout.addWidget(self.btn_excluir_local)
+
+        self.btn_adicionar_local.clicked.connect(self.adicionar_local)
+        self.btn_excluir_local.clicked.connect(self.excluir_local)
+
+        self.tab_widget.addTab(widget_aba, "Locais de Trabalho")
+
+    def carregar_locais(self):
+        self.lista_locais.clear()
+        locais = gerenciador_db.obter_todos_locais()
+        if not locais:
+            self.lista_locais.addItem("Nenhum local cadastrado.")
+        else:
+            for local in locais:
+                item = QListWidgetItem(local['nome'])
+                item.setData(Qt.UserRole, local['id'])
+                self.lista_locais.addItem(item)
+
+    def adicionar_local(self):
+        nome_local = self.input_novo_local.text().strip()
+        if nome_local and gerenciador_db.adicionar_local(nome_local):
+            self.input_novo_local.clear()
+            self.carregar_locais()
+        else:
+            QMessageBox.warning(self, "Erro", "Não foi possível adicionar o local.")
+
+    def excluir_local(self):
+        item_selecionado = self.lista_locais.currentItem()
+        if not item_selecionado or not item_selecionado.data(Qt.UserRole):
+            return
+
+        id_local = item_selecionado.data(Qt.UserRole)
+        confirmacao = QMessageBox.question(self, "Confirmar", f"Excluir '{item_selecionado.text()}'?")
+        if confirmacao == QMessageBox.StandardButton.Yes and gerenciador_db.excluir_local(id_local):
+            self.carregar_locais()
+        else:
+            QMessageBox.warning(self, "Erro", "Não foi possível excluir o local.")
+
+    # --- MÉTODOS DA ABA JS SITE (Adicionar este bloco) ---
+    def criar_aba_js_site(self):
+        widget_aba = QWidget()
+        layout = QVBoxLayout(widget_aba)
+        
+        grupo_gerador = QGroupBox("Gerador de Dicionário para o Site")
+        layout_gerador = QVBoxLayout(grupo_gerador)
+
+        self.btn_atualizar_js = QPushButton("1. Atualizar Dicionário a partir do PDV")
+        
+        self.text_area_js = QTextEdit()
+        self.text_area_js.setReadOnly(True)
+        self.text_area_js.setPlaceholderText("O conteúdo do arquivo 'cardapio-data.js' aparecerá aqui após a atualização...")
+        self.text_area_js.setFont(QFont("Courier New", 10))
+
+        self.btn_copiar_js = QPushButton("2. Copiar Conteúdo para a Área de Transferência")
+        
+        layout_gerador.addWidget(self.btn_atualizar_js)
+        layout_gerador.addWidget(self.text_area_js)
+        layout_gerador.addWidget(self.btn_copiar_js)
+
+        layout.addWidget(grupo_gerador)
+        self.tab_widget.addTab(widget_aba, "JS Site")
+
+        # Conectar os botões às suas funções
+        self.btn_atualizar_js.clicked.connect(self.atualizar_dicionario_js)
+        self.btn_copiar_js.clicked.connect(self.copiar_conteudo_js)
+
+    def atualizar_dicionario_js(self):
+        """Busca os dados do DB, gera o código JS e o exibe na tela."""
+        try:
+            # --- Início da lógica corrigida (alinhada com o gerador_dicionario.py) ---
+
+            # 1. Busca os dados do banco
+            menu_data_plano = gerenciador_db.obter_dados_para_menu_data_js()
+            
+            # Cria o mapa de acompanhamentos dinamicamente
+            acompanhamentos = gerenciador_db.obter_acompanhamentos_visiveis()
+            mapa_acompanhamentos = {}
+            for i, acomp in enumerate(acompanhamentos):
+                mapa_acompanhamentos[acomp['nome']] = 1 << i # Gera 2^i (1, 2, 4, 8...)
+
+            # 2. Define os mapas estáticos
+            mapa_ponto = {"mal": 1, "ponto": 2, "bem": 3}
+            mapa_pagamento = {'PIX': 1, 'Cartão de Crédito': 2, 'Cartão de Débito': 3, 'Dinheiro': 4}
+            mapa_modalidade = {'local': 1, 'viagem': 2}
+            
+            # 3. Converte os dicionários Python para strings JSON
+            menu_json = json.dumps(menu_data_plano, indent=4, ensure_ascii=False)
+            mapa_acomp_json = json.dumps(mapa_acompanhamentos, indent=4, ensure_ascii=False)
+            mapa_ponto_json = json.dumps(mapa_ponto, indent=4, ensure_ascii=False)
+            mapa_pagamento_json = json.dumps(mapa_pagamento, indent=4, ensure_ascii=False)
+            mapa_modalidade_json = json.dumps(mapa_modalidade, indent=4, ensure_ascii=False)
+
+            # 4. Monta o template final do arquivo JavaScript
+            template_js = f"""
+            // ATENÇÃO: Este arquivo foi gerado automaticamente. NÃO EDITE MANUALMENTE.
+            // Gerado por: PDV main.py
+
+            export const MENU_DATA = {menu_json};
+
+            export const MAPA_ACOMPANHAMENTOS = {mapa_acomp_json};
+
+            export const MAPA_PONTO = {mapa_ponto_json};
+
+            export const MAPA_PAGAMENTO = {mapa_pagamento_json};
+
+            export const MAPA_MODALIDADE = {mapa_modalidade_json};
+            """
+            conteudo_final = template_js.strip()
+            # --- Fim da lógica corrigida ---
+
+            # 5. Exibe o conteúdo na caixa de texto
+            self.text_area_js.setPlainText(conteudo_final)
+
+            # 6. Salva o arquivo no diretório do PDV
+            with open('cardapio-data.js', 'w', encoding='utf-8') as f:
+                f.write(conteudo_final)
+            
+            QMessageBox.information(self, "Sucesso", 
+                "Dicionário JavaScript atualizado com sucesso!\n"
+                "O conteúdo foi exibido na tela e salvo no arquivo 'cardapio-data.js'.")
+
+        except Exception as e:
+            # Fornece um erro mais detalhado para debug futuro
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "Erro", f"Ocorreu um erro ao gerar o dicionário: {e}")
+
+    def copiar_conteudo_js(self):
+        """Copia o conteúdo da caixa de texto para a área de transferência."""
+        conteudo = self.text_area_js.toPlainText()
+        if not conteudo:
+            QMessageBox.warning(self, "Aviso", "A caixa de texto está vazia. Atualize o dicionário primeiro.")
+            return
+            
+        clipboard = QApplication.clipboard()
+        clipboard.setText(conteudo)
+        QMessageBox.information(self, "Copiado!", "O conteúdo do arquivo JS foi copiado para sua área de transferência.")
 
 # --- Janela Principal do Aplicativo ---
 class PainelControle(QWidget):
@@ -383,12 +464,24 @@ class PainelControle(QWidget):
                 background-color: #1e1e1e; color: #d4d4d4; font-family: 'Segoe UI';
             }
             QPushButton {
-                padding: 10px; border-radius: 5px; font-weight: bold; font-size: 14px;
+                background-color: #555; /* Cor de fundo padrão */
+                border: none; /* Remove bordas padrão */
+                padding: 10px; 
+                border-radius: 5px; 
+                font-weight: bold; 
+                font-size: 14px;
             }
-            QPushButton#btn_iniciar { background-color: #28a745; color: white; }
-            QPushButton#btn_iniciar:disabled { background-color: #555; }
-            QPushButton#btn_parar { background-color: #dc3545; color: white; }
-            QPushButton#btn_parar:disabled { background-color: #555; }
+            QPushButton:hover {
+                background-color: #666; /* Efeito ao passar o mouse */
+            }
+            QPushButton:disabled {
+                background-color: #444; /* Estilo para botão desabilitado */
+                color: #888;
+            }
+
+            QPushButton#btn_toggle_servidor_iniciar { background-color: #28a745; color: white; }
+            QPushButton#btn_toggle_servidor_parar { background-color: #dc3545; color: white; }               
+
             QPushButton#btn_atalho, QPushButton#btn_gerenciar { background-color: #007bff; color: white; }
             QPushButton#btn_atalho:disabled, QPushButton#btn_gerenciar:disabled { background-color: #555; }
             QLabel { font-size: 14px; }
@@ -417,30 +510,26 @@ class PainelControle(QWidget):
         self.combo_locais = QComboBox()
         self.combo_locais.setEnabled(False)
 
-        self.btn_gerenciar_locais = QPushButton("Gerenciar Locais")
-        self.btn_gerenciar_locais.setObjectName("btn_gerenciar")
-        self.btn_gerenciar_locais.clicked.connect(self.abrir_modal_locais)
+        # Novo botão de configurações (engrenagem)
+        self.btn_config_geral = QPushButton("⚙️") # Usando o caractere de engrenagem
+        self.btn_config_geral.setObjectName("btn_atalho") # Reutilizando um estilo
+        self.btn_config_geral.setFixedSize(50, 42) # Ajusta o tamanho para parecer um ícone
+        self.btn_config_geral.clicked.connect(self.abrir_modal_configuracoes)
+        layout_controle.addWidget(self.btn_config_geral, 1, 2) # Adiciona na posição 2
 
-        self.btn_configuracoes = QPushButton("Configurações")
-        self.btn_configuracoes.setObjectName("btn_atalho")
-        self.btn_configuracoes.clicked.connect(self.abrir_modal_configuracoes)
 
-        self.btn_iniciar = QPushButton("Iniciar Servidor")
-        self.btn_iniciar.setObjectName("btn_iniciar")
-        self.btn_iniciar.clicked.connect(self.gerenciar_servidor)
+        self.btn_toggle_servidor = QPushButton("Iniciar Servidor")
+        self.btn_toggle_servidor.setObjectName("btn_toggle_servidor_iniciar")
+        self.btn_toggle_servidor.clicked.connect(self.gerenciar_servidor)
 
-        self.btn_parar = QPushButton("Parar Servidor")
-        self.btn_parar.setObjectName("btn_parar")
-        self.btn_parar.clicked.connect(self.gerenciar_servidor)
-        self.btn_parar.setEnabled(False)
 
         layout_controle.addWidget(self.label_status, 0, 0, 2, 1)
         layout_controle.addWidget(label_local, 0, 1)
         layout_controle.addWidget(self.combo_locais, 1, 1)
-        layout_controle.addWidget(self.btn_gerenciar_locais, 1, 2)
-        layout_controle.addWidget(self.btn_configuracoes, 1, 3)
-        layout_controle.addWidget(self.btn_iniciar, 1, 4)
-        layout_controle.addWidget(self.btn_parar, 1, 5)
+        layout_controle.addWidget(self.btn_toggle_servidor, 1, 4, 1, 2) # Ocupa 2 colunas
+
+
+
         grupo_controle.setLayout(layout_controle)
 
         grupo_atalhos = QGroupBox("Atalhos de Acesso")
@@ -473,8 +562,11 @@ class PainelControle(QWidget):
         self.carregar_locais() # Recarrega o dropdown principal após o modal fechar
 
     def abrir_modal_configuracoes(self):
-        modal = ModalConfiguracoesImpressora(self.ip_servidor, self.porta, self)
-        modal.exec() # Abre o modal e espera ele ser fechado
+        # A função que o botão chama agora abre o novo modal unificado
+        modal = ModalConfiguracoesGerais(self.ip_servidor, self.porta, self)
+        modal.exec()
+        # Após fechar o modal, recarrega a lista de locais no painel principal
+        self.carregar_locais()
 
     def carregar_locais(self):
         """Busca a lista de locais diretamente do DB e popula o QComboBox."""
@@ -484,15 +576,15 @@ class PainelControle(QWidget):
             self.combo_locais.clear()
             if not locais:
                 self.combo_locais.addItem("Nenhum local cadastrado", -1)
-                self.btn_iniciar.setEnabled(False) # Desabilita se não houver locais
+                self.btn_toggle_servidor.setEnabled(False) # Desabilita se não houver locais
             else:
                 for local in locais:
                     self.combo_locais.addItem(local['nome'], local['id'])
-                self.btn_iniciar.setEnabled(True) # Habilita se houver locais
+                self.btn_toggle_servidor.setEnabled(True) # Habilita se houver locais
         except Exception as e:
             print(f"Erro ao carregar locais no painel principal: {e}")
             self.combo_locais.addItem("Erro ao carregar", -1)
-            self.btn_iniciar.setEnabled(False)
+            self.btn_toggle_servidor.setEnabled(False)
 
     def definir_local_no_servidor(self):
         """Informa ao servidor Flask qual o local selecionado para a sessão."""
@@ -554,10 +646,9 @@ class PainelControle(QWidget):
                 break
 
     def gerenciar_servidor(self):
-        sender = self.sender()
-        if sender == self.btn_iniciar and not self.servidor_rodando:
+        if not self.servidor_rodando:
             self.iniciar_servidor()
-        elif sender == self.btn_parar and self.servidor_rodando:
+        else:
             self.parar_servidor()
             
     def iniciar_servidor(self):
@@ -631,16 +722,20 @@ class PainelControle(QWidget):
         """Atualiza a interface com base no estado do servidor."""
         if self.servidor_rodando:
             self.label_status.setText(f"<b>Status:</b> <font color='#28a745'>Rodando</font><br><b>IP para acesso:</b> <font color='#FBBF24'>{self.ip_servidor}</font>")
-            self.btn_iniciar.setEnabled(False)
-            self.btn_parar.setEnabled(True)
-            self.btn_gerenciar_locais.setEnabled(False) # Desabilita com servidor rodando
+            self.btn_toggle_servidor.setText("Finalizar Servidor")
+            self.btn_toggle_servidor.setObjectName("btn_toggle_servidor_parar")
             self.combo_locais.setEnabled(False)
+            self.btn_config_geral.setEnabled(False) # Desabilita config com servidor rodando
         else:
             self.label_status.setText(f"<b>Status:</b> <font color='#dc3545'>Parado</font><br><b>IP para acesso:</b> <font color='#FBBF24'>{self.ip_servidor}</font>")
-            self.carregar_locais() # Carrega os locais quando o servidor está parado
-            self.btn_parar.setEnabled(False)
-            self.btn_gerenciar_locais.setEnabled(True) # Habilita com servidor parado
+            self.carregar_locais() 
+            self.btn_toggle_servidor.setText("Iniciar Servidor")
+            self.btn_toggle_servidor.setObjectName("btn_toggle_servidor_iniciar")
             self.combo_locais.setEnabled(True)
+            self.btn_config_geral.setEnabled(True) # Habilita config com servidor parado
+
+        # Aplica o estilo dinamicamente
+        self.btn_toggle_servidor.style().polish(self.btn_toggle_servidor)
 
         for botao in self.findChildren(QPushButton):
             if botao.objectName() == "btn_atalho":

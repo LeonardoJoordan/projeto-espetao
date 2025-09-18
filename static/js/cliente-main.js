@@ -11,12 +11,18 @@ import {
     limparPedido,
     salvarPedido,
     formatCurrency,
-    carrinhoId, // NOVO
-    gerenciarReservaAPI, // NOVO
-    renovarSessaoDebounced // NOVO
+    carrinhoId,
+    gerenciarReservaAPI,
+    renovarSessaoDebounced,
+    enviarPedidoDecodificado,
+    processarPedidoDecodificado // Adicionada aqui
 } from './cliente-logica.js';
 
 import * as estoqueState from './cliente-estoque.js';
+import { decodificarPedido } from './protocolo-serializacao.js'; // Adicionada aqui
+import { MENU_DATA } from '/pdv-data.js';
+
+
 
 
 // ==========================================================
@@ -51,6 +57,7 @@ const modalConfirmacao = document.getElementById('modal-confirmacao-pedido');
 // Variáveis de controle de listeners para evitar duplicação
 let eventoPopupSimplesAtivo = null;
 let eventoPopupAtivo = null;
+let preSelecoesPedido = null;
 
 // ==========================================================
 // 2.5. LÓGICA DE SESSÃO E TEMPO REAL (SOCKET.IO)
@@ -163,7 +170,7 @@ async function mostrarAlerta(titulo, mensagem) {
 
     return new Promise(resolve => {
         tituloEl.textContent = titulo;
-        mensagemEl.textContent = mensagem;
+        mensagemEl.innerHTML = mensagem;
 
         modal.classList.remove('hidden');
         mainContainer.classList.add('content-blurred');
@@ -709,6 +716,30 @@ function abrirPopupConfirmacao() {
             </div>`;
     }).join('');
 
+    // Lógica para pré-selecionar opções de um pedido decodificado com pendências
+    if (preSelecoesPedido) {
+        const { metodo, modalidade } = preSelecoesPedido;
+
+        // Pré-seleciona o método de pagamento
+        const pagtoInput = document.querySelector(`input[name="metodo_pagamento"][value="${metodo}"]`);
+        if (pagtoInput) {
+            pagtoInput.checked = true;
+            document.querySelectorAll('#opcoes-pagamento .ponto-option').forEach(opt => opt.classList.remove('selected'));
+            pagtoInput.closest('.ponto-option').classList.add('selected');
+        }
+
+        // Pré-seleciona a modalidade
+        const modInput = document.querySelector(`input[name="modalidade_entrega"][value="${modalidade}"]`);
+        if (modInput) {
+            modInput.checked = true;
+            document.querySelectorAll('#opcoes-modalidade .ponto-option').forEach(opt => opt.classList.remove('selected'));
+            modInput.closest('.ponto-option').classList.add('selected');
+        }
+        
+        // Limpa a memória para não afetar o próximo pedido manual
+        preSelecoesPedido = null;
+    }
+
     modalConfirmacao.classList.remove('hidden');
     mainContainer.classList.add('content-blurred');
 }
@@ -740,14 +771,21 @@ function atualizarVisualAcento() {
 }
 
 function atualizarTextoTeclado() {
-    if (campoTextoNome && placeholderNome) {
-        if (nomeDigitadoTemp === '') {
-            placeholderNome.classList.remove('hidden');
-            campoTextoNome.textContent = '';
-        } else {
-            placeholderNome.classList.add('hidden');
-            campoTextoNome.textContent = nomeDigitadoTemp;
-        }
+    const container = document.getElementById('campo-nome-container');
+    if (!campoTextoNome || !placeholderNome || !container) return;
+
+    if (nomeDigitadoTemp === '') {
+        placeholderNome.classList.remove('hidden');
+        campoTextoNome.textContent = '';
+        container.classList.remove('is-overflowing'); // Garante que a classe seja removida quando vazio
+    } else {
+        placeholderNome.classList.add('hidden');
+        campoTextoNome.textContent = nomeDigitadoTemp;
+
+        // --- LÓGICA DE DETECÇÃO DE OVERFLOW ---
+        // Compara a largura real do texto com a largura visível do container
+        const hasOverflow = campoTextoNome.scrollWidth > container.clientWidth;
+        container.classList.toggle('is-overflowing', hasOverflow);
     }
 }
 
@@ -766,6 +804,23 @@ if (btnNovoPedido) {
         ajustarLarguraTeclas();
     });
 }
+
+// Listener para o evento de COLAR (Ctrl+V)
+window.addEventListener('paste', (event) => {
+    // Só executa a lógica se a tela do teclado estiver visível
+    if (!telaTeclado || telaTeclado.classList.contains('hidden')) {
+        return;
+    }
+
+    event.preventDefault(); // Impede qualquer comportamento padrão do navegador
+    const pastedText = (event.clipboardData || window.clipboardData).getData('text');
+    
+    // Adiciona o texto colado ao final do que já foi digitado
+    nomeDigitadoTemp += pastedText;
+
+    // Atualiza a interface gráfica
+    atualizarTextoTeclado();
+});
 
 // Listener para as teclas do teclado
 if (tecladoContainer) {
@@ -808,9 +863,9 @@ if (tecladoContainer) {
         if (key === 'Backspace') {
             nomeDigitadoTemp = nomeDigitadoTemp.slice(0, -1);
         } else if (key === 'ESPAÇO') {
-            if (nomeDigitadoTemp.length < 20) nomeDigitadoTemp += ' ';
+            nomeDigitadoTemp += ' ';
         } else {
-            if (nomeDigitadoTemp.length < 20) nomeDigitadoTemp += charToAdd;
+            nomeDigitadoTemp += charToAdd;
         }
         atualizarTextoTeclado();
     });
@@ -819,21 +874,96 @@ if (tecladoContainer) {
 // Listener para o botão "Iniciar Pedido" do teclado
 if (btnIniciar) {
     btnIniciar.addEventListener('click', async () => {
-        const nomeFinal = nomeDigitadoTemp.trim();
-        if (nomeFinal === '') {
-            await mostrarAlerta("Nome Inválido", "Por favor, digite um nome para o pedido.");
+        const textoEntrada = nomeDigitadoTemp.trim();
+        if (textoEntrada === '') {
+            await mostrarAlerta("Entrada Inválida", "Por favor, digite um nome ou cole um código de pedido.");
             return;
         }
-        setNomeCliente(nomeFinal);
 
-        // AGORA, VAI DIRETO PARA O CARDÁPIO
-        if (telaTeclado) telaTeclado.classList.add('hidden');
-        if (mainContainer) mainContainer.classList.remove('content-blurred');
+        // --- LÓGICA DE DETECÇÃO DO CÓDIGO ---
+        // Um código Base64 válido para nós será longo e não terá espaços.
+        const pareceCodigo = textoEntrada.length >= 12 && !textoEntrada.includes(' ') && /[a-z]/.test(textoEntrada) && /[A-Z]/.test(textoEntrada);
 
-        // Limpa o nome temporário e atualiza a UI para o estado inicial do cardápio
-        nomeDigitadoTemp = '';
-        atualizarTextoTeclado();
-        atualizarBotaoPrincipal();
+        if (pareceCodigo) {
+            // --- FLUXO DE DECODIFICAÇÃO (CÓDIGO) ---
+            btnIniciar.disabled = true;
+            btnIniciar.textContent = "Processando...";
+
+            try {
+                // 1. BUSCAR MAPAS DINÂMICOS DA API
+                const response = await fetch('/api/acompanhamentos_visiveis');
+                if (!response.ok) throw new Error('Falha ao buscar dados de acompanhamentos.');
+                const acompanhamentosApi = await response.json();
+
+                // 2. CONSTRUIR OS MAPAS INVERSOS
+                const mapasDinamicos = {
+                    mapaPagamentoInverso: { 1: 'pix', 2: 'cartao_credito', 3: 'cartao_debito', 4: 'dinheiro' },
+                    mapaModalidadeInverso: { 1: 'local', 2: 'viagem' },
+                    mapaPontoInverso: { 1: 'mal', 2: 'ponto', 3: 'bem' },
+                    mapaAcompanhamentosInverso: {}
+                };
+
+                // Constrói o mapa de acompanhamentos com bitmask dinamicamente
+                acompanhamentosApi.forEach((acomp, index) => {
+                    const bitValue = 1 << index; // 1, 2, 4, 8...
+                    mapasDinamicos.mapaAcompanhamentosInverso[bitValue] = acomp.nome;
+                });
+                
+                console.log('Verificando o cardápio antes de decodificar:', MENU_DATA);
+                // 3. CHAMAR O DECODIFICADOR COM OS MAPAS CORRETOS (O TERCEIRO ARGUMENTO)
+                const resultado = decodificarPedido(textoEntrada, MENU_DATA, mapasDinamicos);
+
+                if (!resultado.sucesso) {
+                    throw new Error(resultado.erro || "O código informado é inválido ou está corrompido.");
+                }
+
+                // --- VALIDAÇÃO DE ESTOQUE (lógica existente) ---
+                // Chama o orquestrador e aguarda o "relatório"
+                const relatorio = await processarPedidoDecodificado(resultado);
+
+                // Esconde a tela do teclado e o blur para mostrar o resultado
+                if (telaTeclado) telaTeclado.classList.add('hidden');
+                if (mainContainer) mainContainer.classList.remove('content-blurred');
+                atualizarBotaoPrincipal();
+
+                // Decide o que fazer com base no relatório
+                if (relatorio.sucesso) {
+                // Cenário B (Tudo OK): Finaliza o pedido automaticamente
+                console.log("Todos os itens em estoque. Finalizando pedido automaticamente...");
+                await salvarPedido(relatorio.metodoPagamento, relatorio.modalidade);
+                } else {
+                // Cenário A (Pendências): Monta e exibe o modal para o atendente
+                preSelecoesPedido = { metodo: relatorio.metodoPagamento, modalidade: relatorio.modalidade };
+                // Monta a nova mensagem formatada em HTML
+                const itensHtml = relatorio.pendencias.map(d => {
+                    const faltou = d.solicitado - d.disponivel;
+                    return `<li><strong>${d.nome}:</strong> Adicionado ${d.disponivel} de ${d.solicitado}, faltou ${faltou}.</li>`;
+                }).join('');
+
+                const mensagemHtml = `
+                    <p class="text-left mb-4">O pedido foi preenchido com os itens disponíveis. As seguintes pendências precisam de atenção:</p>
+                    <ul class="list-disc list-inside text-left space-y-2">
+                        ${itensHtml}
+                    </ul>
+                    <p class="text-center mt-6 text-zinc-400">Verifique com o cliente antes de finalizar.</p>
+                `;
+                await mostrarAlerta("Ajuste de Estoque Necessário", mensagemHtml);
+                }
+            } catch (error) {
+                await mostrarAlerta("Erro de Decodificação", error.message);
+            } finally {
+                btnIniciar.disabled = false;
+                btnIniciar.textContent = "Iniciar Pedido";
+            }
+        } else {
+            // --- FLUXO NORMAL (NOME) ---
+            setNomeCliente(textoEntrada);
+            if (telaTeclado) telaTeclado.classList.add('hidden');
+            if (mainContainer) mainContainer.classList.remove('content-blurred');
+            nomeDigitadoTemp = '';
+            atualizarTextoTeclado();
+            atualizarBotaoPrincipal();
+        }
     });
 }
 
@@ -844,6 +974,13 @@ window.addEventListener('keydown', (event) => {
         return;
     }
 
+    // --- SUA CORREÇÃO INSERIDA AQUI ---
+    // Ignora se há teclas modificadoras pressionadas (Ctrl, Alt, Meta)
+    if (event.ctrlKey || event.altKey || event.metaKey) {
+        return; // Deixa o navegador lidar com shortcuts como Ctrl+V, Ctrl+C, etc.
+    }
+    // --- FIM DA CORREÇÃO ---
+
     const key = event.key;
 
     // 2. Lida com a tecla Backspace para apagar
@@ -852,9 +989,9 @@ window.addEventListener('keydown', (event) => {
         nomeDigitadoTemp = nomeDigitadoTemp.slice(0, -1);
     }
     // 3. Lida com letras, cedilha e espaço
-    else if (/^[a-zA-ZçÇ ]$/.test(key) && nomeDigitadoTemp.length < 20) {
+    else if (/^[a-zA-ZçÇ ]$/.test(key)) {
         event.preventDefault(); // Impede que a tecla faça outras ações no navegador
-        nomeDigitadoTemp += key.toUpperCase();
+        nomeDigitadoTemp += key;
     }
     // Teclas como Enter, Shift, Tab, etc., serão ignoradas pelo regex.
 

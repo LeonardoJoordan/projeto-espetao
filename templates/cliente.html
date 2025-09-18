@@ -266,6 +266,25 @@
                respeitando a largura calculada. */
             flex-shrink: 0;
         }
+        /* Comportamento híbrido para o campo de nome */
+        #campo-nome-container {
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            /* Por padrão, o texto fica centralizado */
+            justify-content: center;
+            align-items: center;
+        }
+
+        #texto-nome {
+            white-space: nowrap; /* Impede a quebra de linha */
+        }
+
+        /* Quando a classe .is-overflowing é adicionada via JS... */
+        #campo-nome-container.is-overflowing {
+            /* ...o alinhamento muda para o final, empurrando o texto para a esquerda */
+            justify-content: flex-end;
+        }
     </style>
 </head>
 <body class="text-white">
@@ -485,7 +504,7 @@
     </div>
 
     <div id="modal-alerta" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-        <div class="popup-container popup-enter bg-zinc-800 rounded-2xl shadow-2xl w-full max-w-md border border-zinc-700 flex flex-col">
+        <div class="popup-container popup-enter bg-zinc-800 rounded-2xl shadow-2xl w-full max-w-xl border border-zinc-700 flex flex-col">
             <header class="p-6 border-b border-zinc-700">
                 <h2 id="titulo-alerta" class="text-2xl font-bold text-white text-center">Atenção</h2>
             </header>
@@ -499,6 +518,9 @@
     </div>
 
     <script src="{{ url_for('static', filename='js/libs/socket.io.min.js') }}"></script>
+
+    <script type="module" src="{{ url_for('rota_pdv_data_js') }}"></script>
+
     <script type="module" src="{{ url_for('static', filename='js/cliente-main.js') }}"></script>
     
 </body>

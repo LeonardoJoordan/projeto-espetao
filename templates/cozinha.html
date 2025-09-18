@@ -123,21 +123,33 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!response.ok) throw new Error('Falha ao buscar pedidos');
             const pedidos = await response.json();
 
-            if (pedidos.length === 0) {
-                corpoModal.innerHTML = '<p class="text-center opacity-70">Nenhum pedido ativo no momento.</p>';
-                return;
+            let listaHtml;
+            if (pedidos.length > 0) {
+                // Gera a lista de botões de impressão se houver pedidos
+                listaHtml = pedidos.map(pedido =>
+                    `<button
+                        class="btn-imprimir-individual w-full text-left bg-white/10 hover:bg-white/20 p-3 rounded-lg text-lg transition-colors duration-200"
+                        data-id-pedido="${pedido.id}">
+                            <span class="font-bold">#${pedido.senha_diaria}</span> - <span>${pedido.nome_cliente}</span>
+                    </button>`
+                ).join('');
+            } else {
+                // Define a mensagem se não houver pedidos
+                listaHtml = '<p class="text-center opacity-70">Nenhum pedido ativo para impressão.</p>';
             }
 
-            // Transformamos cada pedido em um botão clicável com o ID do pedido
-            const listaHtml = pedidos.map(pedido => 
-                `<button 
-                    class="btn-imprimir-individual w-full text-left bg-white/10 hover:bg-white/20 p-3 rounded-lg text-lg transition-colors duration-200" 
-                    data-id-pedido="${pedido.id}">
-                        <span class="font-bold">#${pedido.senha_diaria}</span> - <span>${pedido.nome_cliente}</span>
-                </button>`
-            ).join('');
+            // Cria o HTML do botão de relatório, que será adicionado abaixo da lista
+            const relatorioBtnHtml = `
+                <div class="border-t border-white/20 pt-4 mt-4">
+                    <a href="#" id="btn-relatorio-fechamento"
+                        class="block w-full text-center bg-blue-500 hover:bg-blue-600 p-3 rounded-lg text-lg font-bold transition-colors duration-200 mb-4 border-b border-white/20 pb-4">
+                            <i class="fas fa-chart-line mr-2"></i>
+                            Relatório de Fechamento
+                        </a>
+                </div>`;
 
-            corpoModal.innerHTML = listaHtml;
+            // Junta a lista (com pedidos ou a mensagem) com o botão e insere no modal
+            corpoModal.innerHTML = listaHtml + relatorioBtnHtml;
 
         } catch (error) {
             console.error("Erro ao carregar pedidos para impressão:", error);
@@ -444,6 +456,43 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- GERENCIADOR DE EVENTOS PRINCIPAL ---
     document.body.addEventListener('click', async function(event) {
+
+        const btnRelatorio = event.target.closest('#btn-relatorio-fechamento');
+        if (btnRelatorio) {
+            event.preventDefault(); // Impede a navegação do link '#'
+
+            const originalText = btnRelatorio.innerHTML;
+            btnRelatorio.disabled = true;
+            btnRelatorio.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Gerando...`;
+
+            try {
+                // Pega a data de hoje e formata como AAAA-MM-DD
+                const dataDeHoje = new Date().toISOString().split('T')[0];
+
+                const response = await fetch('/api/imprimir_relatorio_fechamento', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ data: dataDeHoje })
+                });
+
+                const resultado = await response.json();
+
+                if (response.ok) {
+                    alert(resultado.mensagem); // Exibe "Relatório enviado..." ou "Nenhuma venda..."
+                    fecharModalImpressao();
+                } else {
+                    throw new Error(resultado.mensagem);
+                }
+
+            } catch (error) {
+                console.error("Erro ao gerar relatório:", error);
+                alert(`Erro ao gerar relatório: ${error.message}`);
+                // Restaura o botão em caso de erro
+                btnRelatorio.disabled = false;
+                btnRelatorio.innerHTML = originalText;
+            }
+            return; // Encerra a execução para não processar outros cliques
+        }
 
         // Adicione este bloco de código
         const timerClicado = event.target.closest('.timer-container');

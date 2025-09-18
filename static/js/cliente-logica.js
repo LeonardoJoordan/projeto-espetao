@@ -1,3 +1,5 @@
+import { getEstoque } from './cliente-estoque.js';
+
 // static/js/cliente-logica.js
 
 // ==========================================================
@@ -73,6 +75,40 @@ export async function gerenciarReservaAPI(produtoId, delta) {
     } catch (error) {
         console.error("Falha ao gerenciar reserva:", error);
         return { sucesso: false, mensagem: "Erro de conexão." };
+    }
+}
+
+/**
+ * Consulta a API para obter a disponibilidade real de uma lista de produtos.
+ * @param {Array<object>} itens - A lista de itens do pedido.
+ * @returns {Promise<object>} - Um objeto mapeando ID do produto para sua quantidade disponível.
+ */
+async function verificarDisponibilidadeAPI(itens) {
+    if (!itens || itens.length === 0) {
+        return {};
+    }
+
+    const produtoIds = itens.map(item => item.id);
+
+    try {
+        const response = await fetch('/api/produtos/disponibilidade', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ produto_ids: produtoIds })
+        });
+
+        if (!response.ok) {
+            throw new Error('Falha na resposta do servidor ao verificar disponibilidade.');
+        }
+
+        const data = await response.json();
+        return data.disponibilidades || {};
+
+    } catch (error) {
+        console.error("Erro ao verificar disponibilidade via API:", error);
+        // Em caso de falha de rede, retorna um objeto vazio para não quebrar o fluxo.
+        // A lógica tratará como se não houvesse estoque.
+        return {};
     }
 }
 
@@ -269,6 +305,46 @@ export async function salvarPedido(metodoPagamento, modalidade) { // <-- NOVO PA
     }
 }
 
+/**
+ * Pega um objeto de pedido decodificado e envia diretamente para a API /salvar_pedido.
+ * Usado no Cenário A, quando há estoque para todos os itens.
+ * @param {object} pedidoDecodificado - O objeto retornado pela função decodificarPedido.
+ * @returns {Promise<object>} - A resposta do servidor.
+ */
+export async function enviarPedidoDecodificado(pedidoDecodificado) {
+    // Recriamos a estrutura de dados que a API /salvar_pedido espera
+    const payload = {
+        carrinho_id: carrinhoId, // Usa o ID do carrinho da sessão atual
+        nome_cliente: pedidoDecodificado.nomeCliente,
+        itens: pedidoDecodificado.itens,
+        metodo_pagamento: pedidoDecodificado.metodoPagamento,
+        modalidade: pedidoDecodificado.modalidade
+    };
+
+    console.log("Enviando pedido decodificado diretamente para o servidor:", payload);
+
+    try {
+        const response = await fetch('/salvar_pedido', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            throw new Error('Erro ao salvar pedido direto. Status: ' + response.status);
+        }
+
+        const result = await response.json();
+        mostrarModalSucesso(payload.nome_cliente, result.senha_diaria); // Reutiliza o modal de sucesso
+        return result;
+
+    } catch (error) {
+        console.error("Falha ao enviar o pedido decodificado:", error);
+        alert("Não foi possível registrar o pedido pré-preenchido. Tente novamente.");
+        return Promise.reject(error);
+    }
+}
+
 // ==========================================================
 // 4. FUNÇÕES AUXILIARES (Helpers)
 // ==========================================================
@@ -304,3 +380,57 @@ function mostrarModalSucesso(nomeCliente, senhaPedido) {
         mainContainer.classList.add('content-blurred');
     }
 }
+
+export async function processarPedidoDecodificado(pedidoDecodificado) {
+    console.log("Iniciando processamento online do pedido:", pedidoDecodificado);
+
+    // Passo 1: Consulta a disponibilidade real de todos os itens de uma vez.
+    const disponibilidadeReal = await verificarDisponibilidadeAPI(pedidoDecodificado.itens);
+    console.log("Disponibilidade real recebida do servidor:", disponibilidadeReal);
+
+    // Passo 2: Define o nome do cliente.
+    setNomeCliente(pedidoDecodificado.nomeCliente);
+
+    // Passo 3: Verifica Itens e Estoque usando os dados REAIS.
+    const discrepancias = [];
+
+    for (const itemDecodificado of pedidoDecodificado.itens) {
+      const estoqueDisponivel = disponibilidadeReal[itemDecodificado.id] || 0;
+      const quantidadeDesejada = itemDecodificado.quantidade;
+
+      if (estoqueDisponivel >= quantidadeDesejada) {
+        // Estoque suficiente. Adiciona o item completo.
+        adicionarItemAoPedido(itemDecodificado);
+      } else {
+        // Estoque insuficiente. Registra a discrepância.
+        discrepancias.push({
+          nome: itemDecodificado.nome,
+          solicitado: quantidadeDesejada,
+          disponivel: estoqueDisponivel,
+        });
+
+        if (estoqueDisponivel > 0) {
+          // Adiciona o que for possível.
+          const itemParcial = { ...itemDecodificado };
+          itemParcial.quantidade = estoqueDisponivel;
+          adicionarItemAoPedido(itemParcial);
+        }
+      }
+    }
+
+    // Passo 4: Retorna o relatório para a interface.
+    if (discrepancias.length > 0) {
+      return { 
+            sucesso: false, 
+            pendencias: discrepancias,
+            metodoPagamento: pedidoDecodificado.metodoPagamento,
+            modalidade: pedidoDecodificado.modalidade
+        };
+    } else {
+      return { 
+        sucesso: true, 
+        metodoPagamento: pedidoDecodificado.metodoPagamento,
+        modalidade: pedidoDecodificado.modalidade
+      };
+    }
+  }

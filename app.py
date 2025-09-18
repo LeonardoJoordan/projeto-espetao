@@ -1315,7 +1315,111 @@ def api_imprimir_comanda_pedido(pedido_id):
 
     return jsonify({'status': 'impressao_enfileirada', 'mensagem': 'Comanda enviada para a fila de impressão.'})
 
+def _formatar_e_imprimir_relatorio_fechamento(config_impressora, dados_relatorio):
+    """
+    Função executada em uma thread para formatar e imprimir o relatório de fechamento.
+    """
+    p = None
+    try:
+        ip_configurado = config_impressora.get('ip')
+        if not ip_configurado:
+            print("LOG RELATORIO: IP da impressora não configurado.")
+            return
 
+        host, port = (ip_configurado.split(':') + ['9100'])[:2]
+        port = int(port)
+
+        p = printer.Network(host=host, port=port, timeout=10)
+        p.charcode('CP860')
+        
+        LARGURA_PAPEL = 46 # Largura em caracteres para papel de 80mm com fonte padrão
+
+        # --- Cabeçalho ---
+        p.set(align='center', bold=True, width=2)
+        p.text("Fechamento do Dia\n")
+        p.set(width=1)
+        p.text(f"Data: {dados_relatorio['sumario']['data_relatorio']}\n")
+        p.text("-" * LARGURA_PAPEL + "\n")
+
+        # --- Itens Vendidos ---
+        p.set(align='left', bold=True)
+        p.text("ITENS VENDIDOS\n\n")
+
+        for categoria, itens in dados_relatorio['itens_por_categoria'].items():
+            p.set(bold=True, underline=1)
+            p.text(f"{categoria.upper()}\n")
+            p.set(bold=False, underline=0)
+            
+            for item in itens:
+                texto_item = f"{item['quantidade']}x {item['nome']}"
+                texto_valor = f"R$ {item['valor']:.2f}".replace('.', ',')
+                
+                # Lógica de formatação da linha
+                espacos = LARGURA_PAPEL - len(texto_item) - len(texto_valor)
+                linha_formatada = texto_item + (' ' * espacos) + texto_valor
+                p.text(linha_formatada + "\n")
+            p.text("\n")
+        
+        p.text("-" * LARGURA_PAPEL + "\n")
+
+        # --- Sumário ---
+        p.set(align='left', bold=True)
+        p.text("SUMARIO\n\n")
+        p.set(bold=False)
+
+        sumario = dados_relatorio['sumario']
+        
+        def linha_sumario(label, valor_str):
+            espacos = LARGURA_PAPEL - len(label) - len(valor_str)
+            return label + (' ' * espacos) + valor_str + "\n"
+
+        p.text(linha_sumario("Receita Bruta:", f"R$ {sumario['faturamento_bruto']:.2f}".replace('.', ',')))
+        p.text(linha_sumario("Lucro Apurado:", f"R$ {sumario['lucro_bruto_aproximado']:.2f}".replace('.', ',')))
+        p.text(linha_sumario("Ticket Medio:", f"R$ {sumario['ticket_medio']:.2f}".replace('.', ',')))
+        p.text(linha_sumario("Total de Pedidos:", str(sumario['total_pedidos'])))
+        p.text(linha_sumario("Tempo de Operacao:", sumario['tempo_operacao']))
+
+        # --- Finaliza ---
+        p.text("\n\n\n")
+        p.cut()
+        print(f"LOG RELATORIO: Relatório do dia {sumario['data_relatorio']} enviado para a impressora.")
+
+    except Exception as e:
+        print(f"LOG RELATORIO: ERRO na thread de impressão do relatório: {e}")
+    finally:
+        if p:
+            p.close()
+
+@app.route('/api/imprimir_relatorio_fechamento', methods=['POST'])
+def api_imprimir_relatorio_fechamento():
+    """
+    Recebe uma data, busca os dados de fechamento e dispara a impressão em uma thread.
+    """
+    dados_req = request.get_json()
+    data_str = dados_req.get('data') # Espera uma data no formato 'AAAA-MM-DD'
+
+    if not data_str:
+        return jsonify({'status': 'erro', 'mensagem': 'A data é obrigatória.'}), 400
+
+    # 1. Busca os dados no DB
+    dados_relatorio = gerenciador_db.obter_dados_para_relatorio_fechamento(data_str)
+
+    if not dados_relatorio:
+        return jsonify({'status': 'info', 'mensagem': f'Nenhuma venda encontrada para o dia {data_str}.'}), 200
+
+    # 2. Prepara para impressão
+    if not ESCPOS_INSTALADO:
+        return jsonify({'status': 'erro_config', 'mensagem': 'Biblioteca de impressão não instalada no servidor.'}), 500
+
+    config = _obter_config_impressora()
+    if not config.get('ip'):
+        return jsonify({'status': 'erro_config', 'mensagem': 'IP da impressora não configurado no servidor.'}), 400
+
+    # 3. Dispara a impressão em uma nova thread
+    thread = threading.Thread(target=_formatar_e_imprimir_relatorio_fechamento, args=(config, dados_relatorio))
+    thread.start()
+
+    return jsonify({'status': 'sucesso', 'mensagem': 'Relatório enviado para a fila de impressão.'})
 
 @app.route('/')
 def index():

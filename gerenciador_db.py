@@ -3,6 +3,8 @@ import json
 from datetime import datetime, timedelta, timezone
 import random
 import uuid # Usaremos para o carrinho_id
+import pytz
+import collections
 
 NOME_BANCO_DADOS = 'espetao.db'
 
@@ -2126,3 +2128,115 @@ def obter_dados_para_menu_data_js():
     finally:
         if conn:
             conn.close()
+
+def obter_dados_para_relatorio_fechamento(data_str):
+    """
+    Busca e consolida todos os dados de vendas para um dia operacional específico.
+    O dia operacional começa às 5h da manhã.
+    """
+    try:
+        # 1. Calcular o intervalo de tempo do dia operacional em UTC
+        tz_sp = pytz.timezone('America/Sao_Paulo')
+        dia_selecionado = datetime.strptime(data_str, '%Y-%m-%d')
+
+        inicio_local = tz_sp.localize(dia_selecionado.replace(hour=5, minute=0, second=0, microsecond=0))
+        fim_local = inicio_local + timedelta(days=1, microseconds=-1)
+
+        inicio_utc_str = inicio_local.astimezone(pytz.utc).isoformat()
+        fim_utc_str = fim_local.astimezone(pytz.utc).isoformat()
+
+        conn = sqlite3.connect(NOME_BANCO_DADOS)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        # 2. Buscar todos os pedidos finalizados no período
+        cursor.execute("""
+            SELECT itens_json, valor_total, custo_total_pedido, timestamp_finalizacao
+            FROM pedidos
+            WHERE status = 'finalizado' AND timestamp_finalizacao BETWEEN ? AND ?
+            ORDER BY timestamp_finalizacao ASC
+        """, (inicio_utc_str, fim_utc_str))
+        pedidos_finalizados = cursor.fetchall()
+
+        if not pedidos_finalizados:
+            return None # Retorna None se não houver vendas no dia
+
+        # 3. Processar os dados
+        faturamento_bruto = 0
+        custo_total = 0
+        primeiro_pedido_ts = None
+        ultimo_pedido_ts = None
+        itens_agregados = collections.defaultdict(lambda: {'quantidade': 0, 'valor': 0})
+
+        for pedido in pedidos_finalizados:
+            faturamento_bruto += pedido['valor_total']
+            custo_total += pedido['custo_total_pedido'] or 0
+
+            ts_finalizacao = datetime.fromisoformat(pedido['timestamp_finalizacao'])
+            if primeiro_pedido_ts is None:
+                primeiro_pedido_ts = ts_finalizacao
+            ultimo_pedido_ts = ts_finalizacao
+
+            itens = json.loads(pedido['itens_json'])
+            for item in itens:
+                item_id = item['id']
+                itens_agregados[item_id]['quantidade'] += item['quantidade']
+                itens_agregados[item_id]['valor'] += item['preco'] * item['quantidade']
+
+        # 4. Enriquecer os itens agregados com nomes e categorias
+        ids_produtos = list(itens_agregados.keys())
+        if not ids_produtos:
+            return None
+
+        placeholders = ','.join('?' for _ in ids_produtos)
+        cursor.execute(f"""
+            SELECT p.id, p.nome, c.nome as categoria_nome
+            FROM produtos p
+            LEFT JOIN categorias c ON p.categoria_id = c.id
+            WHERE p.id IN ({placeholders})
+        """, ids_produtos)
+
+        mapa_produtos = {row['id']: {'nome': row['nome'], 'categoria': row['categoria_nome'] or 'Sem Categoria'} for row in cursor.fetchall()}
+
+        itens_por_categoria = collections.defaultdict(list)
+        for item_id, dados in itens_agregados.items():
+            info_produto = mapa_produtos.get(item_id)
+            if info_produto:
+                categoria = info_produto['categoria']
+                itens_por_categoria[categoria].append({
+                    'nome': info_produto['nome'],
+                    'quantidade': dados['quantidade'],
+                    'valor': dados['valor']
+                })
+
+        conn.close()
+
+        # 5. Calcular o sumário final
+        total_pedidos = len(pedidos_finalizados)
+        lucro_bruto = faturamento_bruto - custo_total
+        ticket_medio = faturamento_bruto / total_pedidos if total_pedidos > 0 else 0
+
+        tempo_operacao_str = "N/A"
+        if primeiro_pedido_ts and ultimo_pedido_ts:
+            delta_tempo = ultimo_pedido_ts - primeiro_pedido_ts
+            total_seconds = int(delta_tempo.total_seconds())
+            hours, remainder = divmod(total_seconds, 3600)
+            minutes, _ = divmod(remainder, 60)
+            tempo_operacao_str = f"{hours}h {minutes}min"
+
+        # 6. Montar o dicionário de retorno
+        return {
+            "sumario": {
+                "total_pedidos": total_pedidos,
+                "faturamento_bruto": faturamento_bruto,
+                "lucro_bruto_aproximado": lucro_bruto,
+                "ticket_medio": ticket_medio,
+                "tempo_operacao": tempo_operacao_str,
+                "data_relatorio": dia_selecionado.strftime('%d/%m/%Y')
+            },
+            "itens_por_categoria": dict(sorted(itens_por_categoria.items()))
+        }
+
+    except Exception as e:
+        print(f"ERRO ao obter dados para relatório de fechamento: {e}")
+        return None

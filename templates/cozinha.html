@@ -464,33 +464,34 @@ document.addEventListener('DOMContentLoaded', function() {
             const originalText = btnRelatorio.innerHTML;
             btnRelatorio.disabled = true;
             btnRelatorio.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Gerando...`;
+            
+            // ADICIONE ESTE BLOCO NO LUGAR
+        try {
+            // A chamada agora não envia mais um 'body', apenas aciona a API.
+            const response = await fetch('/api/imprimir_relatorio_fechamento', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+                // O 'body' foi removido intencionalmente.
+            });
 
-            try {
-                // Pega a data de hoje e formata como AAAA-MM-DD
-                const dataDeHoje = new Date().toISOString().split('T')[0];
+            const resultado = await response.json();
 
-                const response = await fetch('/api/imprimir_relatorio_fechamento', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ data: dataDeHoje })
-                });
-
-                const resultado = await response.json();
-
-                if (response.ok) {
-                    alert(resultado.mensagem); // Exibe "Relatório enviado..." ou "Nenhuma venda..."
-                    fecharModalImpressao();
-                } else {
-                    throw new Error(resultado.mensagem);
-                }
-
-            } catch (error) {
-                console.error("Erro ao gerar relatório:", error);
-                alert(`Erro ao gerar relatório: ${error.message}`);
-                // Restaura o botão em caso de erro
-                btnRelatorio.disabled = false;
-                btnRelatorio.innerHTML = originalText;
+            if (response.ok) {
+                alert(resultado.mensagem);
+                fecharModalImpressao();
+            } else {
+                throw new Error(resultado.mensagem || 'Erro desconhecido do servidor.');
             }
+
+        } catch (error) {
+            console.error("Erro ao gerar relatório:", error);
+            alert(`Erro ao gerar relatório: ${error.message}`);
+        } finally {
+            // A restauração do botão agora fica no 'finally' para garantir que sempre aconteça.
+            btnRelatorio.disabled = false;
+            btnRelatorio.innerHTML = originalText;
+        }
+            
             return; // Encerra a execução para não processar outros cliques
         }
 

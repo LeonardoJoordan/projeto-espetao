@@ -1390,24 +1390,27 @@ def _formatar_e_imprimir_relatorio_fechamento(config_impressora, dados_relatorio
         if p:
             p.close()
 
+// ADICIONE ESTA NOVA VERSÃO NO LUGAR
 @app.route('/api/imprimir_relatorio_fechamento', methods=['POST'])
 def api_imprimir_relatorio_fechamento():
     """
-    Recebe uma data, busca os dados de fechamento e dispara a impressão em uma thread.
+    Recebe uma data OPCIONAL, busca os dados de fechamento e dispara a impressão.
+    Se nenhuma data for enviada, assume o dia operacional atual.
     """
-    dados_req = request.get_json()
-    data_str = dados_req.get('data') # Espera uma data no formato 'AAAA-MM-DD'
+    # Tenta pegar a data do corpo da requisição. Se não houver corpo ou 'data', data_str será None.
+    dados_req = request.get_json(silent=True) or {}
+    data_str = dados_req.get('data')
 
-    if not data_str:
-        return jsonify({'status': 'erro', 'mensagem': 'A data é obrigatória.'}), 400
+    # A verificação 'if not data_str:' foi removida. Agora 'None' é um valor válido.
 
-    # 1. Busca os dados no DB
+    # 1. Busca os dados no DB, passando a data (que pode ser uma string ou None)
     dados_relatorio = gerenciador_db.obter_dados_para_relatorio_fechamento(data_str)
 
     if not dados_relatorio:
-        return jsonify({'status': 'info', 'mensagem': f'Nenhuma venda encontrada para o dia {data_str}.'}), 200
+        # Mensagem mais genérica, pois pode se referir ao dia atual ou a uma data específica
+        return jsonify({'status': 'info', 'mensagem': 'Nenhuma venda encontrada para o período solicitado.'}), 200
 
-    # 2. Prepara para impressão
+    # 2. Prepara para impressão (lógica inalterada)
     if not ESCPOS_INSTALADO:
         return jsonify({'status': 'erro_config', 'mensagem': 'Biblioteca de impressão não instalada no servidor.'}), 500
 
@@ -1415,7 +1418,7 @@ def api_imprimir_relatorio_fechamento():
     if not config.get('ip'):
         return jsonify({'status': 'erro_config', 'mensagem': 'IP da impressora não configurado no servidor.'}), 400
 
-    # 3. Dispara a impressão em uma nova thread
+    # 3. Dispara a impressão em uma nova thread (lógica inalterada)
     thread = threading.Thread(target=_formatar_e_imprimir_relatorio_fechamento, args=(config, dados_relatorio))
     thread.start()
 

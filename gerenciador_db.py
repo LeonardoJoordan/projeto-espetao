@@ -1,6 +1,6 @@
 import sqlite3
 import json 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, time
 import random
 import uuid # Usaremos para o carrinho_id
 import pytz
@@ -2129,17 +2129,30 @@ def obter_dados_para_menu_data_js():
         if conn:
             conn.close()
 
-def obter_dados_para_relatorio_fechamento(data_str):
+// ADICIONE ESTA NOVA VERSÃO NO LUGAR
+def obter_dados_para_relatorio_fechamento(data_str=None):
     """
-    Busca e consolida todos os dados de vendas para um dia operacional específico.
-    O dia operacional começa às 5h da manhã.
+    Busca e consolida dados de vendas para um dia operacional.
+    Se data_str for fornecida (ex: '2025-09-21'), usa essa data.
+    Se não, calcula o dia operacional atual baseado no horário (corte às 5h).
     """
     try:
-        # 1. Calcular o intervalo de tempo do dia operacional em UTC
         tz_sp = pytz.timezone('America/Sao_Paulo')
-        dia_selecionado = datetime.strptime(data_str, '%Y-%m-%d')
 
-        inicio_local = tz_sp.localize(dia_selecionado.replace(hour=5, minute=0, second=0, microsecond=0))
+        if data_str:
+            # Cenário 1: Uma data específica foi fornecida.
+            dia_selecionado_obj = datetime.strptime(data_str, '%Y-%m-%d').date()
+        else:
+            # Cenário 2: Nenhuma data fornecida. Calcula o dia operacional corrente.
+            agora_sp = datetime.now(tz_sp)
+            # Se for antes das 5h da manhã, o dia operacional ainda é o de ontem.
+            if agora_sp.hour < 5:
+                dia_selecionado_obj = (agora_sp - timedelta(days=1)).date()
+            else:
+                dia_selecionado_obj = agora_sp.date()
+
+        # A partir daqui, a lógica é a mesma, usando o objeto de data que definimos.
+        inicio_local = tz_sp.localize(datetime.combine(dia_selecionado_obj, time(5, 0)))
         fim_local = inicio_local + timedelta(days=1, microseconds=-1)
 
         inicio_utc_str = inicio_local.astimezone(pytz.utc).isoformat()
@@ -2149,7 +2162,7 @@ def obter_dados_para_relatorio_fechamento(data_str):
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
-        # 2. Buscar todos os pedidos finalizados no período
+        # 2. Buscar todos os pedidos finalizados no período (o resto da função continua igual)
         cursor.execute("""
             SELECT itens_json, valor_total, custo_total_pedido, timestamp_finalizacao
             FROM pedidos
@@ -2232,7 +2245,7 @@ def obter_dados_para_relatorio_fechamento(data_str):
                 "lucro_bruto_aproximado": lucro_bruto,
                 "ticket_medio": ticket_medio,
                 "tempo_operacao": tempo_operacao_str,
-                "data_relatorio": dia_selecionado.strftime('%d/%m/%Y')
+                "data_relatorio": dia_selecionado_obj.strftime('%d/%m/%Y')
             },
             "itens_por_categoria": dict(sorted(itens_por_categoria.items()))
         }

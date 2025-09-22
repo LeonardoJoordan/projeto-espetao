@@ -1390,7 +1390,7 @@ def _formatar_e_imprimir_relatorio_fechamento(config_impressora, dados_relatorio
         if p:
             p.close()
 
-// ADICIONE ESTA NOVA VERSÃO NO LUGAR
+# ADICIONE ESTA NOVA VERSÃO NO LUGAR
 @app.route('/api/imprimir_relatorio_fechamento', methods=['POST'])
 def api_imprimir_relatorio_fechamento():
     """

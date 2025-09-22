@@ -20,7 +20,7 @@
         /* A rolagem suave agora é controlada pelo JavaScript para evitar conflito */
         body {
             font-family: 'Roboto', sans-serif;
-            background-color: var(--background-dark);
+            background-color: transparent;
             color: var(--text-light);
         }
         h1, h2, h3, h4 { font-family: 'Poppins', sans-serif; font-weight: 700; }
@@ -288,6 +288,11 @@
     </style>
 </head>
 <body class="text-white">
+
+    <video autoplay loop muted playsinline id="video-background" class="fixed top-0 left-0 w-full h-full object-cover -z-10">
+        <source src="{{ url_for('static', filename='images/brasa.mp4') }}" type="video/mp4">
+        Seu navegador não suporta vídeos em HTML5.
+    </video>
 
     <!-- ===== MODAL: NOVO PEDIDO ===== -->
     <div id="tela-inicial" class="screen fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-md z-30">

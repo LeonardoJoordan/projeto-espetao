@@ -2129,7 +2129,7 @@ def obter_dados_para_menu_data_js():
         if conn:
             conn.close()
 
-// ADICIONE ESTA NOVA VERSÃO NO LUGAR
+# ADICIONE ESTA NOVA VERSÃO NO LUGAR
 def obter_dados_para_relatorio_fechamento(data_str=None):
     """
     Busca e consolida dados de vendas para um dia operacional.

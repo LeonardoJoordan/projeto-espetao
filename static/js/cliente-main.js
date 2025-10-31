@@ -1042,13 +1042,6 @@ document.addEventListener('click', async (event) => { // <--- Função agora é 
     const productCard = addButton.closest('.product-card');
     const produtoId = productCard.dataset.id;
 
-    // PONTO DE ATENÇÃO #1 e #3: VERIFICAÇÃO PREVENTIVA
-    const estoqueDisponivel = estoqueState.getEstoque(produtoId);
-    if (estoqueDisponivel <= 0) {
-        await mostrarAlerta(`Putz, acabou por aqui!`, `Não há mais unidades deste item no momento.`);
-        return; // Impede a continuação
-    }
-
     // Animação de "fogo" (lógica mantida)
     addButton.classList.add('firing');
     setTimeout(() => addButton.classList.remove('firing'), 300);
@@ -1056,10 +1049,19 @@ document.addEventListener('click', async (event) => { // <--- Função agora é 
     // Tenta fazer a reserva na API
     const resultadoReserva = await gerenciarReservaAPI(produtoId, 1);
 
+    // Validação: Se a resposta não for um objeto válido, trata como erro
+    if (!resultadoReserva || typeof resultadoReserva !== 'object') {
+        console.error(`Resposta inválida da API para produto ${produtoId}:`, resultadoReserva);
+        await mostrarAlerta(`Erro na comunicação`, `Não conseguimos processar sua requisição. Tente novamente.`);
+        return;
+    }
+
     // PONTO DE ATENÇÃO #5: Sincroniza o estado local com a resposta da API
-    if (resultadoReserva.produtos_afetados && resultadoReserva.produtos_afetados.length > 0) {
+    if (resultadoReserva.produtos_afetados && Array.isArray(resultadoReserva.produtos_afetados) && resultadoReserva.produtos_afetados.length > 0) {
         const update = resultadoReserva.produtos_afetados[0];
-        estoqueState.setEstoque(update.produto_id, update.disponivel);
+        if (update.produto_id !== undefined && update.disponivel !== undefined) {
+            estoqueState.setEstoque(update.produto_id, update.disponivel);
+        }
     }
 
     if (resultadoReserva.sucesso) {

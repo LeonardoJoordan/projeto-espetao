@@ -106,9 +106,8 @@ async function verificarDisponibilidadeAPI(itens) {
 
     } catch (error) {
         console.error("Erro ao verificar disponibilidade via API:", error);
-        // Em caso de falha de rede, retorna um objeto vazio para não quebrar o fluxo.
-        // A lógica tratará como se não houvesse estoque.
-        return {};
+        // CRÍTICO: Em caso de falha, lançar erro para que o fluxo não continue silenciosamente
+        throw new Error(`Falha ao verificar disponibilidade: ${error.message}`);
     }
 }
 

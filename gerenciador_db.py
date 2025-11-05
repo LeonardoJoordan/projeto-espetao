@@ -175,22 +175,20 @@ def obter_todos_produtos():
         # Garante que reservas expiradas sejam limpas antes da consulta
         _executar_limpeza_reservas(cursor)
 
-        # Query otimizada que calcula on_hand (ledger) e reservado (carrinhos)
-        # e já filtra no SQL por disponibilidade > 0
+        # Query corrigida: Usa COALESCE para evitar valores NULL
+        # e calcula disponibilidade ANTES de filtrar (não dentro do HAVING)
         agora_utc = datetime.now(timezone.utc).isoformat()
         cursor.execute('''
             SELECT 
                 p.id, p.nome, p.descricao, p.foto_url, p.preco_venda, 
                 c.nome as categoria_nome, p.categoria_id, p.requer_preparo,
                 c.ordem as categoria_ordem, p.ordem as produto_ordem,
-                (SELECT COALESCE(SUM(m.quantidade), 0) FROM estoque_movimentacoes m WHERE m.produto_id = p.id) as on_hand,
-                (SELECT COALESCE(SUM(r.quantidade_reservada), 0) 
+                COALESCE((SELECT SUM(m.quantidade) FROM estoque_movimentacoes m WHERE m.produto_id = p.id), 0) as on_hand,
+                COALESCE((SELECT SUM(r.quantidade_reservada) 
                  FROM reservas_carrinho r 
-                 WHERE r.produto_id = p.id AND r.expires_at > ?) as reservado
+                 WHERE r.produto_id = p.id AND r.expires_at > ?), 0) as reservado
             FROM produtos p
             LEFT JOIN categorias c ON p.categoria_id = c.id
-            GROUP BY p.id
-            HAVING (on_hand - reservado) > 0
             ORDER BY c.ordem, p.ordem, p.nome
         ''', (agora_utc,))
 
@@ -201,14 +199,17 @@ def obter_todos_produtos():
 
             disponivel = on_hand - reservado
 
-            produtos_lista.append({
-                'id': id_produto, 'nome': nome, 'descricao': descricao, 'foto_url': foto_url,
-                'preco_venda': preco_venda, 
-                'estoque': disponivel, # Enviando a disponibilidade real para o template
-                'categoria': categoria, 'categoria_id': categoria_id,
-                'requer_preparo': requer_preparo,
-                'categoria_ordem': categoria_ordem, 'produto_ordem': produto_ordem
-            })
+            # ✅ CORREÇÃO: Filtra apenas produtos com disponibilidade POSITIVA
+            # (em vez de fazer no SQL, fazemos aqui para evitar problemas com GROUP BY)
+            if disponivel > 0:
+                produtos_lista.append({
+                    'id': id_produto, 'nome': nome, 'descricao': descricao, 'foto_url': foto_url,
+                    'preco_venda': preco_venda, 
+                    'estoque': disponivel, # Enviando a disponibilidade real para o template
+                    'categoria': categoria, 'categoria_id': categoria_id,
+                    'requer_preparo': requer_preparo,
+                    'categoria_ordem': categoria_ordem, 'produto_ordem': produto_ordem
+                })
 
         return produtos_lista
     except sqlite3.Error as e:

@@ -431,45 +431,19 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 4. Lógica Principal de Carregamento
 
-    // Função auxiliar para converter snake_case para camelCase
-    function toCamelCase(s) {
-        return s.replace(/([-_][a-z])/ig, ($1) => {
-            return $1.toUpperCase().replace('-', '').replace('_', '');
-        });
-    }
-
-    // O Adapter: nosso tradutor de payload
+    // O Adapter: Passa os dados já formatados em camelCase pelo backend
     function adaptarRespostaFechamentoV2(data) {
-        console.debug('[FechamentoV2] Adaptando payload recebido:', data);
+        console.debug('[FechamentoV2] Dados recebidos:', data);
         const raw = data || {};
-
-        // Mapeia chaves de um objeto para camelCase
-        const mapKeys = (obj) => {
-            if (typeof obj !== 'object' || obj === null) return obj;
-            return Object.keys(obj).reduce((acc, key) => {
-                acc[toCamelCase(key)] = obj[key];
-                return acc;
-            }, {});
-        };
-
-        // Adapta um array de objetos
-        const mapArray = (arr) => (arr || []).map(item => mapKeys(item));
-
-        // Ponto da correção: Aceita tanto o nome antigo (camelCase) quanto o novo (snake_case)
-        const rawHistorico = raw.historicoPedidos || raw.historico_pedidos || {};
-        const rawItensTop = raw.itensTop || raw.itens_top || [];
-        const rawEstoque = raw.estoque || raw.estoque || [];
-
+        
+        // Garante que todos os campos existem com valores padrão
         return {
-            kpis: mapKeys(raw.kpis),
-            vendasPorPagamento: raw.vendasPorPagamento, 
-            vendasPorPeriodo: raw.vendasPorPeriodo,   
-            itensTop: mapArray(rawItensTop),
-            estoque: mapArray(rawEstoque),
-            historicoPedidos: {
-                ...mapKeys(rawHistorico), // Mapeia a raiz do histórico (page, limit, etc.)
-                items: mapArray(rawHistorico.items) // Mapeia os itens internos para camelCase
-            }
+            kpis: raw.kpis || {},
+            vendasPorPagamento: raw.vendasPorPagamento || {},
+            vendasPorPeriodo: raw.vendasPorPeriodo || {},
+            itensTop: raw.itensTop || [],
+            estoque: raw.estoque || [],
+            historicoPedidos: raw.historicoPedidos || { items: [], page: 1, limit: 50, total: 0 }
         };
     }
 
@@ -523,7 +497,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <td class="px-4 py-2">${item.nome}</td>
                     <td class="px-4 py-2 text-center">${item.inicial}</td>
                     <td class="px-4 py-2 text-center text-green-400">+${item.entradas}</td>
-                    <td class="px-4 py-2 text-center font-semibold">${item.estoqueAtual}</td>
+                    <td class="px-4 py-2 text-center font-semibold">${item.estoque_atual || item.estoqueAtual || 0}</td>
                     <td class="px-4 py-2 text-center text-red-400">-${item.saidas}</td>
                     <td class="px-4 py-2 text-center font-bold">${item.final}</td>
                 </tr>`).join('');

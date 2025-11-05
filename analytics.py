@@ -110,10 +110,20 @@ def insights_heatmap(inicio, fim, filtros):
     }
 
 # Ao final de analytics.py, adicione as novas funções
-def fechamento_operacional_v2(inicio, fim, local_id, page, limit):
+def fechamento_operacional_v2(inicio, fim, local_id, page=1, limit=50):
     """
     V2: Orquestra a busca de dados e a serialização para o novo formato da API.
     Calcula KPIs de lucro e perdas diretamente do ledger de estoque para máxima precisão.
+    
+    Args:
+        inicio (str): Data/hora de início em ISO 8601
+        fim (str): Data/hora de fim em ISO 8601
+        local_id (str): ID do local ou 'todos'
+        page (int): Número da página para paginação (padrão: 1)
+        limit (int): Quantidade de registros por página (padrão: 50)
+    
+    Returns:
+        dict: Dados formatados conforme especificação da API V2
     """
     # === PASSO 1: BUSCAR A "MATÉRIA-PRIMA" DO BANCO DE DADOS ===
     pedidos_finalizados = gerenciador_db.obter_pedidos_finalizados_periodo(inicio, fim, local_id)
@@ -132,9 +142,9 @@ def fechamento_operacional_v2(inicio, fim, local_id, page, limit):
     for mov in movimentacoes_periodo:
         if mov['quantidade'] < 0: # Apenas saídas
             custo_da_saida = abs(mov['quantidade']) * (mov.get('custo_unitario_aplicado') or 0)
-            if mov['origem'] == 'pedido':
+            if mov.get('origem') == 'pedido':
                 cogs_total += custo_da_saida
-            elif mov['origem'] == 'ajuste':
+            elif mov.get('origem') == 'ajuste':
                 perdas_total += custo_da_saida
 
     lucro_bruto = faturamento_bruto - cogs_total
@@ -142,7 +152,8 @@ def fechamento_operacional_v2(inicio, fim, local_id, page, limit):
     # Desconta as taxas de pagamento para chegar ao lucro líquido final
     desconto_total_taxas = 0
     for p in pedidos_finalizados:
-        taxa_percentual = configuracoes.get(f"taxa_{p['metodo_pagamento']}", 0)
+        metodo_pag = p.get('metodo_pagamento', 'desconhecido')
+        taxa_percentual = configuracoes.get(f"taxa_{metodo_pag}", 0)
         desconto_total_taxas += p['valor_total'] * (taxa_percentual / 100.0)
 
     lucro_liquido_final = lucro_bruto - desconto_total_taxas
@@ -223,7 +234,7 @@ def fechamento_operacional_v2(inicio, fim, local_id, page, limit):
     dados_brutos = {
         "kpis": {
             "faturamento_bruto": faturamento_bruto,
-            "lucro_bruto": lucro_liquido_final,
+            "lucro_liquido_final": lucro_liquido_final,
             "perdas_ajustes": perdas_total,
             "pedidos": total_pedidos,
             "ticket_medio": ticket_medio,

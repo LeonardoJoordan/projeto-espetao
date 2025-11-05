@@ -31,12 +31,12 @@ class FechamentoSerializer:
         itens_historico_formatados = [
             {
                 "id": item.get('id', 0),
-                "nome_cliente": item.get('nome_cliente', ''),
-                "horario": item.get('timestamp_finalizacao', ''), # Supondo que o DB retorna ISO UTC
-                "valor_total": item.get('valor_total', 0),
-                "metodo_pagamento": item.get('metodo_pagamento', ''),
-                "itens_json": item.get('itens_json', '[]') or '[]',
-                 "senha_diaria": item.get('senha_diaria', 0) # Garante que não seja None, e sim "[]"
+                "nomeCliente": item.get('nome_cliente', ''),
+                "horario": item.get('timestamp_finalizacao', ''),  # Campo correto do DB
+                "valorTotal": item.get('valor_total', 0),
+                "metodoPagamento": item.get('metodo_pagamento', ''),
+                "itensJson": item.get('itens_json', '[]') or '[]',
+                "senhaDiaria": item.get('senha_diaria', 0)
             } for item in itens_paginados
         ]
 
@@ -45,7 +45,7 @@ class FechamentoSerializer:
                 "nome": item.get('nome', ''),
                 "inicial": item.get('inicial', 0),
                 "entradas": item.get('entradas', 0),
-                "estoque_atual": item.get('estoque_do_dia', 0), # Novo campo
+                "estoqueAtual": item.get('estoque_do_dia', 0),
                 "saidas": item.get('saidas', 0),
                 "final": item.get('final', 0)
             } for item in dados_brutos.get('estoque', [])
@@ -54,14 +54,14 @@ class FechamentoSerializer:
         resultado = {
             "kpis": {
                 "faturamentoBruto": kpis_brutos.get('faturamento_bruto', 0),
-                "lucroEstimado": kpis_brutos.get('lucro_bruto', 0), # Ajustar se a lógica mudar
+                "lucroEstimado": kpis_brutos.get('lucro_liquido_final', 0),
                 "perdasAjustes": kpis_brutos.get('perdas_ajustes', 0),
                 "pedidosRealizados": kpis_brutos.get('pedidos', 0),
                 "ticketMedio": kpis_brutos.get('ticket_medio', 0),
                 "mediaItensPedido": kpis_brutos.get('media_itens_pedido', 0)
             },
-            "itens_top": dados_brutos.get('itens_top', []),
-            "historico_pedidos": {
+            "itensTop": dados_brutos.get('itens_top', []),
+            "historicoPedidos": {
                 "items": itens_historico_formatados,
                 "page": paginacao.get('page', 1),
                 "limit": paginacao.get('limit', 50),

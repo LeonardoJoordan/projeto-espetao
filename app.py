@@ -435,9 +435,9 @@ def adicionar_produto():
 
         else:
             # --- CAMINHO DE CRIAÇÃO ---
-            preco_venda = float(preco_venda_str)
-            preco_compra = float(request.form.get('preco_compra'))
-            quantidade = int(request.form.get('quantidade'))
+            preco_venda = float(preco_venda_str) if preco_venda_str else 0
+            preco_compra = float(request.form.get('preco_compra')) if request.form.get('preco_compra') else 0
+            quantidade = int(request.form.get('quantidade')) if request.form.get('quantidade') else 0
             # Passa o nome da foto salva para o DB
             gerenciador_db.adicionar_novo_produto(nome, descricao, nome_foto_salva, preco_venda, quantidade, preco_compra, categoria_id, requer_preparo)
 

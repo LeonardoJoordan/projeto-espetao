@@ -386,6 +386,11 @@
                     document.getElementById('preco_compra').value = produtoItem.dataset.precoCompra;
                     document.getElementById('requer_preparo').checked = produtoItem.dataset.requerPreparo == '1';
                     document.getElementById('quantidade').value = '';
+                    
+                    // Mostra a dica de edição quando quantidade está vazia (edição sem ajuste de estoque)
+                    const dicaQuantidade = document.getElementById('dica-quantidade');
+                    dicaQuantidade.classList.add('hidden');
+                    
                     // Lógica para exibir a foto atual na pré-visualização
                     const fotoPreview = document.getElementById('foto-preview');
                     const urlFotoAtual = produtoItem.dataset.fotoUrl;
@@ -707,14 +712,16 @@
                 let mensagemErro = '';
                 
                 if (!idProduto) {
+                    // CRIANDO um novo produto: todos os campos são obrigatórios
                     if (!nomeProduto) mensagemErro += '• Nome do produto é obrigatório\n';
                     if (!categoriaProduto) mensagemErro += '• Categoria é obrigatória\n';
                     if (!precoVenda) mensagemErro += '• Preço de venda é obrigatório\n';
                     if (!precoCompra) mensagemErro += '• Preço de compra é obrigatório\n';
                     if (!quantidade) mensagemErro += '• Quantidade é obrigatória\n';
                 } else {
+                    // EDITANDO um produto existente: quantidade e preco_compra são opcionais
                     if (nomeProduto && !categoriaProduto) {
-                         mensagemErro = '• Ao editar o nome, a categoria também deve ser selecionada.\n';
+                        mensagemErro = '• Ao editar o nome, a categoria também deve ser selecionada.\n';
                     }
                     else if (quantidade && !precoCompra) {
                         mensagemErro = '• Ao adicionar estoque, o preço de compra é obrigatório';

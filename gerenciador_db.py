@@ -1837,7 +1837,7 @@ def obter_mapa_custo_medio_atual():
         for produto_id, custo_total, quantidade_total in cursor.fetchall():
             # Evita divisão por zero se a quantidade total for 0 por algum motivo
             if quantidade_total > 0:
-                custo_medio = custo_total / quantidade_total
+                custo_medio = round(custo_total / quantidade_total, 2)
                 mapa_custos[produto_id] = custo_medio
             else:
                 mapa_custos[produto_id] = 0

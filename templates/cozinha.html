@@ -467,11 +467,23 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // ADICIONE ESTE BLOCO NO LUGAR
         try {
-            // A chamada agora não envia mais um 'body', apenas aciona a API.
+            // Calcula a data operacional correta (dia operacional = de 5h de hoje até 4:59 de amanhã)
+            const agora = new Date();
+            let dataOperacional = new Date(agora);
+            
+            // Se for antes das 5h da manhã, o dia operacional é na verdade o dia anterior
+            if (agora.getHours() < 5) {
+                dataOperacional.setDate(dataOperacional.getDate() - 1);
+            }
+            
+            // Formata a data no formato YYYY-MM-DD
+            const dataSelecionada = dataOperacional.toISOString().split('T')[0];
+            
+            // A chamada agora envia a data operacional calculada
             const response = await fetch('/api/imprimir_relatorio_fechamento', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-                // O 'body' foi removido intencionalmente.
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ data: dataSelecionada })
             });
 
             const resultado = await response.json();

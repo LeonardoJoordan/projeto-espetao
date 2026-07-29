@@ -1,6 +1,8 @@
 import os
+import sqlite3
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from datetime import datetime, timedelta
 
@@ -63,12 +65,192 @@ class PDVTestCase(unittest.TestCase):
             self.assertNotIn("estoque_atual", colunas_produto)
             self.assertNotIn("estoque_reservado", colunas_produto)
             self.assertNotIn("custo_medio", colunas_produto)
+            self.assertIn("ocultar_quando_esgotado", colunas_produto)
             self.assertIn("pedido_itens", {
                 row["name"]
                 for row in conn.execute(
                     "SELECT name FROM sqlite_master WHERE type = 'table'"
                 )
             })
+            self.assertIn("estoque_lotes", {
+                row["name"]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            })
+            colunas_item = {
+                row["name"] for row in conn.execute("PRAGMA table_info(pedido_itens)")
+            }
+            self.assertIn("custo_total_centavos", colunas_item)
+            colunas_movimento = {
+                row["name"]
+                for row in conn.execute(
+                    "PRAGMA table_info(estoque_movimentacoes)"
+                )
+            }
+            self.assertTrue(
+                {
+                    "lote_id",
+                    "pedido_item_id",
+                    "movimento_origem_id",
+                    "impacta_relatorio",
+                }
+                <= colunas_movimento
+            )
+
+    def test_extensao_de_visibilidade_preserva_banco_v2_existente(self):
+        caminho_v2 = os.path.join(self.temp_dir.name, "schema-v2.db")
+        conn = sqlite3.connect(caminho_v2)
+        try:
+            conn.executescript(
+                """
+                CREATE TABLE schema_version(
+                    version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL
+                );
+                CREATE TABLE produtos(
+                    id INTEGER PRIMARY KEY,
+                    nome TEXT NOT NULL UNIQUE,
+                    descricao TEXT,
+                    foto_url TEXT,
+                    preco_centavos INTEGER NOT NULL,
+                    categoria_id INTEGER,
+                    ordem INTEGER NOT NULL DEFAULT 0,
+                    requer_preparo INTEGER NOT NULL DEFAULT 0,
+                    ativo INTEGER NOT NULL DEFAULT 1
+                );
+                CREATE TABLE pedido_itens(
+                    id INTEGER PRIMARY KEY,
+                    pedido_id INTEGER NOT NULL,
+                    produto_id INTEGER NOT NULL,
+                    custo_unitario_centavos INTEGER NOT NULL,
+                    quantidade INTEGER NOT NULL
+                );
+                CREATE TABLE estoque_movimentacoes(
+                    id INTEGER PRIMARY KEY,
+                    produto_id INTEGER NOT NULL,
+                    pedido_id INTEGER,
+                    tipo TEXT NOT NULL,
+                    quantidade INTEGER NOT NULL,
+                    custo_unitario_centavos INTEGER NOT NULL,
+                    observacao TEXT,
+                    created_at TEXT NOT NULL
+                );
+                """
+            )
+            agora = datetime.now().isoformat()
+            conn.execute(
+                "INSERT INTO schema_version(version, applied_at) VALUES (2, ?)",
+                (agora,),
+            )
+            conn.execute(
+                """
+                INSERT INTO produtos(
+                    id, nome, preco_centavos, categoria_id,
+                    ordem, requer_preparo, ativo
+                ) VALUES (1, 'Produto preservado', 1000, NULL, 0, 0, 1)
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO estoque_movimentacoes(
+                    id, produto_id, tipo, quantidade,
+                    custo_unitario_centavos, created_at
+                ) VALUES (1, 1, 'saldo_inicial', 5, 300, ?)
+                """,
+                (agora,),
+            )
+            conn.execute(
+                """
+                INSERT INTO estoque_movimentacoes(
+                    id, produto_id, tipo, quantidade,
+                    custo_unitario_centavos, created_at
+                ) VALUES (2, 1, 'venda', -1, 300, ?)
+                """,
+                (agora,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        database.inicializar_banco(caminho_v2)
+
+        with closing(database.conectar(caminho_v2)) as migrado:
+            colunas = {
+                row["name"] for row in migrado.execute("PRAGMA table_info(produtos)")
+            }
+            produto = migrado.execute(
+                "SELECT nome, ocultar_quando_esgotado FROM produtos WHERE id = 1"
+            ).fetchone()
+            lote = migrado.execute(
+                """
+                SELECT l.quantidade_inicial,
+                       l.quantidade_inicial + COALESCE(SUM(m.quantidade), 0) AS saldo
+                FROM estoque_lotes l
+                LEFT JOIN estoque_movimentacoes m ON m.lote_id = l.id
+                WHERE l.produto_id = 1
+                GROUP BY l.id
+                """
+            ).fetchone()
+            self.assertIn("ocultar_quando_esgotado", colunas)
+            self.assertEqual(produto["nome"], "Produto preservado")
+            self.assertEqual(produto["ocultar_quando_esgotado"], 0)
+            self.assertEqual(lote["quantidade_inicial"], 5)
+            self.assertEqual(lote["saldo"], 4)
+            self.assertEqual(
+                migrado.execute("SELECT MAX(version) FROM schema_version").fetchone()[0],
+                4,
+            )
+
+    def test_migracao_v3_habilita_ajuste_neutro_sem_apagar_movimentos(self):
+        caminho_v3 = os.path.join(self.temp_dir.name, "schema-v3.db")
+        conn = sqlite3.connect(caminho_v3)
+        try:
+            conn.executescript(
+                """
+                CREATE TABLE schema_version(
+                    version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL
+                );
+                CREATE TABLE estoque_movimentacoes(
+                    id INTEGER PRIMARY KEY,
+                    produto_id INTEGER NOT NULL,
+                    tipo TEXT NOT NULL,
+                    quantidade INTEGER NOT NULL,
+                    custo_unitario_centavos INTEGER NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                INSERT INTO schema_version(version, applied_at)
+                VALUES (3, '2026-01-01T00:00:00+00:00');
+                INSERT INTO estoque_movimentacoes(
+                    id, produto_id, tipo, quantidade,
+                    custo_unitario_centavos, created_at
+                ) VALUES (1, 10, 'venda', -2, 350, '2026-01-01T00:00:00+00:00');
+                """
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        database.inicializar_banco(caminho_v3)
+
+        with closing(database.conectar(caminho_v3)) as migrado:
+            movimento = migrado.execute(
+                """
+                SELECT quantidade, custo_unitario_centavos, impacta_relatorio
+                FROM estoque_movimentacoes WHERE id = 1
+                """
+            ).fetchone()
+            self.assertEqual(
+                (
+                    movimento["quantidade"],
+                    movimento["custo_unitario_centavos"],
+                    movimento["impacta_relatorio"],
+                ),
+                (-2, 350, 1),
+            )
+            self.assertEqual(
+                migrado.execute("SELECT MAX(version) FROM schema_version").fetchone()[0],
+                4,
+            )
 
     def test_servidor_recalcula_preco_nome_custo_e_total(self):
         pedido = self.novo_pedido(2)
@@ -81,18 +263,189 @@ class PDVTestCase(unittest.TestCase):
         disponibilidade = db.obter_disponibilidade_para_produtos([self.produto_id])
         self.assertEqual(disponibilidade[self.produto_id], 8)
 
+    def test_fifo_consume_lotes_e_guarda_custo_total_exato(self):
+        produto_id = db.adicionar_novo_produto(
+            "Coca FIFO", None, None, 5.00, 10, 3.00, 1, 0
+        )
+        self.assertTrue(db.adicionar_estoque(produto_id, 20, 2.00))
+
+        pedido = db.salvar_novo_pedido(
+            {
+                "nome_cliente": "Cliente FIFO",
+                "itens": [{"id": produto_id, "quantidade": 11}],
+                "metodo_pagamento": "pix",
+                "modalidade": "local",
+                "carrinho_id": "fifo-11",
+            },
+            self.local_id,
+        )
+        self.assertIsNotNone(pedido)
+        salvo = db.obter_pedido_por_id(pedido["id"])
+        self.assertEqual(salvo["itens"][0]["custo_total"], 32.00)
+        self.assertEqual(salvo["itens"][0]["custo_unitario"], 2.91)
+
+        lotes = db.obter_lotes_produto(produto_id)
+        self.assertEqual(
+            [lote["quantidade_disponivel"] for lote in lotes],
+            [0, 19],
+        )
+        with closing(database.conectar()) as conn:
+            saidas = conn.execute(
+                """
+                SELECT quantidade, custo_unitario_centavos
+                FROM estoque_movimentacoes
+                WHERE pedido_id = ? AND tipo = 'venda'
+                ORDER BY id
+                """,
+                (pedido["id"],),
+            ).fetchall()
+            self.assertEqual(
+                [(row["quantidade"], row["custo_unitario_centavos"]) for row in saidas],
+                [(-10, 300), (-1, 200)],
+            )
+
+        self.assertTrue(db.confirmar_pagamento_pedido(pedido["id"]))
+        inicio, fim = self.periodo_do_pagamento(pedido["id"])
+        fechamento = analytics.fechamento_operacional_v2(
+            inicio, fim, "todos", 1, 50
+        )
+        item = next(
+            item
+            for item in fechamento["itens_top"]
+            if item["nome"] == "Coca FIFO"
+        )
+        self.assertEqual(item["custo"], 32.00)
+        self.assertEqual(item["lucro"], 23.00)
+
+    def test_estorno_fifo_restaura_exatamente_os_lotes_consumidos(self):
+        produto_id = db.adicionar_novo_produto(
+            "Produto Estorno FIFO", None, None, 5.00, 2, 3.00, 1, 0
+        )
+        self.assertTrue(db.adicionar_estoque(produto_id, 3, 2.00))
+        pedido = db.salvar_novo_pedido(
+            {
+                "nome_cliente": "Estorno FIFO",
+                "itens": [{"id": produto_id, "quantidade": 4}],
+                "metodo_pagamento": "dinheiro",
+                "modalidade": "local",
+                "carrinho_id": "estorno-fifo",
+            },
+            self.local_id,
+        )
+        self.assertTrue(db.cancelar_pedido(pedido["id"]))
+        self.assertTrue(db.cancelar_pedido(pedido["id"]))
+
+        lotes = db.obter_lotes_produto(produto_id)
+        self.assertEqual(
+            [lote["quantidade_disponivel"] for lote in lotes],
+            [2, 3],
+        )
+        with closing(database.conectar()) as conn:
+            self.assertEqual(
+                conn.execute(
+                    """
+                    SELECT COUNT(*) FROM estoque_movimentacoes
+                    WHERE pedido_id = ? AND tipo = 'estorno'
+                    """,
+                    (pedido["id"],),
+                ).fetchone()[0],
+                2,
+            )
+
+    def test_perda_fifo_consume_lotes_antigos_com_custo_exato(self):
+        produto_id = db.adicionar_novo_produto(
+            "Produto Perda FIFO", None, None, 8.00, 2, 3.00, 1, 0
+        )
+        self.assertTrue(db.adicionar_estoque(produto_id, 3, 2.00))
+        resultado = db.registrar_perda_estoque(
+            produto_id, 4, "Avaria no transporte"
+        )
+        self.assertTrue(resultado["sucesso"])
+        self.assertEqual(resultado["custo_total"], 10.00)
+        self.assertEqual(resultado["saldo"], 1)
+        lotes = db.obter_lotes_produto(produto_id)
+        self.assertEqual(
+            [lote["quantidade_disponivel"] for lote in lotes],
+            [0, 1],
+        )
+
     def test_pedido_sem_estoque_falha_sem_gravacao_parcial(self):
         self.assertIsNone(self.novo_pedido(11))
         with closing(database.conectar()) as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM pedidos").fetchone()[0], 0)
-            saldo = conn.execute(
+            lote = conn.execute(
                 """
-                SELECT SUM(quantidade) FROM estoque_movimentacoes
+                SELECT quantidade_inicial FROM estoque_lotes
                 WHERE produto_id = ?
                 """,
                 (self.produto_id,),
-            ).fetchone()[0]
-            self.assertEqual(saldo, 10)
+            ).fetchone()
+            self.assertEqual(lote["quantidade_inicial"], 10)
+            self.assertEqual(
+                conn.execute(
+                    """
+                    SELECT COUNT(*) FROM estoque_movimentacoes
+                    WHERE produto_id = ?
+                    """,
+                    (self.produto_id,),
+                ).fetchone()[0],
+                0,
+            )
+
+    def test_reserva_absoluta_e_idempotente_com_liberacao_imediata(self):
+        primeira = db.definir_reserva("carrinho-a", self.produto_id, 8)
+        repetida = db.definir_reserva("carrinho-a", self.produto_id, 8)
+        segundo_carrinho = db.definir_reserva("carrinho-b", self.produto_id, 5)
+
+        self.assertTrue(primeira["sucesso"])
+        self.assertTrue(repetida["sucesso"])
+        self.assertEqual(repetida["quantidade_reservada"], 8)
+        self.assertTrue(segundo_carrinho["ajustada"])
+        self.assertEqual(segundo_carrinho["quantidade_reservada"], 2)
+        self.assertEqual(
+            db.obter_disponibilidade_para_produtos([self.produto_id])[
+                self.produto_id
+            ],
+            0,
+        )
+        produto_no_cardapio = next(
+            produto
+            for produto in db.obter_todos_produtos()
+            if produto["id"] == self.produto_id
+        )
+        self.assertEqual(produto_no_cardapio["estoque"], 0)
+
+        liberacao = db.definir_reserva("carrinho-a", self.produto_id, 7)
+        ampliacao = db.definir_reserva("carrinho-b", self.produto_id, 3)
+
+        self.assertTrue(liberacao["sucesso"])
+        self.assertTrue(ampliacao["sucesso"])
+        self.assertEqual(ampliacao["quantidade_reservada"], 3)
+        self.assertEqual(
+            db.obter_disponibilidade_para_produtos([self.produto_id])[
+                self.produto_id
+            ],
+            0,
+        )
+
+    def test_reservas_concorrentes_nao_ultrapassam_o_saldo(self):
+        def reservar(indice):
+            return db.definir_reserva(
+                f"carrinho-concorrente-{indice}",
+                self.produto_id,
+                1,
+            )["quantidade_reservada"]
+
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            quantidades = list(executor.map(reservar, range(20)))
+
+        self.assertEqual(sum(quantidades), 10)
+        self.assertEqual(
+            db.obter_disponibilidade_para_produtos([self.produto_id])[
+                self.produto_id
+            ],
+            0,
+        )
 
     def test_pagamento_define_receita_e_fotografa_taxa(self):
         self.assertTrue(
@@ -178,6 +531,91 @@ class PDVTestCase(unittest.TestCase):
                 self.produto_id
             ],
             7,
+        )
+
+    def test_zeragem_operacional_e_neutra_no_relatorio(self):
+        pedido = self.novo_pedido(1)
+        self.assertTrue(db.confirmar_pagamento_pedido(pedido["id"]))
+        self.assertEqual(
+            db.definir_reserva("carrinho-antes-da-zeragem", self.produto_id, 3)[
+                "quantidade_reservada"
+            ],
+            3,
+        )
+        inicio, fim = self.periodo_do_pagamento(pedido["id"])
+        antes = analytics.fechamento_operacional_v2(
+            inicio, fim, "todos", 1, 50
+        )
+
+        resultado = db.zerar_estoque_produto(self.produto_id)
+        self.assertTrue(resultado["sucesso"])
+        self.assertEqual(resultado["quantidade_zerada"], 9)
+        self.assertEqual(resultado["valor_zerado"], 36.0)
+        self.assertEqual(resultado["reservas_liberadas"], 1)
+        self.assertEqual(resultado["saldo"], 0)
+        self.assertEqual(
+            db.obter_disponibilidade_para_produtos([self.produto_id])[
+                self.produto_id
+            ],
+            0,
+        )
+
+        depois = analytics.fechamento_operacional_v2(
+            inicio, fim, "todos", 1, 50
+        )
+        self.assertEqual(depois["kpis"]["perdasAjustes"], 0)
+        self.assertEqual(
+            depois["kpis"]["resultadoOperacional"],
+            antes["kpis"]["resultadoOperacional"],
+        )
+        estoque = next(
+            item
+            for item in depois["estoque"]
+            if item["produtoId"] == self.produto_id
+        )
+        self.assertEqual(
+            (estoque["entradas"], estoque["saidas"], estoque["final"]),
+            (1, 1, 0),
+        )
+        with closing(database.conectar()) as conn:
+            movimento = conn.execute(
+                """
+                SELECT tipo, quantidade, impacta_relatorio, observacao
+                FROM estoque_movimentacoes
+                WHERE produto_id = ? AND impacta_relatorio = 0
+                """,
+                (self.produto_id,),
+            ).fetchone()
+            self.assertEqual(movimento["tipo"], "ajuste")
+            self.assertEqual(movimento["quantidade"], -9)
+            self.assertEqual(movimento["impacta_relatorio"], 0)
+            self.assertIn("Zeragem operacional", movimento["observacao"])
+
+        repeticao = db.zerar_estoque_produto(self.produto_id)
+        self.assertTrue(repeticao["sucesso"])
+        self.assertEqual(repeticao["quantidade_zerada"], 0)
+
+    def test_zeragem_global_inclui_arquivados_e_libera_reservas(self):
+        segundo_id = db.adicionar_novo_produto(
+            "Produto para zeragem global", None, None, 7.0, 4, 2.5, 1, 0
+        )
+        self.assertTrue(db.excluir_produto(segundo_id))
+        self.assertEqual(
+            db.definir_reserva("reserva-global", self.produto_id, 2)[
+                "quantidade_reservada"
+            ],
+            2,
+        )
+
+        resultado = db.zerar_todos_estoques()
+        self.assertTrue(resultado["sucesso"])
+        self.assertEqual(resultado["produtos_zerados"], 2)
+        self.assertEqual(resultado["quantidade_zerada"], 14)
+        self.assertEqual(resultado["valor_zerado"], 50.0)
+        self.assertEqual(resultado["reservas_liberadas"], 1)
+        self.assertEqual(
+            db.obter_disponibilidade_para_produtos([self.produto_id, segundo_id]),
+            {self.produto_id: 0, segundo_id: 0},
         )
 
     def test_produto_com_historico_e_apenas_arquivado(self):

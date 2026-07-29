@@ -457,7 +457,7 @@ class PainelControle(QWidget):
 
     def configurar_ui(self):
         """Configura a interface gráfica da janela."""
-        self.setWindowTitle('Painel de Controle - Espetão do Léo')
+        self.setWindowTitle('Painel de Controle | PDV Espetinho')
         self.setWindowIcon(QIcon(self.resource_path('icon.png')))
         self.setGeometry(100, 100, 700, 550)
         self.setStyleSheet("""

@@ -1,4 +1,4 @@
-# Modelo de dados v2
+# Modelo de dados v4
 
 Este documento registra as regras que mantêm o banco e os relatórios
 consistentes. Alterações futuras devem preservar estas invariantes.
@@ -13,21 +13,26 @@ consistentes. Alterações futuras devem preservar estas invariantes.
   de pagamento, CMV e itens vendidos são revertidos.
 - O dia operacional vai das 05:00 de uma data até as 05:00 da data seguinte,
   no fuso `America/Sao_Paulo`.
-- O histórico legado de pedidos não é importado. A migração mantém catálogo,
-  configurações, locais e o saldo consolidado atual de cada produto ativo.
+- Cada entrada de estoque cria um lote e as saídas usam PEPS/FIFO.
+- A migração v2 → v4 preserva os cadastros e pedidos existentes. As entradas
+  anteriores são consolidadas em um lote de abertura por produto.
+- A zeragem operacional encerra o saldo físico sem representar receita, perda
+  ou movimentação gerencial. O registro técnico permanece disponível para
+  auditoria com `impacta_relatorio = 0`.
 
 ## Fontes únicas de verdade
 
 | Informação | Fonte |
 | --- | --- |
-| Saldo de estoque | Soma de `estoque_movimentacoes.quantidade` |
+| Saldo de estoque | Lotes de `estoque_lotes` menos suas movimentações |
+| Custo da venda | `pedido_itens.custo_total_centavos` e baixas por lote |
 | Valor e quantidade vendidos | Snapshot em `pedido_itens` |
 | Receita e estornos | Eventos imutáveis em `pagamentos` |
 | Taxa de pagamento | Snapshot no evento de pagamento/estorno |
 | Estado operacional | `pedidos.status` e datas de transição |
 
 Não devem ser recriadas colunas de saldo ou custo atual em `produtos`. Esses
-valores são derivados do livro de movimentações. Também não se deve usar JSON
+valores são derivados dos lotes e suas movimentações. Também não se deve usar JSON
 como fonte financeira: `itens_json` existe apenas nas respostas de
 compatibilidade da aplicação.
 
@@ -35,11 +40,14 @@ compatibilidade da aplicação.
 
 ### Venda
 
-1. O servidor relê nome, preço e custo dos produtos.
+1. O servidor relê nome e preço dos produtos.
 2. Uma transação valida o saldo global descontando reservas de outros
    carrinhos.
-3. Pedido, itens normalizados e saídas de estoque são gravados juntos.
-4. A reserva do carrinho é removida na mesma transação.
+3. Os lotes mais antigos são consumidos primeiro.
+4. Cada parcela consumida fotografa lote, quantidade e custo unitário.
+5. O item guarda o custo total exato, inclusive quando atravessa lotes.
+6. Pedido, itens normalizados e saídas de estoque são gravados juntos.
+7. A reserva do carrinho é removida na mesma transação.
 
 Uma falha em qualquer etapa desfaz toda a operação.
 
@@ -52,7 +60,7 @@ Uma falha em qualquer etapa desfaz toda a operação.
 ### Cancelamento
 
 1. A operação é idempotente.
-2. O estoque é devolvido integralmente.
+2. O estoque é devolvido aos mesmos lotes consumidos.
 3. Se houve pagamento, é criado um evento de estorno integral com a mesma taxa
    registrada no pagamento.
 
@@ -62,13 +70,27 @@ Uma falha em qualquer etapa desfaz toda a operação.
 faturamento líquido = pagamentos - estornos
 CMV líquido          = CMV das vendas - CMV dos estornos
 lucro bruto          = faturamento líquido - CMV líquido
-resultado operacional = lucro bruto - taxas líquidas - perdas/ajustes
+resultado operacional = lucro bruto - taxas líquidas - perdas
 ```
 
 Todas as visões do fechamento, comparativos, gráficos e impressão usam o mesmo
-cálculo em `analytics.py`. Ajustes negativos de inventário são tratados como
-perda; ajustes positivos corrigem o saldo, mas não são reconhecidos como
-receita.
+cálculo em `analytics.py`. Perdas consomem os lotes FIFO e reduzem o resultado.
+Ajustes marcados com `impacta_relatorio = 0` apenas reconciliam o saldo
+operacional e não entram nas métricas financeiras ou nas movimentações
+gerenciais.
+
+## Zeragem operacional
+
+- A zeragem individual e a global consomem integralmente os saldos dos lotes
+  mais antigos.
+- Reservas temporárias dos produtos afetados são removidas na mesma transação.
+- A zeragem global inclui produtos ativos e arquivados que ainda tenham saldo.
+- A operação é idempotente: repetir uma zeragem sobre saldo zero não cria novas
+  movimentações.
+- Os movimentos técnicos usam `tipo = 'ajuste'` e
+  `impacta_relatorio = 0`.
+- Produtos, pedidos, pagamentos e custos já fotografados nas vendas não são
+  alterados.
 
 ## Leituras para tomada de decisão
 
@@ -98,8 +120,9 @@ Execute:
 .venv/bin/python -B scripts/migrar_schema_v2.py espetao.db
 ```
 
-Antes de substituir o banco, o script cria um backup
-`espetao.db.legacy-v1.bak`. A migração pode ser auditada com:
+Antes de alterar um banco v2 ou v3, a aplicação cria um backup consistente
+`espetao.db.pre-v3.bak` ou `espetao.db.pre-v4.bak`. A migração pode ser
+auditada com:
 
 ```bash
 .venv/bin/python -B -m unittest discover -s tests -v
@@ -107,4 +130,6 @@ Antes de substituir o banco, o script cria um backup
 
 Os testes usam bancos temporários e cobrem integridade referencial, preço
 recalculado no servidor, atomicidade de estoque, reconhecimento no pagamento,
-snapshot de taxa, estorno integral, perdas e limites do dia operacional.
+snapshot de taxa, FIFO atravessando lotes, custo total exato, estorno por lote,
+perdas FIFO, zeragem operacional neutra, liberação de reservas e limites do
+dia operacional.

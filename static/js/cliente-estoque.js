@@ -30,7 +30,7 @@ export function inicializarEstoque(produtosCards) {
  * @returns {number} - A quantidade disponível. Retorna 0 se o produto não for encontrado.
  */
 export function getEstoque(produtoId) {
-    return restantePorProduto[produtoId] || 0;
+    return restantePorProduto[produtoId] ?? 0;
 }
 
 /**
@@ -39,5 +39,8 @@ export function getEstoque(produtoId) {
  * @param {number} quantidade - A nova quantidade disponível.
  */
 export function setEstoque(produtoId, quantidade) {
-    restantePorProduto[produtoId] = quantidade;
+    const valorNormalizado = Number(quantidade);
+    if (Number.isFinite(valorNormalizado)) {
+        restantePorProduto[produtoId] = valorNormalizado;
+    }
 }

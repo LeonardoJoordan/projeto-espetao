@@ -1,4 +1,4 @@
-"""Operações transacionais do PDV sobre o esquema canônico v2."""
+"""Operações transacionais do PDV sobre o esquema canônico v3 com FIFO."""
 
 from __future__ import annotations
 
@@ -58,9 +58,15 @@ def _saldo_produto(cursor: sqlite3.Cursor, produto_id: int) -> int:
     return int(
         cursor.execute(
             """
-            SELECT COALESCE(SUM(quantidade), 0)
-            FROM estoque_movimentacoes
-            WHERE produto_id = ?
+            SELECT COALESCE(SUM(
+                l.quantidade_inicial + COALESCE((
+                    SELECT SUM(m.quantidade)
+                    FROM estoque_movimentacoes m
+                    WHERE m.lote_id = l.id
+                ), 0)
+            ), 0)
+            FROM estoque_lotes l
+            WHERE l.produto_id = ?
             """,
             (produto_id,),
         ).fetchone()[0]
@@ -70,10 +76,18 @@ def _saldo_produto(cursor: sqlite3.Cursor, produto_id: int) -> int:
 def _custo_medio_centavos(cursor: sqlite3.Cursor, produto_id: int) -> int:
     row = cursor.execute(
         """
-        SELECT COALESCE(SUM(quantidade), 0) AS quantidade,
-               COALESCE(SUM(quantidade * custo_unitario_centavos), 0) AS valor
-        FROM estoque_movimentacoes
-        WHERE produto_id = ?
+        SELECT COALESCE(SUM(disponivel), 0) AS quantidade,
+               COALESCE(SUM(disponivel * custo_unitario_centavos), 0) AS valor
+        FROM (
+            SELECT l.custo_unitario_centavos,
+                   l.quantidade_inicial + COALESCE((
+                       SELECT SUM(m.quantidade)
+                       FROM estoque_movimentacoes m
+                       WHERE m.lote_id = l.id
+                   ), 0) AS disponivel
+            FROM estoque_lotes l
+            WHERE l.produto_id = ?
+        )
         """,
         (produto_id,),
     ).fetchone()
@@ -82,15 +96,130 @@ def _custo_medio_centavos(cursor: sqlite3.Cursor, produto_id: int) -> int:
         ultima = cursor.execute(
             """
             SELECT custo_unitario_centavos
-            FROM estoque_movimentacoes
-            WHERE produto_id = ? AND tipo IN ('compra', 'saldo_inicial')
-            ORDER BY created_at DESC, id DESC
+            FROM estoque_lotes
+            WHERE produto_id = ?
+            ORDER BY recebido_em DESC, id DESC
             LIMIT 1
             """,
             (produto_id,),
         ).fetchone()
         return int(ultima[0]) if ultima else 0
     return max(int(Decimal(row["valor"] / quantidade).quantize(Decimal("1"))), 0)
+
+
+def _criar_lote(
+    cursor: sqlite3.Cursor,
+    produto_id: int,
+    quantidade: int,
+    custo_unitario_centavos: int,
+    *,
+    tipo: str,
+    observacao: str,
+    recebido_em: str | None = None,
+) -> int:
+    if quantidade <= 0 or custo_unitario_centavos < 0:
+        raise ValueError("Dados do lote inválidos")
+    cursor.execute(
+        """
+        INSERT INTO estoque_lotes(
+            produto_id, quantidade_inicial, custo_unitario_centavos,
+            tipo, observacao, recebido_em
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            produto_id,
+            quantidade,
+            custo_unitario_centavos,
+            tipo,
+            observacao,
+            recebido_em or _agora(),
+        ),
+    )
+    return int(cursor.lastrowid)
+
+
+def _lotes_fifo_disponiveis(
+    cursor: sqlite3.Cursor,
+    produto_id: int,
+) -> list[sqlite3.Row]:
+    return cursor.execute(
+        """
+        SELECT *
+        FROM (
+            SELECT l.*,
+                   l.quantidade_inicial + COALESCE((
+                       SELECT SUM(m.quantidade)
+                       FROM estoque_movimentacoes m
+                       WHERE m.lote_id = l.id
+                   ), 0) AS disponivel
+            FROM estoque_lotes l
+            WHERE l.produto_id = ?
+        )
+        WHERE disponivel > 0
+        ORDER BY recebido_em, id
+        """,
+        (produto_id,),
+    ).fetchall()
+
+
+def _consumir_fifo(
+    cursor: sqlite3.Cursor,
+    produto_id: int,
+    quantidade: int,
+    *,
+    tipo: str,
+    observacao: str,
+    pedido_id: int | None = None,
+    pedido_item_id: int | None = None,
+    ocorrido_em: str | None = None,
+    impacta_relatorio: bool = True,
+) -> dict:
+    """Consome lotes em PEPS e fotografa cada parcela do custo."""
+    quantidade = int(quantidade)
+    if quantidade <= 0 or tipo not in {"venda", "perda", "ajuste"}:
+        raise ValueError("Saída FIFO inválida")
+    restante = quantidade
+    custo_total = 0
+    movimentos = []
+    agora = ocorrido_em or _agora()
+
+    for lote in _lotes_fifo_disponiveis(cursor, produto_id):
+        if restante <= 0:
+            break
+        retirada = min(restante, int(lote["disponivel"]))
+        custo = int(lote["custo_unitario_centavos"])
+        cursor.execute(
+            """
+            INSERT INTO estoque_movimentacoes(
+                produto_id, pedido_id, pedido_item_id, lote_id,
+                tipo, quantidade, custo_unitario_centavos,
+                impacta_relatorio, observacao, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                produto_id,
+                pedido_id,
+                pedido_item_id,
+                lote["id"],
+                tipo,
+                -retirada,
+                custo,
+                1 if impacta_relatorio else 0,
+                observacao,
+                agora,
+            ),
+        )
+        movimentos.append(int(cursor.lastrowid))
+        custo_total += retirada * custo
+        restante -= retirada
+
+    if restante:
+        raise ValueError("Estoque insuficiente para a saída FIFO")
+    return {
+        "quantidade": quantidade,
+        "custo_total_centavos": custo_total,
+        "movimentos": movimentos,
+    }
 
 
 def _inicio_dia_operacional(agora_utc: datetime | None = None) -> datetime:
@@ -108,6 +237,7 @@ def _item_para_api(row: sqlite3.Row) -> dict:
         "nome": row["nome_produto"],
         "preco": _para_reais(row["preco_unitario_centavos"]),
         "custo_unitario": _para_reais(row["custo_unitario_centavos"]),
+        "custo_total": _para_reais(row["custo_total_centavos"]),
         "quantidade": row["quantidade"],
         "customizacao": customizacao,
         "requer_preparo": row["requer_preparo"],
@@ -195,6 +325,7 @@ def adicionar_novo_produto(
     custo_inicial,
     categoria_id,
     requer_preparo,
+    ocultar_quando_esgotado=0,
 ):
     try:
         nome = (nome or "").strip()
@@ -210,8 +341,8 @@ def adicionar_novo_produto(
                 """
                 INSERT INTO produtos(
                     nome, descricao, foto_url, preco_centavos, categoria_id,
-                    requer_preparo, ativo
-                ) VALUES (?, ?, ?, ?, ?, ?, 1)
+                    requer_preparo, ocultar_quando_esgotado, ativo
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 1)
                 """,
                 (
                     nome,
@@ -220,49 +351,92 @@ def adicionar_novo_produto(
                     _para_centavos(preco_venda),
                     categoria_id,
                     1 if requer_preparo else 0,
+                    1 if ocultar_quando_esgotado else 0,
                 ),
             )
             produto_id = cursor.lastrowid
             if quantidade > 0:
-                cursor.execute(
-                    """
-                    INSERT INTO estoque_movimentacoes(
-                        produto_id, tipo, quantidade, custo_unitario_centavos,
-                        observacao, created_at
-                    ) VALUES (?, 'saldo_inicial', ?, ?, ?, ?)
-                    """,
-                    (
-                        produto_id,
-                        quantidade,
-                        _para_centavos(custo_inicial),
-                        "Criação do produto",
-                        _agora(),
-                    ),
+                _criar_lote(
+                    cursor,
+                    int(produto_id),
+                    quantidade,
+                    _para_centavos(custo_inicial),
+                    tipo="saldo_inicial",
+                    observacao="Estoque inicial na criação do produto",
                 )
-        return True
+        return int(produto_id)
     except (sqlite3.Error, ValueError, TypeError):
         return False
 
 
 def _consulta_produtos_base(apenas_disponiveis: bool) -> tuple[str, list]:
-    having = "HAVING (saldo - reservado) > 0" if apenas_disponiveis else ""
+    filtro = "WHERE (saldo - reservado) > 0" if apenas_disponiveis else ""
     return (
         f"""
-        SELECT p.*, c.nome AS categoria_nome, c.ordem AS categoria_ordem,
-               COALESCE(SUM(m.quantidade), 0) AS saldo,
-               COALESCE((
-                   SELECT SUM(r.quantidade_reservada)
-                   FROM reservas_carrinho r
-                   WHERE r.produto_id = p.id AND r.expires_at > ?
-               ), 0) AS reservado,
-               COALESCE(SUM(m.quantidade * m.custo_unitario_centavos), 0) AS valor_estoque
-        FROM produtos p
-        LEFT JOIN categorias c ON c.id = p.categoria_id
-        LEFT JOIN estoque_movimentacoes m ON m.produto_id = p.id
-        WHERE p.ativo = 1
-        GROUP BY p.id
-        {having}
-        ORDER BY c.ordem, p.ordem, p.nome
+        SELECT *
+        FROM (
+            SELECT p.*, c.nome AS categoria_nome, c.ordem AS categoria_ordem,
+                   COALESCE((
+                       SELECT SUM(
+                           l.quantidade_inicial + COALESCE((
+                               SELECT SUM(m.quantidade)
+                               FROM estoque_movimentacoes m
+                               WHERE m.lote_id = l.id
+                           ), 0)
+                       )
+                       FROM estoque_lotes l
+                       WHERE l.produto_id = p.id
+                   ), 0) AS saldo,
+                   COALESCE((
+                       SELECT SUM(r.quantidade_reservada)
+                       FROM reservas_carrinho r
+                       WHERE r.produto_id = p.id AND r.expires_at > ?
+                   ), 0) AS reservado,
+                   COALESCE((
+                       SELECT SUM(
+                           (
+                               l.quantidade_inicial + COALESCE((
+                                   SELECT SUM(m.quantidade)
+                                   FROM estoque_movimentacoes m
+                                   WHERE m.lote_id = l.id
+                               ), 0)
+                           ) * l.custo_unitario_centavos
+                       )
+                       FROM estoque_lotes l
+                       WHERE l.produto_id = p.id
+                   ), 0) AS valor_estoque,
+                   (
+                       SELECT l.custo_unitario_centavos
+                       FROM estoque_lotes l
+                       WHERE l.produto_id = p.id
+                         AND (
+                             l.quantidade_inicial + COALESCE((
+                                 SELECT SUM(m.quantidade)
+                                 FROM estoque_movimentacoes m
+                                 WHERE m.lote_id = l.id
+                             ), 0)
+                         ) > 0
+                       ORDER BY l.recebido_em, l.id
+                       LIMIT 1
+                   ) AS proximo_custo,
+                   (
+                       SELECT COUNT(*)
+                       FROM estoque_lotes l
+                       WHERE l.produto_id = p.id
+                         AND (
+                             l.quantidade_inicial + COALESCE((
+                                 SELECT SUM(m.quantidade)
+                                 FROM estoque_movimentacoes m
+                                 WHERE m.lote_id = l.id
+                             ), 0)
+                         ) > 0
+                   ) AS lotes_ativos
+            FROM produtos p
+            LEFT JOIN categorias c ON c.id = p.categoria_id
+            WHERE p.ativo = 1
+        )
+        {filtro}
+        ORDER BY categoria_ordem, ordem, nome
         """,
         [_agora()],
     )
@@ -270,7 +444,9 @@ def _consulta_produtos_base(apenas_disponiveis: bool) -> tuple[str, list]:
 
 def obter_todos_produtos():
     with _conexao() as conn:
-        query, params = _consulta_produtos_base(True)
+        # O cardápio mantém os itens esgotados renderizados para que uma unidade
+        # liberada por outro carrinho reapareça em tempo real, sem recarregar.
+        query, params = _consulta_produtos_base(False)
         rows = conn.execute(query, params).fetchall()
         return [
             {
@@ -283,6 +459,7 @@ def obter_todos_produtos():
                 "categoria": row["categoria_nome"],
                 "categoria_id": row["categoria_id"],
                 "requer_preparo": row["requer_preparo"],
+                "ocultar_quando_esgotado": row["ocultar_quando_esgotado"],
                 "categoria_ordem": row["categoria_ordem"] or 0,
                 "produto_ordem": row["ordem"],
             }
@@ -303,15 +480,16 @@ def obter_todos_produtos_para_gestao():
             ultima = conn.execute(
                 """
                 SELECT custo_unitario_centavos
-                FROM estoque_movimentacoes
-                WHERE produto_id = ? AND tipo IN ('compra', 'saldo_inicial')
-                ORDER BY created_at DESC, id DESC LIMIT 1
+                FROM estoque_lotes
+                WHERE produto_id = ?
+                ORDER BY recebido_em DESC, id DESC LIMIT 1
                 """,
                 (row["id"],),
             ).fetchone()
             ultimo_custo = int(ultima[0]) if ultima else custo_centavos
             preco = _para_reais(row["preco_centavos"])
             custo = _para_reais(custo_centavos)
+            proximo_custo = _para_reais(row["proximo_custo"] or 0)
             produtos.append(
                 {
                     "id": row["id"],
@@ -322,13 +500,29 @@ def obter_todos_produtos_para_gestao():
                     "estoque": saldo,
                     "custo_medio": custo,
                     "lucro": round(preco - custo, 2),
+                    "valor_estoque": _para_reais(row["valor_estoque"]),
+                    "custo_proxima_unidade": proximo_custo,
+                    "lucro_proxima_unidade": round(preco - proximo_custo, 2),
+                    "lotes_ativos": int(row["lotes_ativos"] or 0),
                     "categoria": row["categoria_nome"],
                     "categoria_id": row["categoria_id"],
                     "ultimo_preco_compra": _para_reais(ultimo_custo),
                     "requer_preparo": row["requer_preparo"],
+                    "ocultar_quando_esgotado": row["ocultar_quando_esgotado"],
                 }
             )
         return produtos
+
+
+def obter_produto_para_gestao(id_produto):
+    return next(
+        (
+            produto
+            for produto in obter_todos_produtos_para_gestao()
+            if produto["id"] == int(id_produto)
+        ),
+        None,
+    )
 
 
 def excluir_produto(id_produto):
@@ -339,6 +533,7 @@ def excluir_produto(id_produto):
 
 
 def adicionar_estoque(id_produto, quantidade_adicionada, custo_unitario_movimentacao):
+    """Compatibilidade: entrada positiva cria lote; negativa registra perda FIFO."""
     try:
         quantidade = int(quantidade_adicionada)
         if quantidade == 0:
@@ -355,25 +550,270 @@ def adicionar_estoque(id_produto, quantidade_adicionada, custo_unitario_moviment
             if quantidade < 0 and saldo + quantidade < 0:
                 return False
             if quantidade > 0:
-                tipo = "compra"
-                custo = _para_centavos(custo_unitario_movimentacao)
-                observacao = "Entrada manual de estoque"
+                _criar_lote(
+                    cursor,
+                    int(id_produto),
+                    quantidade,
+                    _para_centavos(custo_unitario_movimentacao),
+                    tipo="compra",
+                    observacao="Entrada manual de estoque",
+                )
             else:
-                tipo = "perda"
-                custo = _custo_medio_centavos(cursor, int(id_produto))
-                observacao = "Perda/ajuste manual de estoque"
-            cursor.execute(
-                """
-                INSERT INTO estoque_movimentacoes(
-                    produto_id, tipo, quantidade, custo_unitario_centavos,
-                    observacao, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (id_produto, tipo, quantidade, custo, observacao, _agora()),
-            )
+                _consumir_fifo(
+                    cursor,
+                    int(id_produto),
+                    abs(quantidade),
+                    tipo="perda",
+                    observacao="Perda manual de estoque",
+                )
         return True
     except (sqlite3.Error, ValueError, TypeError):
         return False
+
+
+def registrar_entrada_estoque(
+    id_produto,
+    quantidade,
+    custo_unitario,
+    observacao=None,
+):
+    try:
+        quantidade = int(quantidade)
+        custo_centavos = _para_centavos(custo_unitario)
+        if quantidade <= 0 or custo_centavos < 0:
+            return {"sucesso": False, "mensagem": "Entrada de estoque inválida."}
+        with _conexao() as conn:
+            cursor = conn.cursor()
+            cursor.execute("BEGIN IMMEDIATE")
+            produto = cursor.execute(
+                "SELECT ativo FROM produtos WHERE id = ?", (int(id_produto),)
+            ).fetchone()
+            if not produto or not produto["ativo"]:
+                return {"sucesso": False, "mensagem": "Produto não encontrado."}
+            lote_id = _criar_lote(
+                cursor,
+                int(id_produto),
+                quantidade,
+                custo_centavos,
+                tipo="compra",
+                observacao=(observacao or "").strip() or "Entrada de estoque",
+            )
+            saldo = _saldo_produto(cursor, int(id_produto))
+        return {
+            "sucesso": True,
+            "lote_id": lote_id,
+            "saldo": saldo,
+        }
+    except (sqlite3.Error, ValueError, TypeError):
+        return {"sucesso": False, "mensagem": "Não foi possível registrar a entrada."}
+
+
+def registrar_perda_estoque(id_produto, quantidade, motivo=None):
+    try:
+        quantidade = int(quantidade)
+        if quantidade <= 0:
+            return {"sucesso": False, "mensagem": "Informe uma quantidade válida."}
+        with _conexao() as conn:
+            cursor = conn.cursor()
+            cursor.execute("BEGIN IMMEDIATE")
+            if _saldo_produto(cursor, int(id_produto)) < quantidade:
+                return {
+                    "sucesso": False,
+                    "mensagem": "A perda não pode superar o estoque disponível.",
+                }
+            consumo = _consumir_fifo(
+                cursor,
+                int(id_produto),
+                quantidade,
+                tipo="perda",
+                observacao=(motivo or "").strip() or "Perda de estoque",
+            )
+            saldo = _saldo_produto(cursor, int(id_produto))
+        return {
+            "sucesso": True,
+            "saldo": saldo,
+            "custo_total": _para_reais(consumo["custo_total_centavos"]),
+        }
+    except (sqlite3.Error, ValueError, TypeError):
+        return {"sucesso": False, "mensagem": "Não foi possível registrar a perda."}
+
+
+def zerar_estoque_produto(id_produto):
+    """Encerra o saldo FIFO como ajuste operacional neutro e libera reservas."""
+    try:
+        produto_id = int(id_produto)
+        with _conexao() as conn:
+            cursor = conn.cursor()
+            cursor.execute("BEGIN IMMEDIATE")
+            produto = cursor.execute(
+                "SELECT id, nome FROM produtos WHERE id = ? AND ativo = 1",
+                (produto_id,),
+            ).fetchone()
+            if not produto:
+                return {"sucesso": False, "mensagem": "Produto não encontrado."}
+
+            _limpar_reservas(cursor)
+            reservas_liberadas = cursor.execute(
+                "DELETE FROM reservas_carrinho WHERE produto_id = ?",
+                (produto_id,),
+            ).rowcount
+            quantidade = _saldo_produto(cursor, produto_id)
+            custo_total_centavos = 0
+            if quantidade > 0:
+                consumo = _consumir_fifo(
+                    cursor,
+                    produto_id,
+                    quantidade,
+                    tipo="ajuste",
+                    observacao="Zeragem operacional do estoque",
+                    impacta_relatorio=False,
+                )
+                custo_total_centavos = consumo["custo_total_centavos"]
+
+        return {
+            "sucesso": True,
+            "produto_id": produto_id,
+            "produto_nome": produto["nome"],
+            "quantidade_zerada": quantidade,
+            "valor_zerado": _para_reais(custo_total_centavos),
+            "reservas_liberadas": reservas_liberadas,
+            "saldo": 0,
+            "produtos_afetados": [{"produto_id": produto_id, "disponivel": 0}],
+        }
+    except (sqlite3.Error, ValueError, TypeError):
+        return {
+            "sucesso": False,
+            "mensagem": "Não foi possível zerar o estoque do produto.",
+        }
+
+
+def obter_resumo_zeragem_estoques():
+    """Resume todos os saldos físicos que a zeragem global encerrará."""
+    with _conexao() as conn:
+        cursor = conn.cursor()
+        quantidade_total = 0
+        custo_total_centavos = 0
+        produtos_com_saldo = 0
+        for produto in cursor.execute("SELECT id FROM produtos ORDER BY id").fetchall():
+            lotes = _lotes_fifo_disponiveis(cursor, int(produto["id"]))
+            quantidade = sum(int(lote["disponivel"]) for lote in lotes)
+            if quantidade <= 0:
+                continue
+            produtos_com_saldo += 1
+            quantidade_total += quantidade
+            custo_total_centavos += sum(
+                int(lote["disponivel"]) * int(lote["custo_unitario_centavos"])
+                for lote in lotes
+            )
+    return {
+        "sucesso": True,
+        "quantidade_zerada": quantidade_total,
+        "valor_zerado": _para_reais(custo_total_centavos),
+        "produtos_zerados": produtos_com_saldo,
+    }
+
+
+def zerar_todos_estoques():
+    """Zera atomicamente todos os saldos, inclusive de produtos arquivados."""
+    try:
+        with _conexao() as conn:
+            cursor = conn.cursor()
+            cursor.execute("BEGIN IMMEDIATE")
+            _limpar_reservas(cursor)
+            ids_reservados = {
+                int(row["produto_id"])
+                for row in cursor.execute(
+                    "SELECT DISTINCT produto_id FROM reservas_carrinho"
+                )
+            }
+            reservas_liberadas = cursor.execute(
+                "DELETE FROM reservas_carrinho"
+            ).rowcount
+            produtos = cursor.execute(
+                "SELECT id, nome FROM produtos ORDER BY id"
+            ).fetchall()
+            agora = _agora()
+            quantidade_total = 0
+            custo_total_centavos = 0
+            produtos_zerados = 0
+            ids_afetados = set(ids_reservados)
+
+            for produto in produtos:
+                produto_id = int(produto["id"])
+                quantidade = _saldo_produto(cursor, produto_id)
+                if quantidade <= 0:
+                    continue
+                consumo = _consumir_fifo(
+                    cursor,
+                    produto_id,
+                    quantidade,
+                    tipo="ajuste",
+                    observacao="Zeragem operacional global do estoque",
+                    ocorrido_em=agora,
+                    impacta_relatorio=False,
+                )
+                quantidade_total += quantidade
+                custo_total_centavos += consumo["custo_total_centavos"]
+                produtos_zerados += 1
+                ids_afetados.add(produto_id)
+
+        return {
+            "sucesso": True,
+            "quantidade_zerada": quantidade_total,
+            "valor_zerado": _para_reais(custo_total_centavos),
+            "produtos_zerados": produtos_zerados,
+            "reservas_liberadas": reservas_liberadas,
+            "produtos_afetados": [
+                {"produto_id": produto_id, "disponivel": 0}
+                for produto_id in sorted(ids_afetados)
+            ],
+        }
+    except (sqlite3.Error, ValueError, TypeError):
+        return {
+            "sucesso": False,
+            "mensagem": "Não foi possível zerar todos os estoques.",
+        }
+
+
+def obter_lotes_produto(id_produto):
+    with _conexao() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM (
+                SELECT l.id, l.quantidade_inicial,
+                       l.custo_unitario_centavos, l.tipo,
+                       l.observacao, l.recebido_em,
+                       l.quantidade_inicial + COALESCE((
+                           SELECT SUM(m.quantidade)
+                           FROM estoque_movimentacoes m
+                           WHERE m.lote_id = l.id
+                       ), 0) AS quantidade_disponivel
+                FROM estoque_lotes l
+                WHERE l.produto_id = ?
+            )
+            ORDER BY recebido_em, id
+            """,
+            (int(id_produto),),
+        ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "quantidade_inicial": row["quantidade_inicial"],
+            "quantidade_disponivel": row["quantidade_disponivel"],
+            "custo_unitario": _para_reais(row["custo_unitario_centavos"]),
+            "valor_disponivel": _para_reais(
+                row["quantidade_disponivel"] * row["custo_unitario_centavos"]
+            ),
+            "tipo": row["tipo"],
+            "observacao": row["observacao"],
+            "recebido_em": row["recebido_em"],
+            "data": datetime.fromisoformat(row["recebido_em"])
+            .astimezone(TIMEZONE_LOCAL)
+            .strftime("%d/%m/%Y %H:%M"),
+        }
+        for row in rows
+    ]
 
 
 def atualizar_preco_venda_produto(id_produto, novo_preco_venda):
@@ -389,7 +829,13 @@ def atualizar_preco_venda_produto(id_produto, novo_preco_venda):
 
 
 def atualizar_dados_produto(
-    id_produto, nome, descricao, foto_url, categoria_id, requer_preparo
+    id_produto,
+    nome,
+    descricao,
+    foto_url,
+    categoria_id,
+    requer_preparo,
+    ocultar_quando_esgotado=0,
 ):
     try:
         with _conexao() as conn:
@@ -397,7 +843,7 @@ def atualizar_dados_produto(
                 """
                 UPDATE produtos
                 SET nome = ?, descricao = ?, foto_url = ?, categoria_id = ?,
-                    requer_preparo = ?
+                    requer_preparo = ?, ocultar_quando_esgotado = ?
                 WHERE id = ? AND ativo = 1
                 """,
                 (
@@ -406,12 +852,68 @@ def atualizar_dados_produto(
                     foto_url,
                     categoria_id,
                     1 if requer_preparo else 0,
+                    1 if ocultar_quando_esgotado else 0,
                     id_produto,
                 ),
             )
         return cursor.rowcount > 0
     except sqlite3.Error:
         return False
+
+
+def atualizar_produto(
+    id_produto,
+    nome,
+    descricao,
+    foto_url,
+    categoria_id,
+    preco_venda,
+    requer_preparo,
+    ocultar_quando_esgotado,
+):
+    """Atualiza todos os dados cadastrais em uma única transação."""
+    try:
+        nome = (nome or "").strip()
+        preco_centavos = _para_centavos(preco_venda)
+        categoria_id = int(categoria_id)
+        if not nome or preco_centavos < 0:
+            return {"sucesso": False, "mensagem": "Dados do produto inválidos."}
+        with _conexao() as conn:
+            cursor = conn.cursor()
+            cursor.execute("BEGIN IMMEDIATE")
+            if not cursor.execute(
+                "SELECT 1 FROM categorias WHERE id = ?", (categoria_id,)
+            ).fetchone():
+                return {"sucesso": False, "mensagem": "Categoria inválida."}
+            atualizado = cursor.execute(
+                """
+                UPDATE produtos
+                SET nome = ?, descricao = ?, foto_url = ?, categoria_id = ?,
+                    preco_centavos = ?, requer_preparo = ?,
+                    ocultar_quando_esgotado = ?
+                WHERE id = ? AND ativo = 1
+                """,
+                (
+                    nome,
+                    descricao,
+                    foto_url,
+                    categoria_id,
+                    preco_centavos,
+                    1 if requer_preparo else 0,
+                    1 if ocultar_quando_esgotado else 0,
+                    int(id_produto),
+                ),
+            )
+            if atualizado.rowcount == 0:
+                return {"sucesso": False, "mensagem": "Produto não encontrado."}
+        return {"sucesso": True}
+    except sqlite3.IntegrityError:
+        return {
+            "sucesso": False,
+            "mensagem": "Já existe um produto com esse nome.",
+        }
+    except (sqlite3.Error, ValueError, TypeError):
+        return {"sucesso": False, "mensagem": "Não foi possível salvar o produto."}
 
 
 def atualizar_categoria_produto(id_produto, nova_categoria_id):
@@ -444,10 +946,12 @@ def obter_historico_produto(id_produto):
     with _conexao() as conn:
         rows = conn.execute(
             """
-            SELECT created_at, quantidade, custo_unitario_centavos, tipo
-            FROM estoque_movimentacoes
-            WHERE produto_id = ? AND tipo IN ('compra', 'saldo_inicial')
-            ORDER BY created_at DESC, id DESC
+            SELECT recebido_em AS created_at,
+                   quantidade_inicial AS quantidade,
+                   custo_unitario_centavos, tipo
+            FROM estoque_lotes
+            WHERE produto_id = ?
+            ORDER BY recebido_em DESC, id DESC
             """,
             (id_produto,),
         ).fetchall()
@@ -517,7 +1021,6 @@ def salvar_novo_pedido(dados_do_pedido, local_id):
             return None
 
         carrinho_id = str(dados_do_pedido.get("carrinho_id") or "")
-        custos = {}
         for produto_id, desejado in quantidades.items():
             saldo = _saldo_produto(cursor, produto_id)
             if carrinho_id:
@@ -540,7 +1043,6 @@ def salvar_novo_pedido(dados_do_pedido, local_id):
             if saldo - int(reservado_outros or 0) < desejado:
                 conn.rollback()
                 return None
-            custos[produto_id] = _custo_medio_centavos(cursor, produto_id)
 
         agora = _agora()
         inicio = _inicio_dia_operacional().isoformat()
@@ -598,16 +1100,16 @@ def salvar_novo_pedido(dados_do_pedido, local_id):
                 INSERT INTO pedido_itens(
                     pedido_id, produto_id, nome_produto,
                     preco_unitario_centavos, custo_unitario_centavos,
+                    custo_total_centavos,
                     quantidade, categoria_nome, customizacao_json, requer_preparo,
                     categoria_ordem, produto_ordem, uid
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     pedido_id,
                     pid,
                     produto["nome"],
                     produto["preco_centavos"],
-                    custos[pid],
                     int(item["quantidade"]),
                     produto["categoria_nome"],
                     json.dumps(customizacao, ensure_ascii=False)
@@ -619,23 +1121,31 @@ def salvar_novo_pedido(dados_do_pedido, local_id):
                     str(item.get("uid") or uuid.uuid4()),
                 ),
             )
-
-        for pid, quantidade in quantidades.items():
+            pedido_item_id = int(cursor.lastrowid)
+            quantidade_item = int(item["quantidade"])
+            consumo = _consumir_fifo(
+                cursor,
+                pid,
+                quantidade_item,
+                tipo="venda",
+                observacao=f"Consumo FIFO do pedido #{pedido_id}",
+                pedido_id=int(pedido_id),
+                pedido_item_id=pedido_item_id,
+                ocorrido_em=agora,
+            )
+            custo_total = int(consumo["custo_total_centavos"])
+            custo_unitario = int(
+                (Decimal(custo_total) / Decimal(quantidade_item)).quantize(
+                    Decimal("1"), rounding=ROUND_HALF_UP
+                )
+            )
             cursor.execute(
                 """
-                INSERT INTO estoque_movimentacoes(
-                    produto_id, pedido_id, tipo, quantidade,
-                    custo_unitario_centavos, observacao, created_at
-                ) VALUES (?, ?, 'venda', ?, ?, ?, ?)
+                UPDATE pedido_itens
+                SET custo_unitario_centavos = ?, custo_total_centavos = ?
+                WHERE id = ?
                 """,
-                (
-                    pid,
-                    pedido_id,
-                    -quantidade,
-                    custos[pid],
-                    f"Reserva convertida no pedido #{pedido_id}",
-                    agora,
-                ),
+                (custo_unitario, custo_total, pedido_item_id),
             )
         if carrinho_id:
             cursor.execute(
@@ -824,23 +1334,41 @@ def cancelar_pedido(id_do_pedido):
         agora = _agora()
         vendas = cursor.execute(
             """
-            SELECT produto_id, quantidade, custo_unitario_centavos
+            SELECT id, produto_id, pedido_item_id, lote_id,
+                   quantidade, custo_unitario_centavos
             FROM estoque_movimentacoes
             WHERE pedido_id = ? AND tipo = 'venda'
             """,
             (id_do_pedido,),
         ).fetchall()
         for venda in vendas:
+            lote_id = venda["lote_id"]
+            if lote_id is None:
+                # Compatibilidade com uma venda criada no schema v2: o saldo
+                # devolvido passa a existir como um lote de ajuste no FIFO.
+                lote_id = _criar_lote(
+                    cursor,
+                    int(venda["produto_id"]),
+                    abs(int(venda["quantidade"])),
+                    int(venda["custo_unitario_centavos"]),
+                    tipo="ajuste",
+                    observacao=f"Estorno legado do pedido #{id_do_pedido}",
+                    recebido_em=agora,
+                )
             cursor.execute(
                 """
                 INSERT OR IGNORE INTO estoque_movimentacoes(
-                    produto_id, pedido_id, tipo, quantidade,
+                    produto_id, pedido_id, pedido_item_id, lote_id,
+                    movimento_origem_id, tipo, quantidade,
                     custo_unitario_centavos, observacao, created_at
-                ) VALUES (?, ?, 'estorno', ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, 'estorno', ?, ?, ?, ?)
                 """,
                 (
                     venda["produto_id"],
                     id_do_pedido,
+                    venda["pedido_item_id"],
+                    lote_id if venda["lote_id"] is not None else None,
+                    venda["id"],
                     abs(venda["quantidade"]),
                     venda["custo_unitario_centavos"],
                     f"Estorno integral do pedido #{id_do_pedido}",
@@ -966,18 +1494,7 @@ def obter_disponibilidade_para_produtos(produto_ids):
         cursor.execute("BEGIN IMMEDIATE")
         _limpar_reservas(cursor)
         placeholders = ",".join("?" for _ in ids)
-        saldos = {
-            row["produto_id"]: int(row["saldo"])
-            for row in cursor.execute(
-                f"""
-                SELECT produto_id, COALESCE(SUM(quantidade), 0) AS saldo
-                FROM estoque_movimentacoes
-                WHERE produto_id IN ({placeholders})
-                GROUP BY produto_id
-                """,
-                ids,
-            )
-        }
+        saldos = {pid: _saldo_produto(cursor, pid) for pid in ids}
         reservas = {
             row["produto_id"]: int(row["reservado"])
             for row in cursor.execute(
@@ -995,7 +1512,163 @@ def obter_disponibilidade_para_produtos(produto_ids):
         return resultado
 
 
+def _aplicar_quantidade_reservada(
+    cursor: sqlite3.Cursor,
+    carrinho_id: str,
+    produto_id: int,
+    quantidade_desejada: int,
+    *,
+    ajustar_ao_disponivel: bool,
+):
+    produto = cursor.execute(
+        "SELECT ativo FROM produtos WHERE id = ?", (produto_id,)
+    ).fetchone()
+    atual_row = cursor.execute(
+        """
+        SELECT quantidade_reservada FROM reservas_carrinho
+        WHERE carrinho_id = ? AND produto_id = ?
+        """,
+        (carrinho_id, produto_id),
+    ).fetchone()
+    atual = int(atual_row[0]) if atual_row else 0
+
+    # Uma reserva existente sempre pode ser liberada, mesmo que o produto tenha
+    # sido arquivado depois de entrar no carrinho.
+    if (
+        quantidade_desejada > atual
+        and (not produto or not produto["ativo"])
+    ):
+        return {
+            "sucesso": False,
+            "mensagem": "Produto indisponível.",
+            "quantidade_solicitada": quantidade_desejada,
+            "quantidade_reservada": atual,
+            "ajustada": False,
+            "produtos_afetados": [],
+        }
+
+    saldo = _saldo_produto(cursor, produto_id) if produto else 0
+    reservado_outros = int(
+        cursor.execute(
+            """
+            SELECT COALESCE(SUM(quantidade_reservada), 0)
+            FROM reservas_carrinho
+            WHERE produto_id = ? AND carrinho_id != ?
+            """,
+            (produto_id, carrinho_id),
+        ).fetchone()[0]
+    )
+    maximo_para_carrinho = max(saldo - reservado_outros, 0)
+    quantidade_aplicada = quantidade_desejada
+
+    if quantidade_desejada > maximo_para_carrinho:
+        if not ajustar_ao_disponivel:
+            return {
+                "sucesso": False,
+                "mensagem": "Não há mais unidades deste item no momento.",
+                "quantidade_solicitada": quantidade_desejada,
+                "quantidade_reservada": atual,
+                "maximo_disponivel": maximo_para_carrinho,
+                "ajustada": False,
+                "produtos_afetados": [
+                    {
+                        "produto_id": produto_id,
+                        "disponivel": max(saldo - reservado_outros - atual, 0),
+                    }
+                ],
+            }
+        quantidade_aplicada = maximo_para_carrinho
+
+    if quantidade_aplicada == 0:
+        cursor.execute(
+            """
+            DELETE FROM reservas_carrinho
+            WHERE carrinho_id = ? AND produto_id = ?
+            """,
+            (carrinho_id, produto_id),
+        )
+    else:
+        agora = datetime.now(timezone.utc)
+        cursor.execute(
+            """
+            INSERT INTO reservas_carrinho(
+                carrinho_id, produto_id, quantidade_reservada,
+                expires_at, created_at
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(carrinho_id, produto_id) DO UPDATE SET
+                quantidade_reservada = excluded.quantidade_reservada,
+                expires_at = excluded.expires_at
+            """,
+            (
+                carrinho_id,
+                produto_id,
+                quantidade_aplicada,
+                (agora + timedelta(seconds=120)).isoformat(),
+                agora.isoformat(),
+            ),
+        )
+
+    reservado_total = int(
+        cursor.execute(
+            """
+            SELECT COALESCE(SUM(quantidade_reservada), 0)
+            FROM reservas_carrinho WHERE produto_id = ?
+            """,
+            (produto_id,),
+        ).fetchone()[0]
+    )
+    ajustada = quantidade_aplicada != quantidade_desejada
+    return {
+        "sucesso": not ajustada,
+        "mensagem": (
+            f"Quantidade ajustada para {quantidade_aplicada}, o máximo disponível."
+            if ajustada
+            else None
+        ),
+        "quantidade_solicitada": quantidade_desejada,
+        "quantidade_reservada": quantidade_aplicada,
+        "maximo_disponivel": maximo_para_carrinho,
+        "ajustada": ajustada,
+        "produtos_afetados": [
+            {"produto_id": produto_id, "disponivel": saldo - reservado_total}
+        ],
+    }
+
+
+def definir_reserva(carrinho_id, produto_id, quantidade_desejada):
+    """Define de forma idempotente a reserva total de um produto no carrinho."""
+    conn = None
+    try:
+        carrinho_id = str(carrinho_id or "").strip()
+        produto_id = int(produto_id)
+        desejada = int(quantidade_desejada)
+        if not carrinho_id or desejada < 0:
+            return {"sucesso": False, "mensagem": "Dados de reserva inválidos."}
+
+        conn = _conectar()
+        cursor = conn.cursor()
+        cursor.execute("BEGIN IMMEDIATE")
+        _limpar_reservas(cursor)
+        resultado = _aplicar_quantidade_reservada(
+            cursor,
+            carrinho_id,
+            produto_id,
+            desejada,
+            ajustar_ao_disponivel=True,
+        )
+        conn.commit()
+        return resultado
+    except (sqlite3.Error, ValueError, TypeError):
+        if conn:
+            conn.rollback()
+        return {"sucesso": False, "mensagem": "Erro no servidor."}
+    finally:
+        if conn:
+            conn.close()
+
+
 def gerenciar_reserva(carrinho_id, produto_id, quantidade_delta):
+    """Compatibilidade com clientes antigos que ainda enviam deltas."""
     conn = None
     try:
         carrinho_id = str(carrinho_id or "").strip()
@@ -1007,12 +1680,6 @@ def gerenciar_reserva(carrinho_id, produto_id, quantidade_delta):
         cursor = conn.cursor()
         cursor.execute("BEGIN IMMEDIATE")
         _limpar_reservas(cursor)
-        produto = cursor.execute(
-            "SELECT ativo FROM produtos WHERE id = ?", (produto_id,)
-        ).fetchone()
-        if not produto or not produto["ativo"]:
-            conn.rollback()
-            return {"sucesso": False, "mensagem": "Produto indisponível."}
         atual_row = cursor.execute(
             """
             SELECT quantidade_reservada FROM reservas_carrinho
@@ -1025,70 +1692,18 @@ def gerenciar_reserva(carrinho_id, produto_id, quantidade_delta):
         if nova < 0:
             conn.rollback()
             return {"sucesso": False, "mensagem": "Quantidade de reserva inválida."}
-        saldo = _saldo_produto(cursor, produto_id)
-        outros = int(
-            cursor.execute(
-                """
-                SELECT COALESCE(SUM(quantidade_reservada), 0)
-                FROM reservas_carrinho
-                WHERE produto_id = ? AND carrinho_id != ?
-                """,
-                (produto_id, carrinho_id),
-            ).fetchone()[0]
+        resultado = _aplicar_quantidade_reservada(
+            cursor,
+            carrinho_id,
+            produto_id,
+            nova,
+            ajustar_ao_disponivel=False,
         )
-        if saldo - outros < nova:
+        if not resultado.get("sucesso"):
             conn.rollback()
-            return {
-                "sucesso": False,
-                "mensagem": "Não há mais unidades deste item no momento.",
-                "produtos_afetados": [
-                    {"produto_id": produto_id, "disponivel": max(saldo - outros - atual, 0)}
-                ],
-            }
-        if nova == 0:
-            cursor.execute(
-                """
-                DELETE FROM reservas_carrinho
-                WHERE carrinho_id = ? AND produto_id = ?
-                """,
-                (carrinho_id, produto_id),
-            )
-        else:
-            agora = datetime.now(timezone.utc)
-            cursor.execute(
-                """
-                INSERT INTO reservas_carrinho(
-                    carrinho_id, produto_id, quantidade_reservada,
-                    expires_at, created_at
-                ) VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(carrinho_id, produto_id) DO UPDATE SET
-                    quantidade_reservada = excluded.quantidade_reservada,
-                    expires_at = excluded.expires_at
-                """,
-                (
-                    carrinho_id,
-                    produto_id,
-                    nova,
-                    (agora + timedelta(seconds=120)).isoformat(),
-                    agora.isoformat(),
-                ),
-            )
-        reservado_total = int(
-            cursor.execute(
-                """
-                SELECT COALESCE(SUM(quantidade_reservada), 0)
-                FROM reservas_carrinho WHERE produto_id = ?
-                """,
-                (produto_id,),
-            ).fetchone()[0]
-        )
+            return resultado
         conn.commit()
-        return {
-            "sucesso": True,
-            "produtos_afetados": [
-                {"produto_id": produto_id, "disponivel": saldo - reservado_total}
-            ],
-        }
+        return resultado
     except (sqlite3.Error, ValueError, TypeError):
         if conn:
             conn.rollback()

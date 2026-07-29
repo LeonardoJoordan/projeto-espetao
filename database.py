@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
 
 
 def _diretorio_aplicacao() -> Path:
@@ -83,6 +83,8 @@ CREATE TABLE IF NOT EXISTS produtos (
     categoria_id INTEGER,
     ordem INTEGER NOT NULL DEFAULT 0 CHECK (ordem >= 0),
     requer_preparo INTEGER NOT NULL DEFAULT 0 CHECK (requer_preparo IN (0, 1)),
+    ocultar_quando_esgotado INTEGER NOT NULL DEFAULT 0
+        CHECK (ocultar_quando_esgotado IN (0, 1)),
     ativo INTEGER NOT NULL DEFAULT 1 CHECK (ativo IN (0, 1)),
     FOREIGN KEY (categoria_id) REFERENCES categorias(id) ON DELETE SET NULL
 );
@@ -137,6 +139,7 @@ CREATE TABLE IF NOT EXISTS pedido_itens (
     nome_produto TEXT NOT NULL,
     preco_unitario_centavos INTEGER NOT NULL CHECK (preco_unitario_centavos >= 0),
     custo_unitario_centavos INTEGER NOT NULL CHECK (custo_unitario_centavos >= 0),
+    custo_total_centavos INTEGER NOT NULL DEFAULT 0 CHECK (custo_total_centavos >= 0),
     quantidade INTEGER NOT NULL CHECK (quantidade > 0),
     categoria_nome TEXT NOT NULL,
     customizacao_json TEXT,
@@ -163,27 +166,43 @@ CREATE TABLE IF NOT EXISTS pagamentos (
     UNIQUE (pedido_id, tipo)
 );
 
+CREATE TABLE IF NOT EXISTS estoque_lotes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    produto_id INTEGER NOT NULL,
+    quantidade_inicial INTEGER NOT NULL CHECK (quantidade_inicial > 0),
+    custo_unitario_centavos INTEGER NOT NULL CHECK (custo_unitario_centavos >= 0),
+    tipo TEXT NOT NULL CHECK (tipo IN ('saldo_inicial', 'compra', 'ajuste')),
+    observacao TEXT,
+    recebido_em TEXT NOT NULL,
+    FOREIGN KEY (produto_id) REFERENCES produtos(id) ON DELETE RESTRICT
+);
+
 CREATE TABLE IF NOT EXISTS estoque_movimentacoes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     produto_id INTEGER NOT NULL,
     pedido_id INTEGER,
+    pedido_item_id INTEGER,
+    lote_id INTEGER,
+    movimento_origem_id INTEGER,
     tipo TEXT NOT NULL CHECK (
         tipo IN ('saldo_inicial', 'compra', 'venda', 'perda', 'ajuste', 'estorno')
     ),
     quantidade INTEGER NOT NULL CHECK (quantidade != 0),
     custo_unitario_centavos INTEGER NOT NULL CHECK (custo_unitario_centavos >= 0),
+    impacta_relatorio INTEGER NOT NULL DEFAULT 1
+        CHECK (impacta_relatorio IN (0, 1)),
     observacao TEXT,
     created_at TEXT NOT NULL,
     FOREIGN KEY (produto_id) REFERENCES produtos(id) ON DELETE RESTRICT,
-    FOREIGN KEY (pedido_id) REFERENCES pedidos(id) ON DELETE RESTRICT
+    FOREIGN KEY (pedido_id) REFERENCES pedidos(id) ON DELETE RESTRICT,
+    FOREIGN KEY (pedido_item_id) REFERENCES pedido_itens(id) ON DELETE RESTRICT,
+    FOREIGN KEY (lote_id) REFERENCES estoque_lotes(id) ON DELETE RESTRICT,
+    FOREIGN KEY (movimento_origem_id) REFERENCES estoque_movimentacoes(id)
+        ON DELETE RESTRICT
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_estoque_venda_pedido_produto
-ON estoque_movimentacoes (pedido_id, produto_id)
-WHERE tipo = 'venda';
-
-CREATE UNIQUE INDEX IF NOT EXISTS uq_estoque_estorno_pedido_produto
-ON estoque_movimentacoes (pedido_id, produto_id)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_estoque_estorno_movimento_origem
+ON estoque_movimentacoes (movimento_origem_id)
 WHERE tipo = 'estorno';
 
 CREATE INDEX IF NOT EXISTS idx_pedidos_status_criacao
@@ -201,11 +220,20 @@ ON pagamentos(pedido_id);
 CREATE INDEX IF NOT EXISTS idx_pedido_itens_pedido
 ON pedido_itens(pedido_id);
 
+CREATE INDEX IF NOT EXISTS idx_lotes_produto_fifo
+ON estoque_lotes(produto_id, recebido_em, id);
+
 CREATE INDEX IF NOT EXISTS idx_movimentacoes_produto_data
 ON estoque_movimentacoes(produto_id, created_at);
 
 CREATE INDEX IF NOT EXISTS idx_movimentacoes_periodo
 ON estoque_movimentacoes(created_at, tipo);
+
+CREATE INDEX IF NOT EXISTS idx_movimentacoes_lote
+ON estoque_movimentacoes(lote_id);
+
+CREATE INDEX IF NOT EXISTS idx_movimentacoes_pedido_item
+ON estoque_movimentacoes(pedido_item_id);
 
 CREATE TABLE IF NOT EXISTS reservas_carrinho (
     carrinho_id TEXT NOT NULL,
@@ -224,6 +252,17 @@ ON reservas_carrinho(expires_at);
 
 def _criar_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA_SQL)
+    colunas_produtos = {
+        row["name"] for row in conn.execute("PRAGMA table_info(produtos)")
+    }
+    if "ocultar_quando_esgotado" not in colunas_produtos:
+        conn.execute(
+            """
+            ALTER TABLE produtos
+            ADD COLUMN ocultar_quando_esgotado INTEGER NOT NULL DEFAULT 0
+                CHECK (ocultar_quando_esgotado IN (0, 1))
+            """
+        )
     conn.executemany(
         "INSERT OR IGNORE INTO configuracoes(chave, valor) VALUES (?, ?)",
         (("taxa_credito", 0.0), ("taxa_debito", 0.0), ("taxa_pix", 0.0)),
@@ -254,12 +293,281 @@ def _versao_atual(conn: sqlite3.Connection) -> int | None:
     return int(row["version"]) if row and row["version"] is not None else None
 
 
-def _backup_path(path: Path) -> Path:
-    base = path.with_suffix(path.suffix + ".legacy-v1.bak")
+def _backup_path(path: Path, rotulo: str) -> Path:
+    base = path.with_suffix(path.suffix + f".{rotulo}.bak")
     if not base.exists():
         return base
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    return path.with_suffix(path.suffix + f".legacy-v1-{stamp}.bak")
+    return path.with_suffix(path.suffix + f".{rotulo}-{stamp}.bak")
+
+
+def _criar_backup_sqlite(path: Path, destino: Path) -> None:
+    """Cria uma cópia consistente mesmo quando o banco usa WAL."""
+    origem = sqlite3.connect(path)
+    backup = sqlite3.connect(destino)
+    try:
+        origem.backup(backup)
+    finally:
+        backup.close()
+        origem.close()
+
+
+def _adicionar_coluna_se_ausente(
+    conn: sqlite3.Connection,
+    tabela: str,
+    coluna: str,
+    definicao: str,
+) -> None:
+    colunas = {
+        row["name"] for row in conn.execute(f"PRAGMA table_info({tabela})")
+    }
+    if coluna not in colunas:
+        conn.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {definicao}")
+
+
+def migrar_v2_para_v3(db_path: str | os.PathLike[str] | None = None) -> Path:
+    """Adiciona lotes FIFO preservando integralmente cadastros e pedidos v2."""
+    path = Path(db_path or caminho_banco()).resolve()
+    backup = _backup_path(path, "pre-v3")
+    _criar_backup_sqlite(path, backup)
+
+    conn = conectar(path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("DROP INDEX IF EXISTS uq_estoque_venda_pedido_produto")
+        conn.execute("DROP INDEX IF EXISTS uq_estoque_estorno_pedido_produto")
+
+        _adicionar_coluna_se_ausente(
+            conn,
+            "produtos",
+            "ocultar_quando_esgotado",
+            "INTEGER NOT NULL DEFAULT 0 "
+            "CHECK (ocultar_quando_esgotado IN (0, 1))",
+        )
+        _adicionar_coluna_se_ausente(
+            conn,
+            "pedido_itens",
+            "custo_total_centavos",
+            "INTEGER NOT NULL DEFAULT 0 CHECK (custo_total_centavos >= 0)",
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS estoque_lotes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                produto_id INTEGER NOT NULL,
+                quantidade_inicial INTEGER NOT NULL CHECK (quantidade_inicial > 0),
+                custo_unitario_centavos INTEGER NOT NULL
+                    CHECK (custo_unitario_centavos >= 0),
+                tipo TEXT NOT NULL
+                    CHECK (tipo IN ('saldo_inicial', 'compra', 'ajuste')),
+                observacao TEXT,
+                recebido_em TEXT NOT NULL,
+                FOREIGN KEY (produto_id) REFERENCES produtos(id) ON DELETE RESTRICT
+            )
+            """
+        )
+        _adicionar_coluna_se_ausente(
+            conn,
+            "estoque_movimentacoes",
+            "pedido_item_id",
+            "INTEGER REFERENCES pedido_itens(id) ON DELETE RESTRICT",
+        )
+        _adicionar_coluna_se_ausente(
+            conn,
+            "estoque_movimentacoes",
+            "lote_id",
+            "INTEGER REFERENCES estoque_lotes(id) ON DELETE RESTRICT",
+        )
+        _adicionar_coluna_se_ausente(
+            conn,
+            "estoque_movimentacoes",
+            "movimento_origem_id",
+            "INTEGER REFERENCES estoque_movimentacoes(id) ON DELETE RESTRICT",
+        )
+        _adicionar_coluna_se_ausente(
+            conn,
+            "estoque_movimentacoes",
+            "impacta_relatorio",
+            "INTEGER NOT NULL DEFAULT 1 CHECK (impacta_relatorio IN (0, 1))",
+        )
+
+        # As entradas v2 viram um lote de abertura por produto. As saídas e
+        # estornos antigos passam a apontar para esse lote, preservando saldo,
+        # cancelamentos pendentes e o histórico necessário para os testes.
+        quantidade_lotes = conn.execute(
+            "SELECT COUNT(*) FROM estoque_lotes"
+        ).fetchone()[0]
+        if not quantidade_lotes:
+            entradas = conn.execute(
+                """
+                SELECT p.id AS produto_id,
+                       COALESCE(SUM(
+                           CASE
+                             WHEN m.quantidade > 0
+                              AND m.tipo IN ('saldo_inicial', 'compra', 'ajuste')
+                             THEN m.quantidade ELSE 0
+                           END
+                       ), 0) AS quantidade_inicial,
+                       COALESCE(
+                           SUM(
+                               CASE
+                                 WHEN m.quantidade > 0
+                                  AND m.tipo IN (
+                                      'saldo_inicial', 'compra', 'ajuste'
+                                  )
+                                 THEN m.quantidade * m.custo_unitario_centavos
+                                 ELSE 0
+                               END
+                           ), 0
+                       ) AS valor,
+                       MIN(
+                           CASE
+                             WHEN m.quantidade > 0
+                              AND m.tipo IN ('saldo_inicial', 'compra', 'ajuste')
+                             THEN m.created_at
+                           END
+                       ) AS primeira_entrada
+                FROM produtos p
+                LEFT JOIN estoque_movimentacoes m ON m.produto_id = p.id
+                GROUP BY p.id
+                """
+            ).fetchall()
+            agora = datetime.now(timezone.utc).isoformat()
+            for row in entradas:
+                quantidade_inicial = int(row["quantidade_inicial"] or 0)
+                if quantidade_inicial <= 0:
+                    continue
+                valor = int(row["valor"] or 0)
+                custo = max(int(round(valor / quantidade_inicial)), 0)
+                lote = conn.execute(
+                    """
+                    INSERT INTO estoque_lotes(
+                        produto_id, quantidade_inicial,
+                        custo_unitario_centavos, tipo, observacao, recebido_em
+                    ) VALUES (?, ?, ?, 'saldo_inicial', ?, ?)
+                    """,
+                    (
+                        row["produto_id"],
+                        quantidade_inicial,
+                        custo,
+                        "Saldo preservado na migração para FIFO",
+                        row["primeira_entrada"] or agora,
+                    ),
+                )
+                lote_id = int(lote.lastrowid)
+                conn.execute(
+                    """
+                    UPDATE estoque_movimentacoes
+                    SET lote_id = ?
+                    WHERE produto_id = ?
+                      AND NOT (
+                          quantidade > 0
+                          AND tipo IN ('saldo_inicial', 'compra', 'ajuste')
+                      )
+                    """,
+                    (lote_id, row["produto_id"]),
+                )
+
+            conn.execute(
+                """
+                UPDATE estoque_movimentacoes
+                SET pedido_item_id = (
+                    SELECT pi.id
+                    FROM pedido_itens pi
+                    WHERE pi.pedido_id = estoque_movimentacoes.pedido_id
+                      AND pi.produto_id = estoque_movimentacoes.produto_id
+                    ORDER BY pi.id
+                    LIMIT 1
+                )
+                WHERE tipo = 'venda' AND pedido_id IS NOT NULL
+                """
+            )
+
+        conn.execute(
+            """
+            UPDATE pedido_itens
+            SET custo_total_centavos = custo_unitario_centavos * quantidade
+            WHERE custo_total_centavos = 0
+            """
+        )
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_estoque_estorno_movimento_origem
+            ON estoque_movimentacoes (movimento_origem_id)
+            WHERE tipo = 'estorno'
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_lotes_produto_fifo
+            ON estoque_lotes(produto_id, recebido_em, id)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_movimentacoes_lote
+            ON estoque_movimentacoes(lote_id)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_movimentacoes_pedido_item
+            ON estoque_movimentacoes(pedido_item_id)
+            """
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO schema_version(version, applied_at) VALUES (?, ?)",
+            (SCHEMA_VERSION, datetime.now(timezone.utc).isoformat()),
+        )
+        if conn.execute("PRAGMA foreign_key_check").fetchone():
+            raise sqlite3.IntegrityError(
+                "A migração FIFO criou referências inválidas"
+            )
+        if conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+            raise sqlite3.IntegrityError("Falha de integridade após a migração FIFO")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return backup
+
+
+def migrar_v3_para_v4(db_path: str | os.PathLike[str] | None = None) -> Path:
+    """Marca ajustes operacionais neutros sem reescrever o histórico FIFO."""
+    path = Path(db_path or caminho_banco()).resolve()
+    backup = _backup_path(path, "pre-v4")
+    _criar_backup_sqlite(path, backup)
+
+    conn = conectar(path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _adicionar_coluna_se_ausente(
+            conn,
+            "estoque_movimentacoes",
+            "impacta_relatorio",
+            "INTEGER NOT NULL DEFAULT 1 CHECK (impacta_relatorio IN (0, 1))",
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO schema_version(version, applied_at) VALUES (?, ?)",
+            (SCHEMA_VERSION, datetime.now(timezone.utc).isoformat()),
+        )
+        if conn.execute("PRAGMA foreign_key_check").fetchone():
+            raise sqlite3.IntegrityError(
+                "A migração de ajustes neutros criou referências inválidas"
+            )
+        if conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+            raise sqlite3.IntegrityError(
+                "Falha de integridade após habilitar ajustes neutros"
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return backup
 
 
 def _extrair_legado(conn: sqlite3.Connection) -> dict:
@@ -359,10 +667,10 @@ def migrar_banco_legado(db_path: str | os.PathLike[str] | None = None) -> Path:
     finally:
         legado.close()
 
-    backup = _backup_path(path)
-    shutil.copy2(path, backup)
+    backup = _backup_path(path, "legacy-v1")
+    _criar_backup_sqlite(path, backup)
 
-    temporario = path.with_suffix(path.suffix + ".v2.tmp")
+    temporario = path.with_suffix(path.suffix + ".v3.tmp")
     if temporario.exists():
         temporario.unlink()
     novo = conectar(temporario)
@@ -406,10 +714,11 @@ def migrar_banco_legado(db_path: str | os.PathLike[str] | None = None) -> Path:
             agora = datetime.now(timezone.utc).isoformat()
             novo.executemany(
                 """
-                INSERT INTO estoque_movimentacoes(
-                    produto_id, tipo, quantidade, custo_unitario_centavos,
-                    observacao, created_at
-                ) VALUES (?, 'saldo_inicial', ?, ?, 'Saldo consolidado da migração v1', ?)
+                INSERT INTO estoque_lotes(
+                    produto_id, tipo, quantidade_inicial,
+                    custo_unitario_centavos, observacao, recebido_em
+                ) VALUES (?, 'saldo_inicial', ?, ?,
+                          'Saldo consolidado da migração legada', ?)
                 """,
                 [(pid, saldo, custo, agora) for pid, saldo, custo in dados["saldos"]],
             )
@@ -439,6 +748,12 @@ def inicializar_banco(db_path: str | os.PathLike[str] | None = None) -> None:
             versao = _versao_atual(conn)
         finally:
             conn.close()
+        if versao == 2:
+            migrar_v2_para_v3(path)
+            return
+        if versao == 3:
+            migrar_v3_para_v4(path)
+            return
         if versao != SCHEMA_VERSION:
             migrar_banco_legado(path)
             return

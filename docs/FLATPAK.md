@@ -1,4 +1,4 @@
-# Flatpak do Espetão
+# Flatpak do PDV Espetinho
 
 O manifesto `com.leobelisario.Espetao.yaml` segue o mesmo modelo simples do
 ProjetoComSoc: dependências Python em um módulo e arquivos do aplicativo em

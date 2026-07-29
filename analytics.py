@@ -73,6 +73,7 @@ def _item_api(row):
         "nome": row["nome_produto"],
         "preco": _reais(row["preco_unitario_centavos"]),
         "custo_unitario": _reais(row["custo_unitario_centavos"]),
+        "custo_total": _reais(row["custo_total_centavos"]),
         "quantidade": row["quantidade"],
         "customizacao": json.loads(row["customizacao_json"])
         if row["customizacao_json"]
@@ -295,9 +296,7 @@ def _calcular_fechamento(inicio, fim, local_id="todos"):
             if pedido_id not in cache_itens:
                 cache_itens[pedido_id] = _itens_pedido(conn, pedido_id)
             itens = cache_itens[pedido_id]
-            custo_pedido = sum(
-                item["custo_unitario_centavos"] * item["quantidade"] for item in itens
-            )
+            custo_pedido = sum(item["custo_total_centavos"] for item in itens)
             cmv_liquido += sinal * custo_pedido
             if sinal > 0:
                 itens_pagos += sum(item["quantidade"] for item in itens)
@@ -320,9 +319,7 @@ def _calcular_fechamento(inicio, fim, local_id="todos"):
                 agregado["receita_centavos"] += (
                     sinal * item["preco_unitario_centavos"] * item["quantidade"]
                 )
-                agregado["custo_centavos"] += (
-                    sinal * item["custo_unitario_centavos"] * item["quantidade"]
-                )
+                agregado["custo_centavos"] += sinal * item["custo_total_centavos"]
 
             horario = datetime.fromisoformat(evento["ocorrido_em"])
             indice = int(
@@ -357,7 +354,8 @@ def _calcular_fechamento(inicio, fim, local_id="todos"):
                 """
                 SELECT COALESCE(SUM(ABS(quantidade) * custo_unitario_centavos), 0)
                 FROM estoque_movimentacoes
-                WHERE (
+                WHERE impacta_relatorio = 1
+                  AND (
                     tipo = 'perda'
                     OR (tipo = 'ajuste' AND quantidade < 0)
                 )
@@ -387,18 +385,49 @@ def _calcular_fechamento(inicio, fim, local_id="todos"):
                 conn.execute(
                     """
                     SELECT COALESCE(SUM(quantidade), 0)
-                    FROM estoque_movimentacoes
-                    WHERE produto_id = ? AND created_at < ?
+                    FROM (
+                        SELECT l.quantidade_inicial + COALESCE((
+                                   SELECT SUM(neutro.quantidade)
+                                   FROM estoque_movimentacoes neutro
+                                   WHERE neutro.lote_id = l.id
+                                     AND neutro.impacta_relatorio = 0
+                                     AND neutro.created_at < ?
+                               ), 0) AS quantidade
+                        FROM estoque_lotes l
+                        WHERE l.produto_id = ? AND l.recebido_em < ?
+                        UNION ALL
+                        SELECT quantidade
+                        FROM estoque_movimentacoes
+                        WHERE produto_id = ? AND lote_id IS NOT NULL
+                          AND impacta_relatorio = 1 AND created_at < ?
+                    )
                     """,
-                    (produto["id"], inicio),
+                    (fim, produto["id"], inicio, produto["id"], inicio),
                 ).fetchone()[0]
             )
             movimentos = conn.execute(
                 """
-                SELECT quantidade FROM estoque_movimentacoes
-                WHERE produto_id = ? AND created_at >= ? AND created_at < ?
+                SELECT quantidade
+                FROM (
+                    SELECT l.quantidade_inicial + COALESCE((
+                               SELECT SUM(neutro.quantidade)
+                               FROM estoque_movimentacoes neutro
+                               WHERE neutro.lote_id = l.id
+                                 AND neutro.impacta_relatorio = 0
+                                 AND neutro.created_at < ?
+                           ), 0) AS quantidade,
+                           l.recebido_em AS ocorrido_em
+                    FROM estoque_lotes l
+                    WHERE l.produto_id = ?
+                    UNION ALL
+                    SELECT quantidade, created_at AS ocorrido_em
+                    FROM estoque_movimentacoes
+                    WHERE produto_id = ? AND lote_id IS NOT NULL
+                      AND impacta_relatorio = 1
+                )
+                WHERE ocorrido_em >= ? AND ocorrido_em < ?
                 """,
-                (produto["id"], inicio, fim),
+                (fim, produto["id"], produto["id"], inicio, fim),
             ).fetchall()
             entradas = sum(max(int(row["quantidade"]), 0) for row in movimentos)
             saidas = sum(abs(min(int(row["quantidade"]), 0)) for row in movimentos)

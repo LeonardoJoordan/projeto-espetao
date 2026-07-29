@@ -12,9 +12,11 @@ import {
     salvarPedido,
     formatCurrency,
     carrinhoId,
-    gerenciarReservaAPI,
+    definirReservaAPI,
+    verificarDisponibilidadeAPI,
+    ErroConexaoServidor,
+    ehErroConexaoServidor,
     renovarSessaoDebounced,
-    enviarPedidoDecodificado,
     processarPedidoDecodificado // Adicionada aqui
 } from './cliente-logica.js';
 
@@ -33,7 +35,7 @@ const btnAcaoPrincipal = document.getElementById('btn-acao-principal');
 const mainContent = document.getElementById('main-content');
 const navLinks = document.querySelectorAll('#nav-categorias a');
 const sections = document.querySelectorAll('.categoria-secao');
-const lastSection = sections.length > 0 ? sections[sections.length - 1] : null;
+const catalogoSemItens = document.getElementById('catalogo-sem-itens');
 
 // Elementos da tela de 
 const telaSenha = document.getElementById('tela-senha');
@@ -53,63 +55,298 @@ const tecladoContainer = document.getElementById('teclado-virtual');
 const modalSimples = document.getElementById('modal-quantidade-simples');
 const modalCustomizacao = document.getElementById('modal-customizacao');
 const modalConfirmacao = document.getElementById('modal-confirmacao-pedido');
+const statusConexaoCliente = document.getElementById('status-conexao-cliente');
 
 // Variáveis de controle de listeners para evitar duplicação
 let eventoPopupSimplesAtivo = null;
 let eventoPopupAtivo = null;
 let preSelecoesPedido = null;
+let alertaConexaoAberto = false;
+const produtosAbrindo = new Set();
+const socketSuportado = Boolean(window.io && typeof window.io === 'function');
+let servidorHttpOnline = true;
+let atualizacaoTempoRealOnline = false;
+
+function atualizarIndicadorConexao() {
+    if (statusConexaoCliente) {
+        const completamenteOnline =
+            servidorHttpOnline &&
+            socketSuportado &&
+            atualizacaoTempoRealOnline;
+        statusConexaoCliente.dataset.state =
+            completamenteOnline ? 'online' : 'offline';
+    }
+}
+
+function definirStatusConexao(online) {
+    servidorHttpOnline = online;
+    atualizarIndicadorConexao();
+}
+
+function definirStatusTempoReal(online) {
+    atualizacaoTempoRealOnline = online;
+    if (online) servidorHttpOnline = true;
+    atualizarIndicadorConexao();
+}
+
+function aplicarAtualizacaoEstoque(update) {
+    const produtoId = update?.produto_id;
+    const disponivel = Number(update?.disponivel ?? update?.disponibilidade_atual);
+    if (produtoId === undefined || !Number.isFinite(disponivel)) return;
+
+    estoqueState.setEstoque(produtoId, disponivel);
+    const productCard = document.querySelector(`.product-card[data-id="${produtoId}"]`);
+    if (!productCard) return;
+
+    const addButton = productCard.querySelector('.add-button');
+    if (addButton) {
+        addButton.disabled = false;
+        addButton.style.cursor = 'pointer';
+        addButton.style.backgroundColor = '';
+    }
+    productCard.dataset.estoque = String(disponivel);
+    productCard.classList.toggle('possivel-esgotado', disponivel <= 0);
+    const ocultarQuandoEsgotado =
+        productCard.dataset.ocultarQuandoEsgotado === '1';
+    productCard.classList.toggle(
+        'catalog-hidden',
+        ocultarQuandoEsgotado && disponivel <= 0
+    );
+    atualizarVisibilidadeCategoria(productCard);
+}
+
+function atualizarVisibilidadeCategoria(productCard) {
+    const section = productCard?.closest('.categoria-secao');
+    if (!section) return;
+
+    const possuiProdutoVisivel = Array.from(
+        section.querySelectorAll('.product-card')
+    ).some(card => !card.classList.contains('catalog-hidden'));
+    const estavaOculta = section.classList.contains('catalog-hidden');
+    const deveOcultar = !possuiProdutoVisivel;
+    section.classList.toggle('catalog-hidden', deveOcultar);
+
+    const navLink = Array.from(navLinks).find(
+        link => link.getAttribute('href') === `#${section.id}`
+    );
+    navLink?.closest('li')?.classList.toggle(
+        'catalog-hidden',
+        deveOcultar
+    );
+    atualizarEstadoVazioCatalogo();
+    if (estavaOculta !== deveOcultar) {
+        updateActiveLinkOnScroll();
+    }
+}
+
+function atualizarEstadoVazioCatalogo() {
+    if (!catalogoSemItens) return;
+    const possuiCategoriaVisivel = Array.from(sections).some(
+        section => !section.classList.contains('catalog-hidden')
+    );
+    catalogoSemItens.classList.toggle('catalog-hidden', possuiCategoriaVisivel);
+}
+
+function atualizarVisibilidadeCatalogo() {
+    sections.forEach(section => {
+        const primeiroCard = section.querySelector('.product-card');
+        if (primeiroCard) atualizarVisibilidadeCategoria(primeiroCard);
+    });
+    atualizarEstadoVazioCatalogo();
+    updateActiveLinkOnScroll();
+}
+
+function quantidadeProdutoNoPedido(produtoId) {
+    const idNormalizado = Number(produtoId);
+    return pedidoAtual.reduce(
+        (total, item) => Number(item.id) === idNormalizado
+            ? total + Number(item.quantidade || 0)
+            : total,
+        0
+    );
+}
+
+async function mostrarFalhaConexao() {
+    definirStatusConexao(false);
+    if (alertaConexaoAberto) return;
+
+    alertaConexaoAberto = true;
+    try {
+        await mostrarAlerta(
+            'Conexão com o servidor interrompida',
+            'Não foi possível confirmar o estoque agora. Seu pedido não foi alterado. Aguarde a reconexão e tente novamente.'
+        );
+    } finally {
+        alertaConexaoAberto = false;
+    }
+}
+
+function criarControleReserva({
+    produtoId,
+    quantidadeBase,
+    quantidadeInicial,
+    aoAtualizarQuantidade,
+}) {
+    const ATRASO_AGRUPAMENTO_MS = 90;
+    let quantidadeDesejada = quantidadeInicial;
+    let totalConfirmado = quantidadeBase + quantidadeInicial;
+    let timer = null;
+    let sincronizacaoAtual = null;
+    let ultimoLimiteAvisado = null;
+
+    const totalDesejado = () => quantidadeBase + quantidadeDesejada;
+
+    async function sincronizar() {
+        if (sincronizacaoAtual) return sincronizacaoAtual;
+
+        sincronizacaoAtual = (async () => {
+            while (totalConfirmado !== totalDesejado()) {
+                const totalEnviado = totalDesejado();
+                let resultado;
+
+                try {
+                    resultado = await definirReservaAPI(produtoId, totalEnviado);
+                    definirStatusConexao(true);
+                } catch (erro) {
+                    console.error('Falha ao sincronizar a quantidade do item:', erro);
+                    quantidadeDesejada = Math.max(totalConfirmado - quantidadeBase, 0);
+                    aoAtualizarQuantidade(quantidadeDesejada);
+                    void mostrarFalhaConexao();
+                    return false;
+                }
+
+                resultado.produtos_afetados?.forEach(aplicarAtualizacaoEstoque);
+                const quantidadeAplicada = Number(resultado.quantidade_reservada);
+                if (!Number.isFinite(quantidadeAplicada)) {
+                    quantidadeDesejada = Math.max(totalConfirmado - quantidadeBase, 0);
+                    aoAtualizarQuantidade(quantidadeDesejada);
+                    void mostrarFalhaConexao();
+                    return false;
+                }
+
+                totalConfirmado = quantidadeAplicada;
+
+                if (resultado.ajustada) {
+                    quantidadeDesejada = Math.max(
+                        quantidadeAplicada - quantidadeBase,
+                        0
+                    );
+                    aoAtualizarQuantidade(quantidadeDesejada);
+
+                    if (ultimoLimiteAvisado !== quantidadeAplicada) {
+                        ultimoLimiteAvisado = quantidadeAplicada;
+                        void mostrarAlerta(
+                            'Quantidade máxima disponível',
+                            quantidadeDesejada > 0
+                                ? `No momento, é possível adicionar até ${quantidadeDesejada} unidade(s) deste item.`
+                                : 'Não há mais unidades deste item disponíveis no momento.'
+                        );
+                    }
+                }
+            }
+            return true;
+        })().finally(() => {
+            sincronizacaoAtual = null;
+        });
+
+        return sincronizacaoAtual;
+    }
+
+    function agendar(novaQuantidade) {
+        quantidadeDesejada = Math.max(Number(novaQuantidade) || 0, 0);
+        ultimoLimiteAvisado = null;
+        aoAtualizarQuantidade(quantidadeDesejada);
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+            timer = null;
+            void sincronizar();
+        }, ATRASO_AGRUPAMENTO_MS);
+    }
+
+    async function sincronizarAgora() {
+        clearTimeout(timer);
+        timer = null;
+        const sucesso = await sincronizar();
+        return Boolean(
+            sucesso &&
+            quantidadeDesejada > 0 &&
+            totalConfirmado === totalDesejado()
+        );
+    }
+
+    async function liberarPopup() {
+        clearTimeout(timer);
+        timer = null;
+        quantidadeDesejada = 0;
+        const sucesso = await sincronizar();
+        return Boolean(sucesso && totalConfirmado === quantidadeBase);
+    }
+
+    return {
+        agendar,
+        sincronizarAgora,
+        liberarPopup,
+        getQuantidade: () => quantidadeDesejada,
+    };
+}
 
 // ==========================================================
 // 2.5. LÓGICA DE SESSÃO E TEMPO REAL (SOCKET.IO)
 // ==========================================================
 
 let socket = null;
-if (window.io && typeof window.io === 'function') {
-  socket = io();
+if (socketSuportado) {
+  socket = io({
+      reconnection: true,
+      reconnectionDelay: 800,
+      reconnectionDelayMax: 5000,
+  });
 
   socket.on('connect', () => {
       console.log('Conectado ao servidor Socket.IO');
+      definirStatusTempoReal(true);
+      void atualizarDisponibilidadeCompleta();
   });
 
     // Listener para receber atualizações de disponibilidade de estoque
     socket.on('atualizacao_disponibilidade', (payload) => {
         console.log('%cEstoque Atualizado via Socket.IO:', 'color: lightblue', payload);
 
-        payload.updates.forEach(update => {
-            const produtoId = update.produto_id;
-            const disponivel = update.disponivel ?? update.disponibilidade_atual ?? 0;
-            
-            // PASSO 1: ATUALIZA NOSSO NOVO ESTADO COMPARTILHADO
-            estoqueState.setEstoque(produtoId, disponivel);
-
-            // PASSO 2: ATUALIZA A UI IMEDIATAMENTE
-            const productCard = document.querySelector(`.product-card[data-id="${produtoId}"]`);
-            if (productCard) {
-            const addButton = productCard.querySelector('.add-button');
-
-            // Sempre mantenha o botão clicável
-            addButton.disabled = false;
-            addButton.style.cursor = 'pointer';
-            addButton.style.backgroundColor = ''; // deixa o estilo padrão
-
-            // Sincroniza o data-attribute para consultas futuras
-            productCard.dataset.estoque = String(disponivel);
-
-            // (Opcional) Feedback visual sem bloquear:
-            // - Quando zerado, exibimos um "badge" ou classe visual
-            //   sem impedir o clique; o clique fará a checagem real.
-            if (disponivel <= 0) {
-                productCard.classList.add('possivel-esgotado'); // classe só visual
-            } else {
-                productCard.classList.remove('possivel-esgotado');
-            }
-            }
-        });
+        payload.updates?.forEach(aplicarAtualizacaoEstoque);
     });
 
+    socket.on('disconnect', () => definirStatusTempoReal(false));
+    socket.on('connect_error', () => definirStatusTempoReal(false));
 } else {
   console.warn('Socket.IO não disponível; seguindo sem tempo real.');
+  definirStatusTempoReal(false);
 }
+
+async function atualizarDisponibilidadeCompleta() {
+    const cards = Array.from(document.querySelectorAll('.product-card'));
+    if (!cards.length) return;
+
+    try {
+        const disponibilidades = await verificarDisponibilidadeAPI(
+            cards.map(card => ({ id: Number(card.dataset.id) }))
+        );
+        Object.entries(disponibilidades).forEach(([produtoId, disponivel]) => {
+            aplicarAtualizacaoEstoque({ produto_id: produtoId, disponivel });
+        });
+        definirStatusConexao(true);
+    } catch (erro) {
+        console.error('Falha ao atualizar a disponibilidade completa:', erro);
+        definirStatusConexao(false);
+    }
+}
+
+window.setInterval(() => {
+    void atualizarDisponibilidadeCompleta();
+}, 15000);
+
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) void atualizarDisponibilidadeCompleta();
+});
 
 //
 
@@ -199,10 +436,17 @@ function atualizarBotaoPrincipal() {
 }
 
 function updateActiveLinkOnScroll() {
-    if (!mainContent || !lastSection) return;
+    const secoesVisiveis = Array.from(sections).filter(
+        section => !section.classList.contains('catalog-hidden')
+    );
+    const ultimaSecaoVisivel = secoesVisiveis[secoesVisiveis.length - 1];
+    if (!mainContent || !ultimaSecaoVisivel) {
+        navLinks.forEach(link => link.classList.remove('active'));
+        return;
+    }
     const containerTop = mainContent.getBoundingClientRect().top;
     let currentSectionId = '';
-    for (const section of sections) {
+    for (const section of secoesVisiveis) {
         const rect = section.getBoundingClientRect();
         if (rect.bottom > containerTop + 1) {
             currentSectionId = section.id;
@@ -211,14 +455,14 @@ function updateActiveLinkOnScroll() {
     }
     const isAtBottom = mainContent.scrollTop + mainContent.clientHeight >= mainContent.scrollHeight - 5;
     if (isAtBottom) {
-        currentSectionId = lastSection.id;
+        currentSectionId = ultimaSecaoVisivel.id;
     }
     navLinks.forEach(link => {
         link.classList.toggle('active', link.getAttribute('href').substring(1) === currentSectionId);
     });
 }
 
-async function abrirPopupSimples(productCard) { // <-- Adicionamos 'async'
+async function abrirPopupSimples(productCard, quantidadeBase) {
     const idProduto = parseInt(productCard.dataset.id);
 
     if (!modalSimples) return; // A validação original permanece
@@ -286,6 +530,8 @@ async function abrirPopupSimples(productCard) { // <-- Adicionamos 'async'
     const quantidadeDisplay = document.getElementById('quantidade-display-simples');
     const precoTotalDisplay = document.getElementById('preco-total-simples');
     let quantidade = 1;
+    let controleReserva = null;
+    let finalizando = false;
 
     // NOVO: guardas para evitar liberação dupla
     let popupFechado = false;
@@ -301,16 +547,9 @@ async function abrirPopupSimples(productCard) { // <-- Adicionamos 'async'
         if (popupFechado) return; // evita corrida/double call
         popupFechado = true;
 
-    const idProduto = parseInt(productCard.dataset.id);
-
-    // Se NÃO confirmou, libera tudo que está reservado neste popup
-    if (reason !== 'confirm' && quantidade > 0) {
-        const resultado = await gerenciarReservaAPI(idProduto, -quantidade);
-        if (resultado?.produtos_afetados?.length) {
-        const upd = resultado.produtos_afetados[0];
-        const disponivel = upd.disponivel ?? upd.disponibilidade_atual ?? 0;
-        estoqueState.setEstoque(upd.produto_id, disponivel);
-        }
+    // Se NÃO confirmou, volta a reserva total para o que já estava no carrinho.
+    if (reason !== 'confirm' && controleReserva) {
+        await controleReserva.liberarPopup();
     }
 
     // Esconde UI e limpa blur
@@ -339,59 +578,45 @@ async function abrirPopupSimples(productCard) { // <-- Adicionamos 'async'
         precoTotalDisplay.textContent = `R$ ${total.toFixed(2).replace('.', ',')}`;
     }
 
-    eventoPopupSimplesAtivo = async (event) => { // <-- Função agora é async
-        const target = event.target.closest('button');
-        if (!target) return;
+    controleReserva = criarControleReserva({
+        produtoId: idProduto,
+        quantidadeBase,
+        quantidadeInicial: 1,
+        aoAtualizarQuantidade: (novaQuantidade) => {
+            quantidade = novaQuantidade;
+            atualizarInterfaceSimples();
+        },
+    });
 
-        const idProduto = parseInt(productCard.dataset.id);
+    eventoPopupSimplesAtivo = async (event) => {
+        const target = event.target.closest('button');
+        if (!target || finalizando) return;
 
         if (target.id === 'btn-aumentar-simples') {
-            // PONTO DE ATENÇÃO #1 e #3: VERIFICAÇÃO PREVENTIVA
-
-            const resultadoReserva = await gerenciarReservaAPI(idProduto, 1);
-            
-            // PONTO DE ATENÇÃO #5: Sincroniza o estado local com a resposta da API
-            if (resultadoReserva.produtos_afetados && resultadoReserva.produtos_afetados.length > 0) {
-                const update = resultadoReserva.produtos_afetados[0];
-                const disponivel = update.disponivel ?? update.disponibilidade_atual ?? 0;
-                estoqueState.setEstoque(update.produto_id, disponivel);
-            }
-
-            if (resultadoReserva.sucesso) {
-                quantidade++;
-                atualizarInterfaceSimples();
-            } else {
-                await mostrarAlerta(`Putz, acabou por aqui!`, resultadoReserva.mensagem || `Não há mais unidades deste item no momento.`);
-            }
+            controleReserva.agendar(quantidade + 1);
 
         } else if (target.id === 'btn-diminuir-simples') {
             if (quantidade > 1) {
-                const resultadoLiberacao = await gerenciarReservaAPI(idProduto, -1);
-
-                // Sincroniza o estado local com a nova disponibilidade retornada pelo servidor.
-                if (resultadoLiberacao.produtos_afetados && resultadoLiberacao.produtos_afetados.length > 0) {
-                    const update = resultadoLiberacao.produtos_afetados[0];
-                    const disponivel = update.disponivel ?? update.disponibilidade_atual ?? 0;
-                    estoqueState.setEstoque(update.produto_id, disponivel);
-                }
-
-                // Apenas decrementa a quantidade local se o servidor confirmar a liberação.
-                if (resultadoLiberacao.sucesso) {
-                    quantidade--;
-                    atualizarInterfaceSimples();
-                } else {
-                    // Em caso de falha (ex: problema de rede), é mais seguro notificar o usuário.
-                    await mostrarAlerta('Erro de Comunicação', 'Não foi possível atualizar a quantidade. Por favor, tente cancelar e adicionar o item novamente.');
-                }
+                controleReserva.agendar(quantidade - 1);
             }
         }   else if (target.id === 'btn-cancelar-simples') {
+            finalizando = true;
             await fecharPopupSimples('cancel');
 
         } else if (target.id === 'btn-adicionar-simples') {
+            finalizando = true;
+            target.disabled = true;
+            const sincronizado = await controleReserva.sincronizarAgora();
+            quantidade = controleReserva.getQuantidade();
+            if (!sincronizado || quantidade <= 0) {
+                target.disabled = false;
+                finalizando = false;
+                return;
+            }
             const novoItem = { id: idProduto, nome: productCard.dataset.nome, preco: parseFloat(productCard.dataset.preco), quantidade: quantidade, requer_preparo: parseInt(productCard.dataset.requerPreparo), categoria_ordem: parseInt(productCard.dataset.categoriaOrdem), produto_ordem: parseInt(productCard.dataset.produtoOrdem) };
             adicionarItemAoPedido(novoItem);
             atualizarBotaoPrincipal();
-            await fecharPopupSimples('confirm'); // <-- não libera reservas
+            await fecharPopupSimples('confirm');
         }
     };
 
@@ -399,7 +624,7 @@ async function abrirPopupSimples(productCard) { // <-- Adicionamos 'async'
     atualizarInterfaceSimples();
 }
 
-async function abrirPopupCustomizacao(productCard) { // Adicionamos 'async' aqui
+async function abrirPopupCustomizacao(productCard, quantidadeBase) {
     if (!modalCustomizacao) return;
 
     // Remove o event listener anterior para segurança
@@ -415,7 +640,18 @@ async function abrirPopupCustomizacao(productCard) { // Adicionamos 'async' aqui
         acompanhamentosDisponiveis = await response.json();
     } catch (error) {
         console.error("Erro ao buscar acompanhamentos:", error);
-        // Podemos alertar o usuário ou apenas não mostrar os extras.
+        try {
+            const liberacao = await definirReservaAPI(
+                productCard.dataset.id,
+                quantidadeBase
+            );
+            liberacao.produtos_afetados?.forEach(aplicarAtualizacaoEstoque);
+        } catch (erroLiberacao) {
+            console.warn('A reserva inicial expirará automaticamente.', erroLiberacao);
+        }
+        throw new ErroConexaoServidor(
+            'Não foi possível carregar as opções deste produto.'
+        );
     }
 
     const nomeProduto = productCard.dataset.nome;
@@ -468,6 +704,8 @@ async function abrirPopupCustomizacao(productCard) { // Adicionamos 'async' aqui
     const precoTotalDisplay = document.getElementById('preco-total-popup');
     const containerLinhas = document.getElementById('linhas-customizacao-popup');
     let quantidade = 1;
+    let controleReserva = null;
+    let finalizando = false;
 
     // === FECHAMENTO CENTRALIZADO (igual ao modal simples) ===
     let popupCustomFechado = false;
@@ -485,21 +723,9 @@ async function abrirPopupCustomizacao(productCard) { // Adicionamos 'async' aqui
         if (popupCustomFechado) return;
         popupCustomFechado = true;
 
-    const idProduto = parseInt(productCard.dataset.id, 10);
-
-    // Se NÃO confirmou, libera tudo que está reservado neste popup
-    if (reason !== 'confirm' && quantidade > 0) {
-        try {
-        const resultado = await gerenciarReservaAPI(idProduto, -quantidade);
-        if (resultado?.produtos_afetados?.length) {
-            const upd = resultado.produtos_afetados[0];
-            const disponivel = upd.disponivel ?? upd.disponibilidade_atual ?? 0;
-            estoqueState.setEstoque(upd.produto_id, disponivel);
-        }
-        } catch (e) {
-        console.warn('Falha ao liberar reservas no fechamento do popup custom:', e);
-        // Como é fechamento por cancel/external, seguimos fechando mesmo assim.
-        }
+    // Se NÃO confirmou, volta a reserva total para o que já estava no carrinho.
+    if (reason !== 'confirm' && controleReserva) {
+        await controleReserva.liberarPopup();
     }
 
     // Esconde UI e limpa blur
@@ -569,12 +795,17 @@ async function abrirPopupCustomizacao(productCard) { // Adicionamos 'async' aqui
         `;
     }
 
-    // A função de atualizar a UI agora passa a lista de acompanhamentos para a função de criar a linha.
     function atualizarInterfacePopup() {
         quantidadeDisplay.textContent = quantidade;
-        containerLinhas.innerHTML = '';
-        for (let i = 1; i <= quantidade; i++) {
-            containerLinhas.innerHTML += criarLinhaHtml(i, acompanhamentosDisponiveis);
+        while (containerLinhas.children.length < quantidade) {
+            const numeroItem = containerLinhas.children.length + 1;
+            containerLinhas.insertAdjacentHTML(
+                'beforeend',
+                criarLinhaHtml(numeroItem, acompanhamentosDisponiveis)
+            );
+        }
+        while (containerLinhas.children.length > quantidade) {
+            containerLinhas.lastElementChild?.remove();
         }
         const total = quantidade * precoProduto;
         precoTotalDisplay.textContent = `R$ ${total.toFixed(2).replace('.', ',')}`;
@@ -595,55 +826,44 @@ async function abrirPopupCustomizacao(productCard) { // Adicionamos 'async' aqui
     window.addEventListener('keydown', onEscKeyCustom);
 
 
-    // A lógica de eventos permanece a mesma...
-    eventoPopupAtivo = async (event) => { // <-- Função agora é async
+    controleReserva = criarControleReserva({
+        produtoId: parseInt(productCard.dataset.id, 10),
+        quantidadeBase,
+        quantidadeInicial: 1,
+        aoAtualizarQuantidade: (novaQuantidade) => {
+            quantidade = novaQuantidade;
+            atualizarInterfacePopup();
+        },
+    });
+
+    eventoPopupAtivo = async (event) => {
         const target = event.target;
         const idProduto = parseInt(productCard.dataset.id);
+        if (finalizando) return;
         
         if (target.closest('#btn-aumentar-popup')) {
-
-            const resultadoReserva = await gerenciarReservaAPI(idProduto, 1);
-            
-            // PONTO DE ATENÇÃO #5: Sincroniza o estado local com a resposta da API
-            if (resultadoReserva.produtos_afetados && resultadoReserva.produtos_afetados.length > 0) {
-                const update = resultadoReserva.produtos_afetados[0];
-                const disponivel = update.disponivel ?? update.disponibilidade_atual ?? 0;
-                estoqueState.setEstoque(update.produto_id, disponivel);
-            }
-
-            if (resultadoReserva.sucesso) {
-                quantidade++;
-                containerLinhas.insertAdjacentHTML('beforeend', criarLinhaHtml(quantidade, acompanhamentosDisponiveis));
-                quantidadeDisplay.textContent = quantidade;
-                precoTotalDisplay.textContent = formatCurrency(quantidade * precoProduto);
-            } else {
-                await mostrarAlerta(`Putz, acabou por aqui!`, resultadoReserva.mensagem || `Não há mais unidades deste item no momento.`);
-            }
+            controleReserva.agendar(quantidade + 1);
         } else if (target.closest('#btn-diminuir-popup')) {
             if (quantidade > 1) {
-                const idProduto = parseInt(productCard.dataset.id, 10);
-                const resultadoLiberacao = await gerenciarReservaAPI(idProduto, -1);
-
-                if (resultadoLiberacao?.produtos_afetados?.length) {
-                const update = resultadoLiberacao.produtos_afetados[0];
-                const disponivel = update.disponivel ?? update.disponibilidade_atual ?? 0;
-                estoqueState.setEstoque(update.produto_id, disponivel);
-                }
-
-                if (resultadoLiberacao?.sucesso) {
-                quantidade--;
-                if (containerLinhas.lastElementChild) containerLinhas.lastElementChild.remove();
-                quantidadeDisplay.textContent = quantidade;
-                precoTotalDisplay.textContent = formatCurrency(quantidade * precoProduto);
-                } else {
-                await mostrarAlerta('Erro de Comunicação', 'Não foi possível atualizar a quantidade. Tente novamente.');
-                }
+                controleReserva.agendar(quantidade - 1);
             }
         } else if (target.closest('#btn-cancelar-item-popup')) {
-          await fecharPopupCustomizacao('cancel'); // libera tudo e fecha
+            finalizando = true;
+            await fecharPopupCustomizacao('cancel');
 
         } else if (target.closest('#btn-adicionar-pedido-popup')) {
-            document.querySelectorAll('.item-customizacao').forEach(itemNode => {
+            finalizando = true;
+            const botaoAdicionar = target.closest('#btn-adicionar-pedido-popup');
+            botaoAdicionar.disabled = true;
+            const sincronizado = await controleReserva.sincronizarAgora();
+            quantidade = controleReserva.getQuantidade();
+            if (!sincronizado || quantidade <= 0) {
+                botaoAdicionar.disabled = false;
+                finalizando = false;
+                return;
+            }
+
+            containerLinhas.querySelectorAll('.item-customizacao').forEach(itemNode => {
                 const ponto = itemNode.querySelector('input[name$="ponto"]:checked').value;
                 const acompanhamentos = Array.from(itemNode.querySelectorAll('.extras-grid input:checked')).map(cb => cb.value);
                 const customizacao = { ponto, acompanhamentos };
@@ -651,7 +871,7 @@ async function abrirPopupCustomizacao(productCard) { // Adicionamos 'async' aqui
                 adicionarItemAoPedido(novoItem);
             });
             atualizarBotaoPrincipal();
-            await fecharPopupCustomizacao('confirm'); // fecha sem liberar, pois a reserva vira item do pedido
+            await fecharPopupCustomizacao('confirm');
 
         } else {
             // Lógica de UI para seleção de ponto/extras (mantida)
@@ -950,7 +1170,11 @@ if (btnIniciar) {
                 await mostrarAlerta("Ajuste de Estoque Necessário", mensagemHtml);
                 }
             } catch (error) {
-                await mostrarAlerta("Erro de Decodificação", error.message);
+                if (ehErroConexaoServidor(error)) {
+                    await mostrarFalhaConexao();
+                } else {
+                    await mostrarAlerta("Erro de Decodificação", error.message);
+                }
             } finally {
                 btnIniciar.disabled = false;
                 btnIniciar.textContent = "Iniciar Pedido";
@@ -1041,45 +1265,51 @@ document.addEventListener('click', async (event) => { // <--- Função agora é 
 
     const productCard = addButton.closest('.product-card');
     const produtoId = productCard.dataset.id;
-
-    // PONTO DE ATENÇÃO #1 e #3: VERIFICAÇÃO PREVENTIVA
-    const estoqueDisponivel = estoqueState.getEstoque(produtoId);
-    if (estoqueDisponivel <= 0) {
-        await mostrarAlerta(`Putz, acabou por aqui!`, `Não há mais unidades deste item no momento.`);
-        return; // Impede a continuação
-    }
+    if (produtosAbrindo.size > 0) return;
 
     // Animação de "fogo" (lógica mantida)
     addButton.classList.add('firing');
     setTimeout(() => addButton.classList.remove('firing'), 300);
 
-    // Tenta fazer a reserva na API
-    const resultadoReserva = await gerenciarReservaAPI(produtoId, 1);
+    produtosAbrindo.add(produtoId);
+    addButton.setAttribute('aria-busy', 'true');
+    const quantidadeBase = quantidadeProdutoNoPedido(produtoId);
 
-    // PONTO DE ATENÇÃO #5: Sincroniza o estado local com a resposta da API
-    if (resultadoReserva.produtos_afetados && resultadoReserva.produtos_afetados.length > 0) {
-        const update = resultadoReserva.produtos_afetados[0];
-        estoqueState.setEstoque(update.produto_id, update.disponivel);
-    }
+    try {
+        const resultadoReserva = await definirReservaAPI(
+            produtoId,
+            quantidadeBase + 1
+        );
+        definirStatusConexao(true);
+        resultadoReserva.produtos_afetados?.forEach(aplicarAtualizacaoEstoque);
 
-    if (resultadoReserva.sucesso) {
-        console.log(`Reserva para produto ${produtoId} bem-sucedida.`);
-        // Se a reserva funcionou, executa a lógica original de abrir o popup
-        if (productCard && productCard.dataset.id) {
+        if (Number(resultadoReserva.quantidade_reservada) > quantidadeBase) {
+            console.log(`Reserva para produto ${produtoId} bem-sucedida.`);
             const categoriaNome = productCard.dataset.categoriaNome;
             if (categoriaNome === 'Espetinhos') {
-                abrirPopupCustomizacao(productCard);
+                await abrirPopupCustomizacao(productCard, quantidadeBase);
             } else {
-                abrirPopupSimples(productCard);
+                await abrirPopupSimples(productCard, quantidadeBase);
             }
+        } else {
+            await mostrarAlerta(
+                'Putz, acabou por aqui!',
+                'Não há mais unidades deste item no momento.'
+            );
         }
-    } else {
-        // Se a reserva falhou (concorrência), informa o usuário e atualiza a UI
-        console.warn(`Reserva para produto ${produtoId} falhou:`, resultadoReserva.mensagem);
-        await mostrarAlerta(`Putz, acabou por aqui!`, `Não há mais unidades deste item no momento.`);
-
-        productCard.dataset.estoque = 0; // Sincroniza o data-attribute
-        productCard.classList.add('possivel-esgotado'); // só visual, clique continua permitido
+    } catch (erro) {
+        if (ehErroConexaoServidor(erro)) {
+            await mostrarFalhaConexao();
+        } else {
+            console.error('Falha inesperada ao abrir o item:', erro);
+            await mostrarAlerta(
+                'Não foi possível adicionar o item',
+                'Ocorreu um erro inesperado. Tente novamente.'
+            );
+        }
+    } finally {
+        produtosAbrindo.delete(produtoId);
+        addButton.removeAttribute('aria-busy');
     }
 });
 
@@ -1114,8 +1344,34 @@ if (modalConfirmacao) {
             const itemParaRemover = pedidoAtual.find(item => item.uid === uidParaRemover);
 
             if (itemParaRemover) {
-                // Libera a reserva no backend ANTES de remover do estado local
-                await gerenciarReservaAPI(itemParaRemover.id, -itemParaRemover.quantidade);
+                const novaQuantidadeReservada = Math.max(
+                    quantidadeProdutoNoPedido(itemParaRemover.id) -
+                        Number(itemParaRemover.quantidade || 0),
+                    0
+                );
+
+                try {
+                    const resultado = await definirReservaAPI(
+                        itemParaRemover.id,
+                        novaQuantidadeReservada
+                    );
+                    definirStatusConexao(true);
+                    resultado.produtos_afetados?.forEach(aplicarAtualizacaoEstoque);
+
+                    if (
+                        Number(resultado.quantidade_reservada) !==
+                        novaQuantidadeReservada
+                    ) {
+                        await mostrarAlerta(
+                            'Não foi possível remover o item',
+                            'A reserva não pôde ser atualizada. Tente novamente.'
+                        );
+                        return;
+                    }
+                } catch (erro) {
+                    await mostrarFalhaConexao();
+                    return;
+                }
             }
 
             // Agora, remove do estado local
@@ -1199,6 +1455,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // NOVO: Inicializa nosso estado de estoque local
     const todosOsCards = document.querySelectorAll('.product-card');
     estoqueState.inicializarEstoque(todosOsCards);
+    atualizarVisibilidadeCatalogo();
     
     // Debug: Verificar se todos os elementos existem
     console.log('Debug - Elementos encontrados:', {

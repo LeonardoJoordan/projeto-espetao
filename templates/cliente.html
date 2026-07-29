@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cardápio - Spetão</title>
+    <title>Cardápio | PDV Espetinho</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind-output.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/fontawesome.min.css') }}">
@@ -44,6 +44,37 @@
             border-color: rgba(249, 115, 22, 0.5);
             box-shadow: 0 10px 20px rgba(0,0,0,0.2);
         }
+        .stock-status {
+            display: none;
+            color: #fca5a5;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+        }
+        .product-card.possivel-esgotado .stock-status {
+            display: inline;
+        }
+        .product-card.possivel-esgotado .add-button {
+            background-color: #52525b;
+        }
+        .catalog-hidden {
+            display: none !important;
+        }
+        .catalog-empty-state {
+            margin-top: 3rem;
+            padding: 2rem;
+            border: 1px solid rgba(251, 191, 36, 0.18);
+            border-radius: 1rem;
+            color: #d4d4d8;
+            background: rgba(39, 39, 42, 0.72);
+            text-align: center;
+        }
+        .catalog-empty-state i {
+            display: block;
+            margin-bottom: 0.75rem;
+            color: #fbbf24;
+            font-size: 2rem;
+        }
         .add-button {
             background-color: var(--primary-orange);
             transition: transform 0.2s ease;
@@ -68,6 +99,38 @@
             pointer-events: none; /* Impede cliques no conteúdo desfocado */
             user-select: none;    /* Impede seleção de texto no conteúdo desfocado */
             transition: all 0.3s ease-out;
+        }
+        .client-connection-status {
+            position: fixed;
+            z-index: 45;
+            top: 1rem;
+            left: 50%;
+            max-width: min(92vw, 42rem);
+            padding: 0.8rem 1.2rem;
+            border: 1px solid rgba(254, 202, 202, 0.28);
+            border-radius: 999px;
+            opacity: 0;
+            color: #fff;
+            background: rgba(153, 27, 27, 0.96);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+            font-size: 0.9rem;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+            pointer-events: none;
+            text-align: center;
+            transform: translate(-50%, -1rem);
+            transition: opacity 180ms ease, transform 180ms ease;
+        }
+        .client-connection-status[data-state="offline"] {
+            opacity: 1;
+            transform: translate(-50%, 0);
+        }
+        .add-button[aria-busy="true"] {
+            animation: client-button-pulse 700ms ease-in-out infinite alternate;
+        }
+        @keyframes client-button-pulse {
+            from { opacity: 0.68; }
+            to { opacity: 1; }
         }
 
         /* Estilos para o botão de Ação Principal */
@@ -288,6 +351,15 @@
     </style>
 </head>
 <body class="text-white">
+    <div
+        id="status-conexao-cliente"
+        class="client-connection-status"
+        data-state="online"
+        role="status"
+        aria-live="polite"
+    >
+        Conexão com o servidor local interrompida. Tentando reconectar…
+    </div>
 
     <!-- ===== MODAL: NOVO PEDIDO ===== -->
     <div id="tela-inicial" class="screen fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-md z-30">
@@ -349,7 +421,7 @@
         <div class="flex max-w-7xl mx-auto">
             <aside class="sidebar w-64 h-screen p-4">
                 <div>
-                    <div class="my-2 px-2"> <img src="{{ url_for('static', filename='images/espeto-da-estancia.png') }}" alt="Logo Spetão" class="w-full h-auto"> </div>
+                    <div class="my-2 px-2"> <img src="{{ url_for('static', filename='images/espeto-da-estancia.png') }}" alt="Logo do estabelecimento" class="w-full h-auto"> </div>
                     <nav id="nav-categorias">
                         <ul class="space-y-1">
                             {% for categoria in categorias %}
@@ -375,6 +447,11 @@
                     <h2 class="text-4xl font-extrabold text-white">Cardápio</h2>
                     <p class="text-lg text-zinc-400">Escolha seus itens favoritos</p>
                 </header>
+                <div id="catalogo-sem-itens" class="catalog-empty-state catalog-hidden" role="status">
+                    <i class="fas fa-fire-alt" aria-hidden="true"></i>
+                    <p class="text-lg font-semibold text-white">Os itens disponíveis acabaram no momento.</p>
+                    <p class="mt-1">Assim que houver reposição, o cardápio será atualizado automaticamente.</p>
+                </div>
 
                 {% for categoria in categorias %}
                 <section id="categoria-{{ categoria.id }}" class="mb-12 categoria-secao">
@@ -382,12 +459,13 @@
                     <div class="space-y-4">
                         
                         {% for produto in produtos_agrupados[categoria.id] %}
-                        <div class="product-card bg-zinc-800 rounded-xl p-4 flex gap-4 items-center"
+                        <div class="product-card bg-zinc-800 rounded-xl p-4 flex gap-4 items-center{% if produto.estoque <= 0 %} possivel-esgotado{% endif %}{% if produto.ocultar_quando_esgotado == 1 and produto.estoque <= 0 %} catalog-hidden{% endif %}"
                             data-id="{{ produto.id }}" 
                             data-nome="{{ produto.nome }}" 
                             data-preco="{{ produto.preco_venda }}"
                             data-categoria-nome="{{ categoria.nome }}"
                             data-estoque="{{ produto.estoque }}"
+                            data-ocultar-quando-esgotado="{{ produto.ocultar_quando_esgotado }}"
                             data-requer-preparo="{{ produto.requer_preparo }}"
                             data-categoria-ordem="{{ produto.categoria_ordem }}"
                             data-produto-ordem="{{ produto.produto_ordem }}">
@@ -425,6 +503,7 @@
                                 <span class="text-2xl font-semibold">
                                 R$ {{ "%.2f"|format(produto.preco_venda) | replace('.', ',') }}
                                 </span>
+                                <span class="stock-status">Esgotado no momento</span>
                                 <button class="add-button rounded-full w-14 h-14 flex items-center justify-center text-white text-2xl shadow-lg relative overflow-hidden">
                                 <i class="fas fa-plus z-10"></i>
                                 </button>

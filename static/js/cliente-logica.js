@@ -1,5 +1,3 @@
-import { getEstoque } from './cliente-estoque.js';
-
 // static/js/cliente-logica.js
 
 // ==========================================================
@@ -15,22 +13,6 @@ function gerarUUIDSimples() {
     );
 }
 export const carrinhoId = gerarUUIDSimples();
-
-/**
- * Função para criar uma versão "debounced" de uma função.
- * Ela só será executada após um certo tempo sem ser chamada.
- * @param {Function} func A função a ser executada.
- * @param {number} delay O tempo de espera em milissegundos.
- * @returns {Function}
- */
-function debounce(func, delay) {
-    let timeout;
-    return function(...args) {
-        const context = this;
-        clearTimeout(timeout);
-        timeout = setTimeout(() => func.apply(context, args), delay);
-    };
-}
 
 /**
  * Chama a API para renovar o TTL de todas as reservas no carrinho atual.
@@ -50,32 +32,76 @@ async function renovarSessaoAPI() {
     }
 }
 
-// Criamos uma versão da função de renovação que só pode ser chamada a cada 10 segundos.
-export const renovarSessaoDebounced = debounce(renovarSessaoAPI, 10000);
+// Garante renovação no máximo a cada 30 segundos sem adiar indefinidamente
+// quando o cliente toca na tela várias vezes em sequência.
+const INTERVALO_RENOVACAO_MS = 30000;
+let ultimaRenovacao = 0;
+let timerRenovacao = null;
+
+export function renovarSessaoDebounced() {
+    if (pedidoAtual.length === 0) return;
+
+    const agora = Date.now();
+    const restante = INTERVALO_RENOVACAO_MS - (agora - ultimaRenovacao);
+    if (restante <= 0) {
+        ultimaRenovacao = agora;
+        void renovarSessaoAPI();
+        return;
+    }
+
+    if (!timerRenovacao) {
+        timerRenovacao = setTimeout(() => {
+            timerRenovacao = null;
+            ultimaRenovacao = Date.now();
+            void renovarSessaoAPI();
+        }, restante);
+    }
+}
 
 
-/**
- * Chama a API para reservar ou liberar um item.
- * @param {number} produtoId - O ID do produto.
- * @param {number} delta - A quantidade a ser alterada (+1 para reservar, -1 para liberar).
- * @returns {Promise<object>}
- */
-export async function gerenciarReservaAPI(produtoId, delta) {
+export class ErroConexaoServidor extends Error {
+    constructor(mensagem = 'Não foi possível comunicar com o servidor local.') {
+        super(mensagem);
+        this.name = 'ErroConexaoServidor';
+    }
+}
+
+export function ehErroConexaoServidor(erro) {
+    return erro instanceof ErroConexaoServidor;
+}
+
+async function enviarReserva(payload) {
     try {
         const response = await fetch('/api/carrinho/item', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                carrinho_id: carrinhoId,
-                produto_id: produtoId,
-                quantidade_delta: delta
-            })
+            body: JSON.stringify(payload)
         });
+
+        if (!response.ok) {
+            throw new ErroConexaoServidor(
+                `O servidor local respondeu com status ${response.status}.`
+            );
+        }
+
         return await response.json();
     } catch (error) {
         console.error("Falha ao gerenciar reserva:", error);
-        return { sucesso: false, mensagem: "Erro de conexão." };
+        if (ehErroConexaoServidor(error)) throw error;
+        throw new ErroConexaoServidor();
     }
+}
+
+/**
+ * Define a quantidade total reservada de forma idempotente. Repetir a mesma
+ * requisição nunca soma unidades novamente.
+ */
+export async function definirReservaAPI(produtoId, quantidadeDesejada) {
+    return enviarReserva({
+        carrinho_id: carrinhoId,
+        produto_id: produtoId,
+        quantidade_desejada: quantidadeDesejada
+    });
 }
 
 /**
@@ -83,7 +109,7 @@ export async function gerenciarReservaAPI(produtoId, delta) {
  * @param {Array<object>} itens - A lista de itens do pedido.
  * @returns {Promise<object>} - Um objeto mapeando ID do produto para sua quantidade disponível.
  */
-async function verificarDisponibilidadeAPI(itens) {
+export async function verificarDisponibilidadeAPI(itens) {
     if (!itens || itens.length === 0) {
         return {};
     }
@@ -106,9 +132,9 @@ async function verificarDisponibilidadeAPI(itens) {
 
     } catch (error) {
         console.error("Erro ao verificar disponibilidade via API:", error);
-        // Em caso de falha de rede, retorna um objeto vazio para não quebrar o fluxo.
-        // A lógica tratará como se não houvesse estoque.
-        return {};
+        throw new ErroConexaoServidor(
+            'Não foi possível consultar o estoque no servidor local.'
+        );
     }
 }
 
@@ -384,35 +410,64 @@ function mostrarModalSucesso(nomeCliente, senhaPedido) {
 export async function processarPedidoDecodificado(pedidoDecodificado) {
     console.log("Iniciando processamento online do pedido:", pedidoDecodificado);
 
-    // Passo 1: Consulta a disponibilidade real de todos os itens de uma vez.
-    const disponibilidadeReal = await verificarDisponibilidadeAPI(pedidoDecodificado.itens);
-    console.log("Disponibilidade real recebida do servidor:", disponibilidadeReal);
+    // Agrupa itens repetidos para reservar a quantidade total de cada produto
+    // uma única vez e evitar que duas linhas usem a mesma disponibilidade.
+    const desejadoPorProduto = new Map();
+    pedidoDecodificado.itens.forEach(item => {
+        const produtoId = Number(item.id);
+        desejadoPorProduto.set(
+            produtoId,
+            (desejadoPorProduto.get(produtoId) || 0) + Number(item.quantidade || 0)
+        );
+    });
 
-    // Passo 2: Define o nome do cliente.
+    const reservadoPorProduto = new Map();
+    const produtosReservados = [];
+    try {
+        for (const [produtoId, quantidadeDesejada] of desejadoPorProduto) {
+            const resultado = await definirReservaAPI(
+                produtoId,
+                quantidadeDesejada
+            );
+            reservadoPorProduto.set(
+                produtoId,
+                Number(resultado.quantidade_reservada || 0)
+            );
+            produtosReservados.push(produtoId);
+        }
+    } catch (erro) {
+        await Promise.allSettled(
+            produtosReservados.map(produtoId => definirReservaAPI(produtoId, 0))
+        );
+        throw erro;
+    }
+
     setNomeCliente(pedidoDecodificado.nomeCliente);
 
-    // Passo 3: Verifica Itens e Estoque usando os dados REAIS.
     const discrepancias = [];
 
     for (const itemDecodificado of pedidoDecodificado.itens) {
-      const estoqueDisponivel = disponibilidadeReal[itemDecodificado.id] || 0;
-      const quantidadeDesejada = itemDecodificado.quantidade;
+      const produtoId = Number(itemDecodificado.id);
+      const quantidadeDesejada = Number(itemDecodificado.quantidade || 0);
+      const restanteReservado = reservadoPorProduto.get(produtoId) || 0;
+      const quantidadeAplicada = Math.min(quantidadeDesejada, restanteReservado);
+      reservadoPorProduto.set(
+          produtoId,
+          restanteReservado - quantidadeAplicada
+      );
 
-      if (estoqueDisponivel >= quantidadeDesejada) {
-        // Estoque suficiente. Adiciona o item completo.
+      if (quantidadeAplicada >= quantidadeDesejada) {
         adicionarItemAoPedido(itemDecodificado);
       } else {
-        // Estoque insuficiente. Registra a discrepância.
         discrepancias.push({
           nome: itemDecodificado.nome,
           solicitado: quantidadeDesejada,
-          disponivel: estoqueDisponivel,
+          disponivel: quantidadeAplicada,
         });
 
-        if (estoqueDisponivel > 0) {
-          // Adiciona o que for possível.
+        if (quantidadeAplicada > 0) {
           const itemParcial = { ...itemDecodificado };
-          itemParcial.quantidade = estoqueDisponivel;
+          itemParcial.quantidade = quantidadeAplicada;
           adicionarItemAoPedido(itemParcial);
         }
       }

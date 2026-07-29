@@ -377,79 +377,283 @@ def adicionar_categoria():
     # 4. Redireciona o usuário de volta para a página de produtos
     return redirect(url_for('tela_produtos'))
 
-# Em app.py
+
+def _campo_booleano(valor):
+    return 1 if str(valor or '').lower() in {'1', 'true', 'on', 'sim'} else 0
+
+
+def _pasta_fotos_produtos():
+    pasta = os.path.join(app.static_folder, 'images', 'produtos')
+    os.makedirs(pasta, exist_ok=True)
+    return pasta
+
+
+def _salvar_nova_foto_produto(arquivo):
+    if not arquivo or not arquivo.filename:
+        return None
+    nome_seguro = secure_filename(arquivo.filename)
+    extensao = os.path.splitext(nome_seguro)[1].lower()
+    if extensao not in {'.jpg', '.jpeg', '.png', '.webp', '.gif'}:
+        raise ValueError('Formato de imagem não permitido.')
+    nome = f"{uuid.uuid4()}{extensao}"
+    arquivo.save(os.path.join(_pasta_fotos_produtos(), nome))
+    return nome
+
+
+def _remover_foto_produto(nome):
+    nome_seguro = os.path.basename(nome or '')
+    if not nome_seguro:
+        return
+    caminho = os.path.join(_pasta_fotos_produtos(), nome_seguro)
+    if os.path.isfile(caminho):
+        os.remove(caminho)
+
+
+def _dados_produto_formulario():
+    return {
+        "nome": request.form.get('nome_produto'),
+        "descricao": request.form.get('descricao'),
+        "categoria_id": request.form.get('categoria_produto'),
+        "preco_venda": request.form.get('preco_venda'),
+        "requer_preparo": _campo_booleano(request.form.get('requer_preparo')),
+        "ocultar_quando_esgotado": _campo_booleano(
+            request.form.get('ocultar_quando_esgotado')
+        ),
+    }
+
+
+def _validar_dados_produto(dados):
+    if not str(dados.get("nome") or "").strip():
+        return "Informe o nome do produto."
+    if dados.get("categoria_id") in (None, ''):
+        return "Selecione uma categoria."
+    if dados.get("preco_venda") in (None, ''):
+        return "Informe o preço de venda."
+    try:
+        if float(dados["preco_venda"]) < 0:
+            return "O preço de venda não pode ser negativo."
+    except (ValueError, TypeError):
+        return "Informe um preço de venda válido."
+    return None
+
+
+@app.route('/api/produtos', methods=['POST'])
+def api_criar_produto():
+    foto_nova = None
+    try:
+        dados = _dados_produto_formulario()
+        erro = _validar_dados_produto(dados)
+        if erro:
+            return jsonify({"sucesso": False, "mensagem": erro}), 400
+        quantidade = int(request.form.get('quantidade_inicial') or 0)
+        custo_inicial = request.form.get('custo_inicial')
+        if quantidade < 0:
+            return jsonify({"sucesso": False, "mensagem": "Quantidade inválida."}), 400
+        if quantidade > 0 and custo_inicial in (None, ''):
+            return jsonify({
+                "sucesso": False,
+                "mensagem": "Informe o custo do estoque inicial.",
+            }), 400
+        foto_nova = _salvar_nova_foto_produto(request.files.get('foto_produto'))
+        produto_id = gerenciador_db.adicionar_novo_produto(
+            dados["nome"],
+            dados["descricao"],
+            foto_nova,
+            dados["preco_venda"],
+            quantidade,
+            custo_inicial or 0,
+            dados["categoria_id"],
+            dados["requer_preparo"],
+            dados["ocultar_quando_esgotado"],
+        )
+        if not produto_id:
+            if foto_nova:
+                _remover_foto_produto(foto_nova)
+            return jsonify({
+                "sucesso": False,
+                "mensagem": "Não foi possível criar o produto. Verifique o nome.",
+            }), 400
+        return jsonify({"sucesso": True, "produto_id": produto_id}), 201
+    except (ValueError, TypeError):
+        if foto_nova:
+            _remover_foto_produto(foto_nova)
+        return jsonify({"sucesso": False, "mensagem": "Dados inválidos."}), 400
+
+
+@app.route('/api/produtos/<int:produto_id>', methods=['POST'])
+def api_atualizar_produto(produto_id):
+    atual = gerenciador_db.obter_produto_para_gestao(produto_id)
+    if not atual:
+        return jsonify({"sucesso": False, "mensagem": "Produto não encontrado."}), 404
+    foto_nova = None
+    try:
+        dados = _dados_produto_formulario()
+        erro = _validar_dados_produto(dados)
+        if erro:
+            return jsonify({"sucesso": False, "mensagem": erro}), 400
+        foto_nova = _salvar_nova_foto_produto(request.files.get('foto_produto'))
+        foto_final = foto_nova or atual["foto_url"]
+        resultado = gerenciador_db.atualizar_produto(
+            produto_id,
+            dados["nome"],
+            dados["descricao"],
+            foto_final,
+            dados["categoria_id"],
+            dados["preco_venda"],
+            dados["requer_preparo"],
+            dados["ocultar_quando_esgotado"],
+        )
+        if not resultado["sucesso"]:
+            if foto_nova:
+                _remover_foto_produto(foto_nova)
+            return jsonify(resultado), 400
+        if foto_nova and atual["foto_url"] and atual["foto_url"] != foto_nova:
+            _remover_foto_produto(atual["foto_url"])
+        return jsonify({"sucesso": True})
+    except (ValueError, TypeError):
+        if foto_nova:
+            _remover_foto_produto(foto_nova)
+        return jsonify({"sucesso": False, "mensagem": "Dados inválidos."}), 400
+
+
+@app.route('/api/produtos/<int:produto_id>/lotes')
+def api_lotes_produto(produto_id):
+    produto = gerenciador_db.obter_produto_para_gestao(produto_id)
+    if not produto:
+        return jsonify({"sucesso": False, "mensagem": "Produto não encontrado."}), 404
+    return jsonify({
+        "sucesso": True,
+        "produto": produto,
+        "lotes": gerenciador_db.obter_lotes_produto(produto_id),
+    })
+
+
+@app.route('/api/produtos/<int:produto_id>/estoque/entradas', methods=['POST'])
+def api_registrar_entrada_produto(produto_id):
+    dados = request.get_json(silent=True) or {}
+    resultado = gerenciador_db.registrar_entrada_estoque(
+        produto_id,
+        dados.get('quantidade'),
+        dados.get('custo_unitario'),
+        dados.get('observacao'),
+    )
+    if not resultado["sucesso"]:
+        return jsonify(resultado), 400
+    emit_estoque_atualizado(
+        [{"produto_id": produto_id, "disponivel": resultado["saldo"]}],
+        origem="entrada_fifo",
+    )
+    return jsonify(resultado)
+
+
+@app.route('/api/produtos/<int:produto_id>/estoque/perdas', methods=['POST'])
+def api_registrar_perda_produto(produto_id):
+    dados = request.get_json(silent=True) or {}
+    resultado = gerenciador_db.registrar_perda_estoque(
+        produto_id,
+        dados.get('quantidade'),
+        dados.get('motivo'),
+    )
+    if not resultado["sucesso"]:
+        return jsonify(resultado), 400
+    emit_estoque_atualizado(
+        [{"produto_id": produto_id, "disponivel": resultado["saldo"]}],
+        origem="perda_fifo",
+    )
+    return jsonify(resultado)
+
+
+@app.route('/api/produtos/<int:produto_id>/estoque/zerar', methods=['POST'])
+def api_zerar_estoque_produto(produto_id):
+    resultado = gerenciador_db.zerar_estoque_produto(produto_id)
+    if not resultado["sucesso"]:
+        return jsonify(resultado), 400
+    emit_estoque_atualizado(
+        resultado["produtos_afetados"],
+        origem="zeragem_operacional_produto",
+    )
+    return jsonify(resultado)
+
+
+@app.route('/api/produtos/estoque/resumo-zeragem')
+def api_resumo_zeragem_estoques():
+    return jsonify(gerenciador_db.obter_resumo_zeragem_estoques())
+
+
+@app.route('/api/produtos/estoque/zerar', methods=['POST'])
+def api_zerar_todos_estoques():
+    resultado = gerenciador_db.zerar_todos_estoques()
+    if not resultado["sucesso"]:
+        return jsonify(resultado), 400
+    emit_estoque_atualizado(
+        resultado["produtos_afetados"],
+        origem="zeragem_operacional_global",
+    )
+    return jsonify(resultado)
+
 
 @app.route('/adicionar_produto', methods=['POST'])
 def adicionar_produto():
-    """
-    Rota inteligente que lida com a criação e atualização de produtos,
-    incluindo o upload, salvamento e exclusão de fotos.
-    """
-    # --- Configurações de Upload ---
-    PASTA_UPLOAD = os.path.join(app.static_folder, 'images', 'produtos')
-    if not os.path.exists(PASTA_UPLOAD):
-        os.makedirs(PASTA_UPLOAD)
-
+    """Compatibilidade com o formulário antigo usando as operações atômicas."""
     try:
         id_produto = request.form.get('id_produto')
-        nome_foto_salva = request.form.get('foto_url_antiga') # Usaremos um campo auxiliar
-
-        # 1. LÓGICA DE MANIPULAÇÃO DO ARQUIVO DE FOTO
-        if 'foto_produto' in request.files:
-            foto_arquivo = request.files['foto_produto']
-
-            # Se um novo arquivo foi enviado e tem um nome...
-            if foto_arquivo.filename != '':
-                # Deleta a foto antiga, se existir
-                if nome_foto_salva:
-                    caminho_foto_antiga = os.path.join(PASTA_UPLOAD, nome_foto_salva)
-                    if os.path.exists(caminho_foto_antiga):
-                        os.remove(caminho_foto_antiga)
-
-                # Gera um nome de arquivo seguro e único
-                nome_seguro = secure_filename(foto_arquivo.filename)
-                extensao = os.path.splitext(nome_seguro)[1]
-                nome_foto_salva = str(uuid.uuid4()) + extensao
-
-                # Salva o novo arquivo
-                caminho_para_salvar = os.path.join(PASTA_UPLOAD, nome_foto_salva)
-                foto_arquivo.save(caminho_para_salvar)
-
-        # 2. LÓGICA DE MANIPULAÇÃO DOS DADOS DO FORMULÁRIO
+        foto_antiga = os.path.basename(request.form.get('foto_url_antiga') or '')
+        foto_nova = _salvar_nova_foto_produto(request.files.get('foto_produto'))
+        nome_foto_salva = foto_nova or foto_antiga or None
         nome = request.form.get('nome_produto')
         descricao = request.form.get('descricao')
         categoria_id = int(request.form.get('categoria_produto'))
         preco_venda_str = request.form.get('preco_venda')
-
-        requer_preparo_str = request.form.get('requer_preparo')
-        requer_preparo = 1 if requer_preparo_str == 'on' else 0
+        requer_preparo = _campo_booleano(request.form.get('requer_preparo'))
+        ocultar_quando_esgotado = _campo_booleano(
+            request.form.get('ocultar_quando_esgotado')
+        )
 
         if id_produto:
-            # --- CAMINHO DE ATUALIZAÇÃO ---
-            id_produto = int(id_produto)
-            # Passa o nome da foto (antiga ou a nova recém-salva) para o DB
-            gerenciador_db.atualizar_dados_produto(id_produto, nome, descricao, nome_foto_salva, categoria_id, requer_preparo)
-
-            quantidade_adicionada = request.form.get('quantidade') 
-            preco_compra_unitario = request.form.get('preco_compra')
-            if quantidade_adicionada and preco_compra_unitario:
-                gerenciador_db.adicionar_estoque(id_produto, int(quantidade_adicionada), float(preco_compra_unitario))
-
-            if preco_venda_str:
-                gerenciador_db.atualizar_preco_venda_produto(id_produto, float(preco_venda_str))
-
+            resultado = gerenciador_db.atualizar_produto(
+                int(id_produto),
+                nome,
+                descricao,
+                nome_foto_salva,
+                categoria_id,
+                preco_venda_str,
+                requer_preparo,
+                ocultar_quando_esgotado,
+            )
+            if not resultado["sucesso"]:
+                if foto_nova:
+                    _remover_foto_produto(foto_nova)
+                return redirect(url_for('tela_produtos'))
+            if foto_nova and foto_antiga and foto_antiga != foto_nova:
+                _remover_foto_produto(foto_antiga)
         else:
-            # --- CAMINHO DE CRIAÇÃO ---
-            preco_venda = float(preco_venda_str)
-            preco_compra = float(request.form.get('preco_compra'))
-            quantidade = int(request.form.get('quantidade'))
-            # Passa o nome da foto salva para o DB
-            gerenciador_db.adicionar_novo_produto(nome, descricao, nome_foto_salva, preco_venda, quantidade, preco_compra, categoria_id, requer_preparo)
-
+            quantidade = int(request.form.get('quantidade') or 0)
+            custo = request.form.get('preco_compra')
+            if quantidade > 0 and custo in (None, ''):
+                if foto_nova:
+                    _remover_foto_produto(foto_nova)
+                return redirect(url_for('tela_produtos'))
+            produto_id = gerenciador_db.adicionar_novo_produto(
+                nome,
+                descricao,
+                nome_foto_salva,
+                preco_venda_str,
+                quantidade,
+                custo or 0,
+                categoria_id,
+                requer_preparo,
+                ocultar_quando_esgotado,
+            )
+            if not produto_id and foto_nova:
+                _remover_foto_produto(foto_nova)
     except (ValueError, TypeError) as e:
         print(f"Erro ao converter dados do formulário: {e}")
+        if 'foto_nova' in locals() and foto_nova:
+            _remover_foto_produto(foto_nova)
     except Exception as e:
         print(f"Ocorreu um erro inesperado no upload: {e}")
+        if 'foto_nova' in locals() and foto_nova:
+            _remover_foto_produto(foto_nova)
 
     return redirect(url_for('tela_produtos'))
 
@@ -931,18 +1135,30 @@ def api_insights_comparativos_v2():
 
 @app.route('/api/carrinho/item', methods=['POST'])
 def api_gerenciar_reserva_item():
-    """ Endpoint para adicionar/remover itens do carrinho (reservar/liberar). """
-    dados = request.get_json()
+    """Define a reserva total; mantém deltas para versões antigas do cliente."""
+    dados = request.get_json(silent=True) or {}
     carrinho_id = dados.get('carrinho_id')
     produto_id = dados.get('produto_id')
-    quantidade_delta = dados.get('quantidade_delta')
 
-    if not all([carrinho_id, produto_id, quantidade_delta]):
+    if not carrinho_id or produto_id is None:
         return jsonify({"sucesso": False, "mensagem": "Dados incompletos."}), 400
 
-    resultado = gerenciador_db.gerenciar_reserva(carrinho_id, produto_id, quantidade_delta)
+    if 'quantidade_desejada' in dados:
+        resultado = gerenciador_db.definir_reserva(
+            carrinho_id,
+            produto_id,
+            dados.get('quantidade_desejada'),
+        )
+    elif 'quantidade_delta' in dados:
+        resultado = gerenciador_db.gerenciar_reserva(
+            carrinho_id,
+            produto_id,
+            dados.get('quantidade_delta'),
+        )
+    else:
+        return jsonify({"sucesso": False, "mensagem": "Dados incompletos."}), 400
 
-    if resultado.get('sucesso'):
+    if resultado.get('produtos_afetados'):
         emit_estoque_atualizado(
             updates=resultado.get('produtos_afetados', []),
             origem='reserva_item'

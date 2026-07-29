@@ -3,75 +3,561 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestão de Produtos - Espetão do Léo</title>
+    <title>Gestão de Produtos | PDV Espetinho</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind-output.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/fontawesome.min.css') }}">
     <style>
+        :root {
+            color-scheme: dark;
+            --bg: #07111f;
+            --surface: #0d1a2b;
+            --surface-2: #122238;
+            --surface-3: #172a43;
+            --border: #253a55;
+            --text: #f6f8fb;
+            --muted: #91a4bc;
+            --brand: #f59e0b;
+            --brand-soft: rgba(245, 158, 11, .14);
+            --positive: #34d399;
+            --positive-soft: rgba(52, 211, 153, .12);
+            --danger: #fb7185;
+            --danger-soft: rgba(251, 113, 133, .12);
+            --info: #60a5fa;
+            --info-soft: rgba(96, 165, 250, .12);
+        }
+
+        * { box-sizing: border-box; }
+        [hidden] { display: none !important; }
         body {
-            font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #6B73FF 0%, #000DFF 100%);
             min-height: 100vh;
+            margin: 0;
+            padding: 0 !important;
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+            background:
+                radial-gradient(circle at 88% 0%, rgba(245, 158, 11, .08), transparent 26rem),
+                var(--bg);
         }
+        button, input, select, textarea { font: inherit; }
+        button { color: inherit; }
+        .page-shell {
+            width: min(1400px, 100%);
+            margin: 0 auto;
+            padding: 28px;
+        }
+        .surface,
         .glass-container {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+            background: var(--surface);
+            border: 1px solid var(--border);
+            box-shadow: 0 18px 55px rgba(0, 0, 0, .18);
+            backdrop-filter: none;
         }
-        input, select, textarea {
-            background: rgba(255, 255, 255, 0.2) !important;
-            border: 1px solid rgba(255, 255, 255, 0.3) !important;
-            color: white !important;
+        .eyebrow {
+            color: var(--brand);
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: .18em;
+            text-transform: uppercase;
         }
-        input::placeholder, textarea::placeholder {
-            color: rgba(255, 255, 255, 0.6) !important;
+        .muted { color: var(--muted); }
+        .management-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 28px;
+            padding: 22px 24px;
+            border-radius: 18px;
         }
-        option {
-            background-color: #764ba2;
+        .brand-block { display: flex; align-items: center; gap: 16px; }
+        .brand-mark {
+            display: grid;
+            width: 48px;
+            height: 48px;
+            flex: 0 0 48px;
+            place-items: center;
+            border-radius: 14px;
+            color: #1b1202;
+            background: var(--brand);
+            box-shadow: 0 10px 30px rgba(245, 158, 11, .22);
+            font-size: 20px;
         }
-        .sortable-ghost {
-            opacity: 0.5;
-            background: rgba(255, 255, 255, 0.2);
-            transform: scale(0.95);
+        .management-header h1 {
+            margin: 3px 0 0;
+            font-size: clamp(22px, 3vw, 32px);
+            font-weight: 800;
+            line-height: 1.1;
         }
-        
-        .categoria-handle:hover {
-            background: rgba(255, 255, 255, 0.05);
+        .management-subtitle { margin-top: 6px; color: var(--muted); font-size: 12px; }
+        .header-actions { display: flex; align-items: center; gap: 9px; }
+        .btn {
+            display: inline-flex;
+            min-height: 42px;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 0 16px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            cursor: pointer;
+            background: var(--surface-2);
+            font-weight: 750;
+            transition: transform .15s ease, background .15s ease, border-color .15s ease;
+        }
+        .btn:hover { transform: translateY(-1px); border-color: #3a5372; background: var(--surface-3); }
+        .btn:disabled { cursor: wait; opacity: .65; transform: none; }
+        .btn-primary {
+            color: #1a1203 !important;
+            border-color: var(--brand) !important;
+            background: var(--brand) !important;
+            font-weight: 800;
+        }
+        .btn-primary:hover { border-color: #fbbf24 !important; background: #fbbf24 !important; }
+        .btn-positive {
+            color: #052016 !important;
+            border-color: var(--positive) !important;
+            background: var(--positive) !important;
+        }
+        .btn-danger {
+            color: #26070c !important;
+            border-color: var(--danger) !important;
+            background: var(--danger) !important;
+        }
+        .btn-outline-danger {
+            color: var(--danger) !important;
+            border-color: rgba(251, 113, 133, .42) !important;
+            background: var(--danger-soft) !important;
+        }
+        .btn-outline-danger:hover {
+            color: #fecdd3 !important;
+            border-color: var(--danger) !important;
+            background: rgba(251, 113, 133, .2) !important;
+        }
+
+        main { margin-top: 18px; }
+        .inventory-surface { padding: 22px; border-radius: 18px; }
+        .inventory-heading {
+            display: flex;
+            align-items: end;
+            justify-content: space-between;
+            gap: 22px;
+            padding-bottom: 18px;
+            border-bottom: 1px solid var(--border);
+        }
+        .inventory-heading h2 { margin: 3px 0 0; font-size: 22px; font-weight: 800; }
+        .inventory-heading p { margin-top: 5px; color: var(--muted); font-size: 12px; }
+        .category-form { display: flex; align-items: center; gap: 8px; }
+
+        input:not([type="checkbox"]):not([type="hidden"]),
+        select,
+        textarea {
+            min-height: 42px;
+            padding: 9px 12px !important;
+            color: var(--text) !important;
+            background: var(--surface-2) !important;
+            border: 1px solid var(--border) !important;
+            border-radius: 10px !important;
+            outline: none;
+            transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        input:not([type="checkbox"]):not([type="hidden"]):focus,
+        select:focus,
+        textarea:focus {
+            border-color: var(--brand) !important;
+            box-shadow: 0 0 0 3px var(--brand-soft);
+        }
+        input::placeholder, textarea::placeholder { color: #72869f !important; }
+        option { color: var(--text); background: var(--surface-2); }
+        input[type="checkbox"] { accent-color: var(--brand); }
+        input[type="file"]::file-selector-button {
+            margin-right: 12px;
+            padding: 8px 12px;
+            color: #1a1203;
+            border: 0;
             border-radius: 8px;
+            cursor: pointer;
+            background: var(--brand);
+            font-weight: 800;
         }
-        
+
+        #categorias-container { display: grid; gap: 14px; margin-top: 18px; }
+        .categoria-bloco {
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden;
+            background: var(--surface-2) !important;
+            border: 1px solid var(--border);
+            border-radius: 14px !important;
+        }
+        .categoria-handle { padding: 15px 17px 13px; }
+        .categoria-handle:hover { background: rgba(255,255,255,.018); }
+        .category-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin: 0 !important;
+            padding: 0 0 12px !important;
+            border: 0 !important;
+            border-bottom: 1px solid var(--border) !important;
+        }
+        .category-title { display: flex; align-items: center; gap: 9px; }
+        .category-title i { color: #607691; font-size: 13px; }
+        .category-title h3 { font-size: 16px; font-weight: 800; }
+        .category-meta { margin-left: 10px; color: var(--muted); font-size: 11px; font-weight: 600; }
+        .produtos-container { display: grid; gap: 8px; padding: 0 9px 9px; }
+        .produto-item {
+            padding: 0 !important;
+            overflow: hidden;
+            background: var(--surface) !important;
+            border: 1px solid transparent;
+            border-radius: 11px !important;
+            transition: border-color .15s ease, transform .15s ease, background .15s ease;
+        }
         .produto-item:hover {
-            background: rgba(255, 255, 255, 0.15);
+            z-index: 1;
+            background: #0f1e31 !important;
+            border-color: #344d6a;
+            transform: translateY(-1px);
         }
-        
-        .cursor-move {
-            cursor: grab;
+        .product-row {
+            display: grid;
+            grid-template-columns: 22px minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 12px;
+            padding: 14px;
         }
-        
-        .cursor-move:active {
-            cursor: grabbing;
+        .product-grip { color: #536b86; text-align: center; }
+        .product-main { min-width: 0; }
+        .product-heading { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .product-heading h4 { font-size: 15px; font-weight: 800; }
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 7px;
+            border-radius: 99px;
+            font-size: 9px;
+            font-weight: 800;
+            line-height: 1.2;
+            white-space: nowrap;
+            text-transform: uppercase;
+        }
+        .badge-positive { color: var(--positive); background: var(--positive-soft); }
+        .badge-danger { color: var(--danger); background: var(--danger-soft); }
+        .badge-brand { color: var(--brand); background: var(--brand-soft); }
+        .product-metrics {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(96px, 1fr));
+            gap: 8px;
+            margin-top: 11px;
+        }
+        .product-metric { padding-right: 8px; border-right: 1px solid rgba(37, 58, 85, .65); }
+        .product-metric:last-child { border-right: 0; }
+        .product-metric span { display: block; color: var(--muted); font-size: 9px; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; }
+        .product-metric strong { display: block; margin-top: 3px; font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
+        .product-metric .positive { color: var(--positive); }
+        .product-metric .danger { color: var(--danger); }
+        .product-foot { margin-top: 8px; color: var(--muted); font-size: 10px; }
+        .product-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px !important;
+            padding-left: 4px;
+        }
+        .icon-btn {
+            display: grid;
+            width: 35px;
+            height: 35px;
+            place-items: center;
+            color: var(--muted) !important;
+            border: 1px solid var(--border);
+            border-radius: 9px;
+            background: var(--surface-2);
+            transition: color .15s ease, border-color .15s ease, background .15s ease;
+        }
+        .icon-btn:hover { color: var(--text) !important; border-color: #46617f; background: var(--surface-3); }
+        .icon-btn.is-edit { color: var(--brand) !important; background: var(--brand-soft); }
+        .icon-btn.is-info { color: var(--info) !important; background: var(--info-soft); }
+        .icon-btn.is-positive { color: var(--positive) !important; background: var(--positive-soft); }
+        .icon-btn.is-danger { color: var(--danger) !important; background: var(--danger-soft); }
+        .empty-category { padding: 24px; color: var(--muted); text-align: center; font-size: 12px; }
+
+        .cursor-move { cursor: grab; }
+        .cursor-move:active { cursor: grabbing; }
+        .sortable-ghost {
+            opacity: .48;
+            background: var(--surface-3) !important;
+            transform: scale(.985);
+        }
+
+        .product-modal-backdrop,
+        #modal-historico,
+        #modal-tempos,
+        #modal-acompanhamentos,
+        #modal-tempo-unico {
+            z-index: 60;
+            background: rgba(2, 8, 17, .78) !important;
+            backdrop-filter: blur(4px);
+        }
+        .product-modal-card,
+        .modal-panel {
+            width: min(100%, 52rem);
+            max-height: 92vh;
+            padding: 22px !important;
+            overflow-y: auto;
+            border-radius: 18px !important;
+            box-shadow: 0 28px 80px rgba(0, 0, 0, .48);
+        }
+        .modal-panel-compact { width: min(100%, 32rem); }
+        .modal-heading {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 16px !important;
+            padding-bottom: 14px !important;
+            border-bottom: 1px solid var(--border) !important;
+        }
+        .modal-heading h2 { font-size: 20px; font-weight: 800; }
+        .modal-heading p { margin-top: 4px; color: var(--muted) !important; font-size: 12px; }
+        .modal-close {
+            display: grid;
+            width: 36px;
+            height: 36px;
+            flex: 0 0 36px;
+            place-items: center;
+            color: var(--muted);
+            border: 1px solid var(--border);
+            border-radius: 9px;
+            background: var(--surface-2);
+            font-size: 23px !important;
+            line-height: 1;
+        }
+        .modal-close:hover { color: var(--danger) !important; border-color: var(--danger); }
+        .product-tabs {
+            display: flex;
+            gap: 5px !important;
+            margin-bottom: 18px !important;
+            padding: 5px;
+            background: rgba(18, 34, 56, .75);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+        }
+        .aba-produto {
+            padding: 10px 14px !important;
+            color: var(--muted);
+            border-radius: 8px !important;
+            background: transparent !important;
+            font-size: 13px;
+            font-weight: 750;
+        }
+        .aba-produto.is-active { color: var(--text); background: var(--surface-3) !important; }
+        .aba-produto.is-active::before {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            margin-right: 8px;
+            border-radius: 50%;
+            background: var(--brand);
+            content: "";
+            vertical-align: middle;
+        }
+        #form-produto {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+        }
+        #form-produto > * { margin-top: 0 !important; }
+        .form-span-2 { grid-column: 1 / -1; }
+        #form-produto label { color: #c7d4e3; font-size: 12px; }
+        .setting-row {
+            padding: 13px;
+            background: rgba(255,255,255,.018);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+        }
+        #painel-estoque-inicial {
+            background: var(--surface-2) !important;
+            border-color: var(--border) !important;
+        }
+        #painel-estoque-inicial > .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .helper-text { color: var(--muted) !important; }
+        .form-error {
+            color: #fecdd3 !important;
+            background: var(--danger-soft) !important;
+            border-color: rgba(251, 113, 133, .45) !important;
+        }
+        #btn-salvar-produto { min-height: 44px; }
+        .form-actions {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+        .stock-modal-content {
+            display: grid;
+            gap: 18px;
+        }
+        .stock-summary {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+        }
+        .stock-kpi {
+            padding: 13px !important;
+            background: var(--surface-2) !important;
+            border: 1px solid var(--border);
+            border-radius: 11px !important;
+        }
+        .stock-kpi span { color: var(--muted) !important; font-size: 10px; font-weight: 750; text-transform: uppercase; }
+        .stock-kpi strong { display: block; margin-top: 7px; font-size: 18px; font-variant-numeric: tabular-nums; }
+        .stock-operations {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+        .stock-operation {
+            padding: 16px !important;
+            background: var(--surface-2) !important;
+            border-radius: 12px !important;
+        }
+        .stock-entry { border-color: rgba(52, 211, 153, .32) !important; }
+        .stock-loss { border-color: rgba(251, 113, 133, .32) !important; }
+        .stock-operation h3 { font-size: 14px; }
+        .stock-entry h3 { color: var(--positive) !important; }
+        .stock-loss h3 { color: var(--danger) !important; }
+        .stock-operation p { color: var(--muted) !important; }
+        .fifo-heading { font-size: 14px; font-weight: 800; }
+        .stock-lots {
+            display: grid;
+            gap: 10px;
+        }
+        .stock-lots .fifo-heading { margin: 0 !important; }
+        #lista-lotes-produto {
+            display: grid;
+            gap: 8px;
+        }
+        #lista-lotes-produto > p {
+            margin: 0;
+            padding: 18px 0 !important;
+            text-align: center;
+        }
+        .stock-zero-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 13px 14px;
+            color: var(--muted);
+            background: rgba(251, 113, 133, .045);
+            border: 1px solid rgba(251, 113, 133, .22);
+            border-radius: 11px;
+            font-size: 11px;
+            line-height: 1.45;
+        }
+        .stock-zero-row strong { display: block; margin-bottom: 2px; color: #fecdd3; font-size: 12px; }
+        .confirmation-summary {
+            margin: 16px 0;
+            padding: 15px;
+            color: #c7d4e3;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 11px;
+            font-size: 13px;
+            line-height: 1.55;
+        }
+        .confirmation-note { color: var(--muted); font-size: 11px; line-height: 1.5; }
+        .confirmation-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 9px;
+            margin-top: 18px;
+        }
+        #lista-lotes-produto > div,
+        #modal-corpo > div,
+        #modal-acompanhamentos-corpo > div {
+            background: var(--surface-2) !important;
+            border: 1px solid var(--border);
+            border-radius: 10px !important;
+        }
+        #lista-lotes-produto p,
+        #modal-corpo p { color: var(--muted); }
+        .secondary-action {
+            width: 100%;
+            min-height: 43px;
+            border-radius: 10px !important;
+            font-weight: 800;
+        }
+        .custom-scrollbar { scrollbar-color: #36506e var(--surface); scrollbar-width: thin; }
+
+        @media (max-width: 900px) {
+            .page-shell { padding: 16px; }
+            .management-header { align-items: stretch; }
+            .product-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .product-metric:nth-child(2) { border-right: 0; }
+            .product-metric:nth-child(-n+2) { padding-bottom: 7px; border-bottom: 1px solid rgba(37, 58, 85, .65); }
+        }
+        @media (max-width: 700px) {
+            .page-shell { padding: 10px; }
+            .management-header, .inventory-heading { align-items: stretch; flex-direction: column; }
+            .management-header, .inventory-surface { padding: 17px; }
+            .header-actions { display: grid; grid-template-columns: 1fr; }
+            .management-header .btn { width: 100%; }
+            .category-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+            .product-row { grid-template-columns: 18px minmax(0, 1fr); }
+            .product-actions { grid-column: 2; justify-content: flex-start; padding: 3px 0 0; }
+            #form-produto { grid-template-columns: 1fr; }
+            #form-produto > * { grid-column: 1 !important; }
+            #painel-estoque-inicial > .grid { grid-template-columns: 1fr; }
+            .stock-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .stock-operations { grid-template-columns: 1fr; }
+            .stock-zero-row { align-items: stretch; flex-direction: column; }
+            .stock-zero-row .btn { width: 100%; }
+            .product-modal-card, .modal-panel { padding: 17px !important; }
+        }
+        @media (max-width: 430px) {
+            .brand-block { align-items: flex-start; }
+            .brand-mark { width: 42px; height: 42px; flex-basis: 42px; }
+            .product-metrics { grid-template-columns: 1fr 1fr; }
+            .product-actions { flex-wrap: wrap; }
         }
     </style>
 </head>
-<body class="p-4 md:p-8 text-white">
-
-    <header class="mb-12 glass-container rounded-2xl p-6 max-w-6xl mx-auto">
-        <div class="flex items-center justify-center">
-            <i class="fas fa-boxes-stacked text-white text-3xl mr-4"></i>
-            <h1 class="text-4xl font-bold text-white text-center">Gestão de Produtos</h1>
+<body>
+    <div class="page-shell">
+    <header class="management-header surface">
+        <div class="brand-block">
+            <div class="brand-mark"><i class="fas fa-boxes-stacked"></i></div>
+            <div>
+                <div class="eyebrow">PDV Espetinho · Gestão</div>
+                <h1>Gestão de produtos</h1>
+                <p class="management-subtitle">Cadastros, fila de custos FIFO e estoque global em um só lugar.</p>
+            </div>
         </div>
-        <p class="text-center text-white/80 mt-2">Adicione categorias e produtos ao seu cardápio.</p>
+        <div class="header-actions">
+            <button id="btn-zerar-estoques" type="button" class="btn btn-outline-danger">
+                <i class="fas fa-boxes-packing"></i>Zerar todos os estoques
+            </button>
+            <button id="btn-novo-produto" type="button" class="btn btn-primary">
+                <i class="fas fa-plus"></i>Novo produto
+            </button>
+        </div>
     </header>
 
-    <main class="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
+    <main>
 
-        <div class="lg:col-span-1 space-y-8">
-            <div class="glass-container rounded-2xl p-6">
-                <h2 class="text-2xl font-bold mb-4 flex items-center"><i class="fas fa-drumstick-bite mr-3"></i>Adicionar/Atualizar Produto</h2>
+        <div id="modal-produto" class="product-modal-backdrop fixed inset-0 flex items-center justify-center p-4 hidden" style="z-index: 60;">
+            <div class="product-modal-card glass-container">
+                <div class="modal-heading">
+                    <div>
+                        <div class="eyebrow">Cadastro do produto</div>
+                        <h2 id="modal-produto-titulo" class="text-2xl font-bold">Novo produto</h2>
+                        <p id="modal-produto-subtitulo" class="text-sm text-white/60">Defina os dados exibidos no cardápio.</p>
+                    </div>
+                    <button id="modal-produto-fechar" type="button" class="modal-close" aria-label="Fechar">&times;</button>
+                </div>
                 <form id="form-produto" action="/adicionar_produto" method="POST" enctype="multipart/form-data" class="space-y-4">
                     <input type="hidden" id="id_produto" name="id_produto">
-                    <div>
+                    <div class="form-span-2">
                         <label for="nome_produto" class="block mb-2 font-semibold">Nome do Produto</label>
                         <input type="text" id="nome_produto" name="nome_produto" placeholder="Ex: Espeto de Carne" class="w-full p-2 rounded-lg">
                     </div>
@@ -83,39 +569,27 @@
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label for="preco_venda" class="block mb-2 font-semibold">Preço Venda (R$)</label>
-                            <input type="number" step="0.01" id="preco_venda" name="preco_venda" placeholder="10.00" class="w-full p-2 rounded-lg">
-                        </div>
-                        <div>
-                            <label for="preco_compra" class="block mb-2 font-semibold">Preço Compra (R$)</label>
-                            <input type="number" step="0.01" id="preco_compra" name="preco_compra" placeholder="4.50" class="w-full p-2 rounded-lg">
-                        </div>
-                    </div>
                     <div>
-                        <label for="quantidade" class="block mb-2 font-semibold">Quantidade</label>
-                        <input type="number" id="quantidade" name="quantidade" placeholder="100" class="w-full p-2 rounded-lg">
+                        <label for="preco_venda" class="block mb-2 font-semibold">Preço de venda (R$)</label>
+                        <input type="number" min="0" step="0.01" id="preco_venda" name="preco_venda" placeholder="10.00" class="w-full p-2 rounded-lg">
                     </div>
-                    <div class="flex items-center mt-2">
+                    <div class="setting-row form-span-2 flex items-center mt-2">
                         <input type="checkbox" id="requer_preparo" name="requer_preparo" class="h-5 w-5 rounded bg-white/30 border-white/40 text-blue-500 focus:ring-blue-400">
                         <label for="requer_preparo" class="ml-3 font-semibold text-white">Requer Preparo na Cozinha?</label>
                     </div>
-                    <div id="dica-quantidade" class="hidden p-3 bg-blue-900/50 border border-blue-400 rounded-lg text-sm text-blue-200 space-y-2">
-                        <p>
-                            <i class="fas fa-info-circle mr-2"></i><strong>Você está fazendo um ajuste de estoque:</strong>
-                        </p>
-                        <ul class="list-disc list-inside pl-2">
-                            <li><strong>Para registrar uma PERDA:</strong> Mantenha o "Preço Compra" como <strong>0</strong>. O custo médio do produto irá aumentar.</li>
-                            <li><strong>Para CORRIGIR um erro de entrada:</strong> Insira o "Preço Compra" <strong>original</strong> da entrada errada. O sistema irá reverter o custo.</li>
-                        </ul>
+                    <div class="setting-row form-span-2 flex items-start mt-2">
+                        <input type="checkbox" id="ocultar_quando_esgotado" name="ocultar_quando_esgotado" class="h-5 w-5 mt-0.5 rounded bg-white/30 border-white/40 text-blue-500 focus:ring-blue-400">
+                        <label for="ocultar_quando_esgotado" class="ml-3 text-white">
+                            <span class="block font-semibold">Ocultar no cardápio quando estiver esgotado</span>
+                            <span class="helper-text block text-sm text-white/60">O produto reaparece automaticamente quando houver disponibilidade.</span>
+                        </label>
                     </div>
-                    <div>
+                    <div class="form-span-2">
                         <label for="descricao" class="block mb-2 font-semibold">Descrição do Produto</label>
                         <textarea id="descricao" name="descricao" rows="3" placeholder="Ex: Pão de alho crocante com recheio de queijo..." class="w-full p-2 rounded-lg"></textarea>
                         <input type="hidden" id="foto_url" name="foto_url_antiga">
                     </div>
-                    <div>
+                    <div class="form-span-2">
                         <label for="foto_produto" class="block mb-2 font-semibold">Foto do Produto</label>
                         <input type="file" id="foto_produto" name="foto_produto" class="w-full text-sm text-white
                             file:mr-4 file:py-2 file:px-4
@@ -124,20 +598,103 @@
                             file:bg-blue-500 file:text-white
                             hover:file:bg-blue-600 cursor-pointer">
                     </div>
-                    <div class="mt-2">
+                    <div class="form-span-2 mt-2">
                         <img id="foto-preview" src="" alt="Pré-visualização da imagem" class="w-full h-32 object-cover rounded-lg hidden bg-white/10">
                     </div>
-                    <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 font-bold py-3 rounded-lg transition-colors">Salvar Produto</button>
+                    <div id="erro-form-produto" class="form-error form-span-2 hidden p-3 border rounded-lg" role="alert"></div>
+                    <div class="form-actions form-span-2">
+                        <button id="btn-salvar-produto" type="submit" class="btn btn-primary">Salvar produto</button>
+                        <button id="btn-salvar-e-estoque" type="submit" data-proximo="estoque" class="btn">
+                            <i class="fas fa-box-open"></i>Salvar e gerenciar estoque
+                        </button>
+                    </div>
                 </form>
             </div>
         </div>
 
-        <div class="lg:col-span-2 glass-container rounded-2xl p-6 space-y-6">
-            <div class="flex justify-between items-center">
-                <h2 class="text-2xl font-bold flex items-center"><i class="fas fa-list-ul mr-3"></i>Produtos Cadastrados</h2>
-                <form action="/adicionar_categoria" method="POST" class="flex items-center gap-2">
+        <div id="modal-estoque" class="product-modal-backdrop fixed inset-0 flex items-center justify-center p-4 hidden" style="z-index: 60;">
+            <div class="product-modal-card glass-container">
+                <div class="modal-heading">
+                    <div>
+                        <div class="eyebrow">Inventário operacional</div>
+                        <h2 id="modal-estoque-titulo">Gerenciar estoque</h2>
+                        <p>Entradas, perdas e custos FIFO deste produto.</p>
+                    </div>
+                    <button id="modal-estoque-fechar" type="button" class="modal-close" aria-label="Fechar">&times;</button>
+                </div>
+                <input type="hidden" id="estoque-produto-id">
+                <section class="stock-modal-content">
+                    <div class="stock-summary">
+                        <div class="stock-kpi"><span class="block">Saldo atual</span><strong id="estoque-saldo">0</strong></div>
+                        <div class="stock-kpi"><span class="block">Lotes ativos</span><strong id="estoque-lotes-ativos">0</strong></div>
+                        <div class="stock-kpi"><span class="block">Próxima unidade</span><strong id="estoque-proximo-custo">R$ 0,00</strong></div>
+                        <div class="stock-kpi"><span class="block">Valor em estoque</span><strong id="estoque-valor">R$ 0,00</strong></div>
+                    </div>
+                    <div class="stock-operations">
+                        <form id="form-entrada-estoque" class="stock-operation stock-entry border rounded-xl space-y-3">
+                            <h3 class="font-bold text-emerald-300"><i class="fas fa-box-open mr-2"></i>Nova entrada</h3>
+                            <input id="entrada-quantidade" type="number" min="1" placeholder="Quantidade" class="w-full p-2 rounded-lg" required>
+                            <input id="entrada-custo" type="number" min="0" step="0.01" placeholder="Custo unitário (R$)" class="w-full p-2 rounded-lg" required>
+                            <input id="entrada-observacao" type="text" placeholder="Observação opcional" class="w-full p-2 rounded-lg">
+                            <button class="btn btn-positive w-full">Registrar entrada</button>
+                        </form>
+                        <form id="form-perda-estoque" class="stock-operation stock-loss border rounded-xl space-y-3">
+                            <h3 class="font-bold text-red-300"><i class="fas fa-triangle-exclamation mr-2"></i>Registrar perda</h3>
+                            <input id="perda-quantidade" type="number" min="1" placeholder="Quantidade perdida" class="w-full p-2 rounded-lg" required>
+                            <input id="perda-motivo" type="text" placeholder="Motivo da perda" class="w-full p-2 rounded-lg">
+                            <p class="text-xs text-white/60">O custo será retirado automaticamente dos lotes mais antigos.</p>
+                            <button class="btn btn-danger w-full">Registrar perda</button>
+                        </form>
+                    </div>
+                    <div class="stock-lots">
+                        <h3 class="fifo-heading">Fila de lotes FIFO</h3>
+                        <div id="lista-lotes-produto"></div>
+                    </div>
+                    <div class="stock-zero-row">
+                        <div>
+                            <strong>Zeragem operacional</strong>
+                            Remove o saldo deste produto sem registrar perda ou afetar os relatórios.
+                        </div>
+                        <button id="btn-zerar-estoque-produto" type="button" class="btn btn-outline-danger">
+                            <i class="fas fa-box-open"></i>Zerar este estoque
+                        </button>
+                    </div>
+                    <div id="erro-estoque-produto" class="form-error hidden p-3 border rounded-lg" role="alert"></div>
+                </section>
+            </div>
+        </div>
+
+        <div id="modal-confirmacao-zeragem" class="product-modal-backdrop fixed inset-0 flex items-center justify-center p-4 hidden" style="z-index: 70;">
+            <div class="modal-panel modal-panel-compact glass-container">
+                <div class="modal-heading">
+                    <div>
+                        <div class="eyebrow">Ação operacional</div>
+                        <h2 id="confirmacao-zeragem-titulo">Confirmar zeragem</h2>
+                    </div>
+                    <button id="confirmacao-zeragem-fechar" type="button" class="modal-close" aria-label="Fechar">&times;</button>
+                </div>
+                <div id="confirmacao-zeragem-resumo" class="confirmation-summary"></div>
+                <p class="confirmation-note">
+                    Produtos e vendas serão preservados. A zeragem não será contabilizada como perda, faturamento ou movimentação nos relatórios.
+                </p>
+                <div id="confirmacao-zeragem-erro" class="form-error hidden p-3 border rounded-lg mt-4" role="alert"></div>
+                <div class="confirmation-actions">
+                    <button id="confirmacao-zeragem-cancelar" type="button" class="btn">Cancelar</button>
+                    <button id="confirmacao-zeragem-confirmar" type="button" class="btn btn-danger">Confirmar zeragem</button>
+                </div>
+            </div>
+        </div>
+
+        <section class="inventory-surface surface">
+            <div class="inventory-heading">
+                <div>
+                    <div class="eyebrow">Catálogo e estoque</div>
+                    <h2>Produtos cadastrados</h2>
+                    <p>Arraste categorias e produtos para definir a ordem exibida no cardápio.</p>
+                </div>
+                <form action="/adicionar_categoria" method="POST" class="category-form">
                     <input type="text" name="nome_categoria" placeholder="Nova Categoria" class="p-2 rounded-lg" required>
-                    <button type="submit" title="Adicionar Nova Categoria" class="bg-green-500 hover:bg-green-600 font-bold py-2 px-4 rounded-lg transition-colors">
+                    <button type="submit" title="Adicionar Nova Categoria" class="btn">
                         <i class="fas fa-plus"></i>
                     </button>
                 </form>
@@ -145,27 +702,28 @@
             
             <div id="categorias-container">
                 {% for categoria_nome, categoria_data in produtos_agrupados.items() %}
-                <div class="categoria-bloco mb-6 p-4 bg-white/5 rounded-lg" 
+                <div class="categoria-bloco"
                      data-categoria-id="{{ categoria_data.id }}"
                      data-categoria-nome="{{ categoria_nome }}">
                     
                     <div class="categoria-handle cursor-move">
-                        <div class="flex justify-between items-center border-b-2 border-white/20 pb-2 mb-3">
-                            <h3 class="text-xl font-semibold flex items-center">
-                                <i class="fas fa-grip-vertical mr-2 text-white/50"></i>
-                                {{ categoria_nome }}
-                            </h3>
+                        <div class="category-header">
+                            <div class="category-title">
+                                <i class="fas fa-grip-vertical"></i>
+                                <h3>{{ categoria_nome }}</h3>
+                                <span class="category-meta">{{ categoria_data.produtos|length }} produto(s)</span>
+                            </div>
                             {% if categoria_data.id == 1 %}
                                 <button type="button" 
                                         id="btn-abrir-modal-acompanhamentos"
                                         title="Gerenciar Acompanhamentos"
-                                        class="text-teal-400 hover:text-teal-300 transition-colors text-xl">
+                                        class="icon-btn is-positive">
                                     <i class="fas fa-tasks"></i> </button>
                             {% else %}
                                 <a href="{{ url_for('rota_excluir_categoria', id_categoria=categoria_data.id) }}" 
                                 onclick="return confirm('Tem certeza que deseja excluir a categoria \'{{ categoria_nome }}\' e TODOS os seus produtos? Esta ação não pode ser desfeita.');"
                                 title="Excluir Categoria" 
-                                class="text-red-500 hover:text-red-400 transition-colors">
+                                class="icon-btn is-danger">
                                     <i class="fas fa-trash"></i>
                                 </a>
                             {% endif %}
@@ -174,7 +732,7 @@
     
                     <div class="produtos-container space-y-2">
                         {% for produto in categoria_data.produtos %}
-                        <div class="produto-item p-3 bg-white/10 rounded-lg cursor-move" 
+                        <div class="produto-item cursor-move"
                             data-id="{{ produto.id }}"
                             data-nome="{{ produto.nome }}"
                             data-descricao="{{ produto.descricao or '' }}"
@@ -182,31 +740,63 @@
                             data-categoria-id="{{ produto.categoria_id }}"
                             data-categoria-nome="{{ categoria_nome }}"
                             data-requer-preparo="{{ produto.requer_preparo }}"
+                            data-ocultar-quando-esgotado="{{ produto.ocultar_quando_esgotado }}"
                             data-preco-venda="{{ produto.preco_venda }}"
-                            data-preco-compra="{{ produto.ultimo_preco_compra }}">
-                            <div class="flex items-center justify-between">
-                                <div class="flex items-center space-x-3">
-                                    <i class="fas fa-grip-vertical text-white/50"></i>
-                                    <div>
-                                        <div class="font-semibold">{{ produto.nome }}</div>
-                                        <div class="text-sm text-white/70">
-                                            Venda: R$ {{ "%.2f"|format(produto.preco_venda) | replace('.', ',') }} | 
-                                            Custo Médio: R$ {{ "%.2f"|format(produto.custo_medio) | replace('.', ',') }} |                                                
-                                            Lucro: R$ {{ "%.2f"|format(produto.lucro) | replace('.', ',') }} | 
-                                            Estoque: {{ produto.estoque }}
+                            data-estoque="{{ produto.estoque }}"
+                            data-lotes-ativos="{{ produto.lotes_ativos }}"
+                            data-custo-proxima-unidade="{{ produto.custo_proxima_unidade }}"
+                            data-valor-estoque="{{ produto.valor_estoque }}">
+                            <div class="product-row">
+                                <div class="product-grip"><i class="fas fa-grip-vertical"></i></div>
+                                <div class="product-main">
+                                    <div class="product-heading">
+                                        <h4>{{ produto.nome }}</h4>
+                                        {% if produto.estoque <= 0 %}
+                                        <span class="badge badge-danger"><i class="fas fa-circle-exclamation"></i>Esgotado</span>
+                                        {% else %}
+                                        <span class="badge badge-positive"><i class="fas fa-circle-check"></i>Disponível</span>
+                                        {% endif %}
+                                        {% if produto.ocultar_quando_esgotado == 1 %}
+                                        <span class="badge badge-brand"><i class="fas fa-eye-slash"></i>Oculta ao esgotar</span>
+                                        {% endif %}
+                                    </div>
+                                    <div class="product-metrics">
+                                        <div class="product-metric">
+                                            <span>Preço de venda</span>
+                                            <strong>R$ {{ "%.2f"|format(produto.preco_venda) | replace('.', ',') }}</strong>
+                                        </div>
+                                        <div class="product-metric">
+                                            <span>Próximo custo FIFO</span>
+                                            <strong>R$ {{ "%.2f"|format(produto.custo_proxima_unidade) | replace('.', ',') }}</strong>
+                                        </div>
+                                        <div class="product-metric">
+                                            <span>Margem da próxima unidade</span>
+                                            <strong class="{{ 'positive' if produto.lucro_proxima_unidade >= 0 else 'danger' }}">
+                                                R$ {{ "%.2f"|format(produto.lucro_proxima_unidade) | replace('.', ',') }}
+                                            </strong>
+                                        </div>
+                                        <div class="product-metric">
+                                            <span>Estoque disponível</span>
+                                            <strong class="{{ 'danger' if produto.estoque <= 0 else '' }}">{{ produto.estoque }} un.</strong>
                                         </div>
                                     </div>
+                                    <div class="product-foot">
+                                        {{ produto.lotes_ativos }} lote(s) ativo(s) · R$ {{ "%.2f"|format(produto.valor_estoque) | replace('.', ',') }} investidos no estoque
+                                    </div>
                                 </div>
-                                <div class="flex items-center space-x-3">
-                                    <a href="#" title="Editar / Adicionar Estoque" class="btn-editar text-yellow-400 hover:text-yellow-300 transition-colors">
+                                <div class="product-actions">
+                                    <a href="#" title="Editar dados do produto" class="btn-editar icon-btn is-edit">
                                         <i class="fas fa-pencil-alt"></i>
                                     </a>
-                                    <a href="#" title="Ver Histórico de Compras" class="btn-historico text-blue-400 hover:text-blue-300 transition-colors">
+                                    <a href="#" title="Gerenciar estoque" class="btn-estoque icon-btn is-info">
+                                        <i class="fas fa-box-open"></i>
+                                    </a>
+                                    <a href="#" title="Ver histórico de compras" class="btn-historico icon-btn is-info">
                                         <i class="fas fa-history"></i>
                                     </a>
                                     {% if produto.requer_preparo == 1 %}
                                     <a href="#" title="Ajustar Tempos de Preparo" 
-                                       class="btn-ajustar-tempos text-teal-400 hover:text-teal-300 transition-colors"
+                                       class="btn-ajustar-tempos icon-btn is-positive"
                                        data-produto-id="{{ produto.id }}"
                                        data-produto-nome="{{ produto.nome }}">
                                         <i class="fas fa-stopwatch"></i>
@@ -214,20 +804,20 @@
                                     {% endif %}
                                     <a href="{{ url_for('rota_excluir_produto', id_produto=produto.id) }}" 
                                        onclick="return confirm('Tem certeza que deseja excluir o produto \'{{ produto.nome }}\'?');"
-                                       title="Excluir Produto" class="text-red-500 hover:text-red-400">
+                                       title="Excluir Produto" class="icon-btn is-danger">
                                         <i class="fas fa-trash"></i>
                                     </a>
                                 </div>
                             </div>
                         </div>
                         {% else %}
-                        <p class="text-center text-sm text-white/60 py-4">Nenhum produto cadastrado nesta categoria.</p>
+                        <p class="empty-category">Nenhum produto cadastrado nesta categoria.</p>
                         {% endfor %}
                     </div>
                 </div>
                 {% endfor %}
             </div>
-        </div>
+        </section>
     </main>
 
     <script src="{{ url_for('static', filename='js/libs/sortable.min.js') }}"></script>
@@ -254,20 +844,270 @@
         }
 
         document.addEventListener('DOMContentLoaded', function() {
-            // --- LÓGICA DA DICA DINÂMICA DE QUANTIDADE ---
-            const campoQuantidade = document.getElementById('quantidade');
-            const dicaContainer = document.getElementById('dica-quantidade');
+            const modalProduto = document.getElementById('modal-produto');
+            const modalEstoque = document.getElementById('modal-estoque');
+            const formProduto = document.getElementById('form-produto');
+            const tituloProduto = document.getElementById('modal-produto-titulo');
+            const subtituloProduto = document.getElementById('modal-produto-subtitulo');
+            const tituloEstoque = document.getElementById('modal-estoque-titulo');
+            const estoqueProdutoId = document.getElementById('estoque-produto-id');
+            const btnSalvarEEstoque = document.getElementById('btn-salvar-e-estoque');
+            const erroProduto = document.getElementById('erro-form-produto');
+            const erroEstoque = document.getElementById('erro-estoque-produto');
+            const modalConfirmacao = document.getElementById('modal-confirmacao-zeragem');
+            const tituloConfirmacao = document.getElementById('confirmacao-zeragem-titulo');
+            const resumoConfirmacao = document.getElementById('confirmacao-zeragem-resumo');
+            const erroConfirmacao = document.getElementById('confirmacao-zeragem-erro');
+            const btnConfirmarZeragem = document.getElementById('confirmacao-zeragem-confirmar');
+            let estoqueAlterado = false;
+            let estoqueAtual = null;
+            let zeragemPendente = null;
 
-            if (campoQuantidade && dicaContainer) {
-                campoQuantidade.addEventListener('input', function() {
-                    const valor = parseFloat(campoQuantidade.value);
-                    if (!isNaN(valor) && valor < 0) {
-                        dicaContainer.classList.remove('hidden');
-                    } else {
-                        dicaContainer.classList.add('hidden');
-                    }
-                });
+            const moeda = valor => Number(valor || 0).toLocaleString('pt-BR', {
+                style: 'currency',
+                currency: 'BRL'
+            });
+
+            function mostrarErro(elemento, mensagem) {
+                elemento.textContent = mensagem || 'Não foi possível concluir a operação.';
+                elemento.classList.remove('hidden');
             }
+
+            function limparErro(elemento) {
+                elemento.textContent = '';
+                elemento.classList.add('hidden');
+            }
+
+            function abrirModalProdutoNovo() {
+                formProduto.reset();
+                document.getElementById('id_produto').value = '';
+                document.getElementById('foto_url').value = '';
+                document.getElementById('foto-preview').src = '';
+                document.getElementById('foto-preview').classList.add('hidden');
+                tituloProduto.textContent = 'Novo produto';
+                subtituloProduto.textContent = 'Defina os dados exibidos no cardápio.';
+                btnSalvarEEstoque.classList.remove('hidden');
+                limparErro(erroProduto);
+                modalProduto.classList.remove('hidden');
+                document.getElementById('nome_produto').focus();
+            }
+
+            function fecharModalProduto() {
+                modalProduto.classList.add('hidden');
+            }
+
+            async function abrirModalEstoque(produtoItem) {
+                estoqueAlterado = false;
+                estoqueProdutoId.value = produtoItem.dataset.id;
+                estoqueAtual = {
+                    id: Number(produtoItem.dataset.id),
+                    nome: produtoItem.dataset.nome,
+                    estoque: Number(produtoItem.dataset.estoque || 0),
+                    valor_estoque: Number(produtoItem.dataset.valorEstoque || 0)
+                };
+                tituloEstoque.textContent = `Estoque de ${estoqueAtual.nome}`;
+                limparErro(erroEstoque);
+                document.getElementById('form-entrada-estoque').reset();
+                document.getElementById('form-perda-estoque').reset();
+                modalEstoque.classList.remove('hidden');
+                await carregarEstoqueProduto();
+            }
+
+            function fecharModalEstoque() {
+                modalEstoque.classList.add('hidden');
+                if (estoqueAlterado) location.reload();
+            }
+
+            async function carregarEstoqueProduto() {
+                const produtoId = estoqueProdutoId.value;
+                if (!produtoId) return;
+                limparErro(erroEstoque);
+                const lista = document.getElementById('lista-lotes-produto');
+                lista.innerHTML = '<p class="text-white/60">Carregando lotes…</p>';
+                try {
+                    const response = await fetch(`/api/produtos/${produtoId}/lotes`);
+                    const dados = await response.json();
+                    if (!response.ok || !dados.sucesso) {
+                        throw new Error(dados.mensagem || 'Falha ao carregar os lotes.');
+                    }
+                    const produto = dados.produto;
+                    estoqueAtual = produto;
+                    tituloEstoque.textContent = `Estoque de ${produto.nome}`;
+                    document.getElementById('estoque-saldo').textContent = produto.estoque;
+                    document.getElementById('estoque-lotes-ativos').textContent = produto.lotes_ativos;
+                    document.getElementById('estoque-proximo-custo').textContent = moeda(produto.custo_proxima_unidade);
+                    document.getElementById('estoque-valor').textContent = moeda(produto.valor_estoque);
+                    const lotes = dados.lotes.filter(lote => lote.quantidade_disponivel > 0);
+                    if (!lotes.length) {
+                        lista.innerHTML = '<p class="text-center text-white/60 py-4">Nenhum lote com saldo disponível.</p>';
+                        return;
+                    }
+                    lista.innerHTML = lotes.map((lote, indice) => `
+                        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 rounded-lg p-3">
+                            <div>
+                                <strong>Lote ${indice + 1}</strong>
+                                <span class="muted text-sm ml-2">${lote.data}</span>
+                                <p class="text-sm">${lote.observacao || 'Sem observação'}</p>
+                            </div>
+                            <div class="text-sm md:text-right">
+                                <p><strong>${lote.quantidade_disponivel}</strong> de ${lote.quantidade_inicial} unidades</p>
+                                <p>${moeda(lote.custo_unitario)} por unidade · ${moeda(lote.valor_disponivel)}</p>
+                            </div>
+                        </div>
+                    `).join('');
+                } catch (error) {
+                    lista.innerHTML = '';
+                    mostrarErro(erroEstoque, error.message);
+                }
+            }
+
+            function fecharConfirmacaoZeragem() {
+                if (btnConfirmarZeragem.disabled) return;
+                modalConfirmacao.classList.add('hidden');
+                zeragemPendente = null;
+                limparErro(erroConfirmacao);
+            }
+
+            function abrirConfirmacaoZeragem({titulo, resumo, endpoint}) {
+                tituloConfirmacao.textContent = titulo;
+                resumoConfirmacao.textContent = resumo;
+                zeragemPendente = {endpoint};
+                limparErro(erroConfirmacao);
+                modalConfirmacao.classList.remove('hidden');
+            }
+
+            document.getElementById('btn-novo-produto').addEventListener('click', abrirModalProdutoNovo);
+            document.getElementById('modal-produto-fechar').addEventListener('click', fecharModalProduto);
+            modalProduto.addEventListener('click', event => {
+                if (event.target === modalProduto) fecharModalProduto();
+            });
+            document.getElementById('modal-estoque-fechar').addEventListener('click', fecharModalEstoque);
+            modalEstoque.addEventListener('click', event => {
+                if (event.target === modalEstoque) fecharModalEstoque();
+            });
+            document.getElementById('confirmacao-zeragem-fechar').addEventListener('click', fecharConfirmacaoZeragem);
+            document.getElementById('confirmacao-zeragem-cancelar').addEventListener('click', fecharConfirmacaoZeragem);
+            modalConfirmacao.addEventListener('click', event => {
+                if (event.target === modalConfirmacao) fecharConfirmacaoZeragem();
+            });
+
+            document.getElementById('btn-zerar-estoques').addEventListener('click', async () => {
+                try {
+                    const response = await fetch('/api/produtos/estoque/resumo-zeragem');
+                    const resumo = await response.json();
+                    if (!response.ok || !resumo.sucesso) {
+                        throw new Error(resumo.mensagem || 'Não foi possível consultar o estoque.');
+                    }
+                    if (!resumo.quantidade_zerada) {
+                        alert('Todos os estoques já estão zerados.');
+                        return;
+                    }
+                    abrirConfirmacaoZeragem({
+                        titulo: 'Zerar todos os estoques?',
+                        resumo: `${resumo.quantidade_zerada} unidades de ${resumo.produtos_zerados} produtos, equivalentes a ${moeda(resumo.valor_zerado)} em estoque, serão zeradas.`,
+                        endpoint: '/api/produtos/estoque/zerar'
+                    });
+                } catch (error) {
+                    alert(error.message);
+                }
+            });
+
+            document.getElementById('btn-zerar-estoque-produto').addEventListener('click', () => {
+                if (!estoqueAtual?.estoque) {
+                    alert('O estoque deste produto já está zerado.');
+                    return;
+                }
+                abrirConfirmacaoZeragem({
+                    titulo: `Zerar estoque de ${estoqueAtual.nome}?`,
+                    resumo: `${estoqueAtual.estoque} unidades, equivalentes a ${moeda(estoqueAtual.valor_estoque)}, serão zeradas.`,
+                    endpoint: `/api/produtos/${estoqueAtual.id}/estoque/zerar`
+                });
+            });
+
+            btnConfirmarZeragem.addEventListener('click', async () => {
+                if (!zeragemPendente) return;
+                limparErro(erroConfirmacao);
+                btnConfirmarZeragem.disabled = true;
+                const textoOriginal = btnConfirmarZeragem.textContent;
+                btnConfirmarZeragem.textContent = 'Zerando…';
+                try {
+                    const response = await fetch(zeragemPendente.endpoint, {method: 'POST'});
+                    const dados = await response.json();
+                    if (!response.ok || !dados.sucesso) {
+                        throw new Error(dados.mensagem || 'Não foi possível zerar o estoque.');
+                    }
+                    location.reload();
+                } catch (error) {
+                    mostrarErro(erroConfirmacao, error.message);
+                    btnConfirmarZeragem.disabled = false;
+                    btnConfirmarZeragem.textContent = textoOriginal;
+                }
+            });
+
+            if (window.location.hash === '#novo-produto') {
+                abrirModalProdutoNovo();
+            } else if (window.location.hash === '#zerar-estoques') {
+                document.getElementById('btn-zerar-estoques').click();
+            } else {
+                const atalhoEstoque = window.location.hash.match(/^#estoque-produto-(\d+)$/);
+                if (atalhoEstoque) {
+                    window.setTimeout(() => {
+                        const item = document.querySelector(
+                            `.produto-item[data-id="${atalhoEstoque[1]}"]`
+                        );
+                        item?.querySelector('.btn-estoque')?.click();
+                    }, 0);
+                }
+            }
+
+            document.getElementById('form-entrada-estoque').addEventListener('submit', async event => {
+                event.preventDefault();
+                limparErro(erroEstoque);
+                const produtoId = estoqueProdutoId.value;
+                const payload = {
+                    quantidade: document.getElementById('entrada-quantidade').value,
+                    custo_unitario: document.getElementById('entrada-custo').value,
+                    observacao: document.getElementById('entrada-observacao').value
+                };
+                try {
+                    const response = await fetch(`/api/produtos/${produtoId}/estoque/entradas`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const dados = await response.json();
+                    if (!response.ok || !dados.sucesso) throw new Error(dados.mensagem);
+                    event.target.reset();
+                    estoqueAlterado = true;
+                    await carregarEstoqueProduto();
+                } catch (error) {
+                    mostrarErro(erroEstoque, error.message);
+                }
+            });
+
+            document.getElementById('form-perda-estoque').addEventListener('submit', async event => {
+                event.preventDefault();
+                limparErro(erroEstoque);
+                const produtoId = estoqueProdutoId.value;
+                const payload = {
+                    quantidade: document.getElementById('perda-quantidade').value,
+                    motivo: document.getElementById('perda-motivo').value
+                };
+                try {
+                    const response = await fetch(`/api/produtos/${produtoId}/estoque/perdas`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const dados = await response.json();
+                    if (!response.ok || !dados.sucesso) throw new Error(dados.mensagem);
+                    event.target.reset();
+                    estoqueAlterado = true;
+                    await carregarEstoqueProduto();
+                } catch (error) {
+                    mostrarErro(erroEstoque, error.message);
+                }
+            });
 
             // --- LÓGICA DO MODAL DE HISTÓRICO ---
             const modal = document.getElementById('modal-historico');
@@ -371,7 +1211,13 @@
 
             // --- GERENCIADOR DE CLIQUES DA PÁGINA (UNIFICADO) ---
             document.addEventListener('click', async function(event) {
-                
+                const estoqueButton = event.target.closest('.btn-estoque');
+                if (estoqueButton) {
+                    event.preventDefault();
+                    await abrirModalEstoque(estoqueButton.closest('.produto-item'));
+                    return;
+                }
+
                 const editButton = event.target.closest('.btn-editar');
                 if (editButton) {
                     event.preventDefault(); 
@@ -383,9 +1229,8 @@
                     document.getElementById('foto_url').value = produtoItem.dataset.fotoUrl;
                     document.getElementById('categoria_produto').value = produtoItem.dataset.categoriaId; 
                     document.getElementById('preco_venda').value = produtoItem.dataset.precoVenda;
-                    document.getElementById('preco_compra').value = produtoItem.dataset.precoCompra;
                     document.getElementById('requer_preparo').checked = produtoItem.dataset.requerPreparo == '1';
-                    document.getElementById('quantidade').value = '';
+                    document.getElementById('ocultar_quando_esgotado').checked = produtoItem.dataset.ocultarQuandoEsgotado == '1';
                     // Lógica para exibir a foto atual na pré-visualização
                     const fotoPreview = document.getElementById('foto-preview');
                     const urlFotoAtual = produtoItem.dataset.fotoUrl;
@@ -400,6 +1245,11 @@
 
                     // Limpa o valor do input de arquivo para não reenviar o arquivo antigo acidentalmente
                     document.getElementById('foto_produto').value = '';
+                    tituloProduto.textContent = `Editar ${produtoItem.dataset.nome}`;
+                    subtituloProduto.textContent = 'Altere apenas os dados exibidos no cardápio.';
+                    btnSalvarEEstoque.classList.add('hidden');
+                    limparErro(erroProduto);
+                    modalProduto.classList.remove('hidden');
                     document.getElementById('nome_produto').focus();
                 }
 
@@ -694,49 +1544,44 @@
                 });
             }
 
-            // --- VALIDAÇÃO DO FORMULÁRIO ---
-            const formProduto = document.getElementById('form-produto');
-            formProduto.addEventListener('submit', function(event) {
+            formProduto.addEventListener('submit', async function(event) {
+                event.preventDefault();
+                limparErro(erroProduto);
                 const idProduto = document.getElementById('id_produto').value;
-                const nomeProduto = document.getElementById('nome_produto').value.trim();
-                const categoriaProduto = document.getElementById('categoria_produto').value;
-                const precoVenda = document.getElementById('preco_venda').value;
-                const precoCompra = document.getElementById('preco_compra').value;
-                const quantidade = document.getElementById('quantidade').value;
-                
-                let mensagemErro = '';
-                
-                if (!idProduto) {
-                    if (!nomeProduto) mensagemErro += '• Nome do produto é obrigatório\n';
-                    if (!categoriaProduto) mensagemErro += '• Categoria é obrigatória\n';
-                    if (!precoVenda) mensagemErro += '• Preço de venda é obrigatório\n';
-                    if (!precoCompra) mensagemErro += '• Preço de compra é obrigatório\n';
-                    if (!quantidade) mensagemErro += '• Quantidade é obrigatória\n';
-                } else {
-                    if (nomeProduto && !categoriaProduto) {
-                         mensagemErro = '• Ao editar o nome, a categoria também deve ser selecionada.\n';
+                const irParaEstoque = !idProduto && event.submitter?.dataset.proximo === 'estoque';
+                const botaoAcionado = event.submitter || document.getElementById('btn-salvar-produto');
+                const botoes = [
+                    document.getElementById('btn-salvar-produto'),
+                    btnSalvarEEstoque
+                ];
+                const textosOriginais = botoes.map(botao => botao.innerHTML);
+                botoes.forEach(botao => {
+                    botao.disabled = true;
+                });
+                botaoAcionado.textContent = 'Salvando…';
+                try {
+                    const endpoint = idProduto
+                        ? `/api/produtos/${idProduto}`
+                        : '/api/produtos';
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        body: new FormData(formProduto)
+                    });
+                    const dados = await response.json();
+                    if (!response.ok || !dados.sucesso) {
+                        throw new Error(dados.mensagem || 'Não foi possível salvar o produto.');
                     }
-                    else if (quantidade && !precoCompra) {
-                        mensagemErro = '• Ao adicionar estoque, o preço de compra é obrigatório';
-                    } else if (!quantidade && precoCompra) {
-                        mensagemErro = '• Ao informar preço de compra, a quantidade é obrigatória';
+                    if (irParaEstoque) {
+                        location.href = `/produtos?abrir_estoque=${dados.produto_id}#estoque-produto-${dados.produto_id}`;
+                    } else {
+                        location.reload();
                     }
-                }
-                
-                if (precoVenda && (isNaN(precoVenda) || parseFloat(precoVenda) < 0)) {
-                    mensagemErro += '• Preço de venda deve ser um número válido maior ou igual a zero\n';
-                }
-                if (precoCompra && (isNaN(precoCompra) || parseFloat(precoCompra) < 0)) {
-                    mensagemErro += '• Preço de compra deve ser um número válido maior ou igual a zero\n';
-                }
-                if (quantidade && isNaN(quantidade)) {
-                    mensagemErro += '• Quantidade deve ser um número válido\n';
-                }
-                
-                if (mensagemErro) {
-                    event.preventDefault();
-                    alert('Por favor, corrija os seguintes erros:\n\n' + mensagemErro);
-                    return false;
+                } catch (error) {
+                    mostrarErro(erroProduto, error.message);
+                    botoes.forEach((botao, indice) => {
+                        botao.disabled = false;
+                        botao.innerHTML = textosOriginais[indice];
+                    });
                 }
             });
 
@@ -759,10 +1604,13 @@
     </script>
     
     <div id="modal-historico" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
-        <div class="glass-container rounded-2xl p-6 w-full max-w-lg text-white max-h-[80vh] flex flex-col">
-            <div class="flex justify-between items-center border-b border-white/20 pb-3 mb-4 flex-shrink-0">
-                <h2 id="modal-titulo" class="text-2xl font-bold">Histórico de Compras</h2>
-                <button id="modal-fechar" class="text-2xl hover:text-red-500">&times;</button>
+        <div class="modal-panel modal-panel-compact glass-container flex flex-col">
+            <div class="modal-heading flex-shrink-0">
+                <div>
+                    <div class="eyebrow">Auditoria de estoque</div>
+                    <h2 id="modal-titulo">Histórico de compras</h2>
+                </div>
+                <button id="modal-fechar" class="modal-close">&times;</button>
             </div>
             <div id="modal-corpo" class="overflow-y-auto custom-scrollbar pr-2 space-y-2 flex-grow">
             </div>
@@ -770,10 +1618,13 @@
     </div>
 
     <div id="modal-tempos" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
-        <div class="glass-container rounded-2xl p-6 w-full max-w-md text-white">
-            <div class="flex justify-between items-center border-b border-white/20 pb-3 mb-4">
-                <h2 id="modal-tempos-titulo" class="text-2xl font-bold">Ajustar Tempos</h2>
-                <button id="modal-tempos-fechar" class="text-2xl hover:text-red-500">&times;</button>
+        <div class="modal-panel modal-panel-compact glass-container">
+            <div class="modal-heading">
+                <div>
+                    <div class="eyebrow">Operação da cozinha</div>
+                    <h2 id="modal-tempos-titulo">Ajustar tempos</h2>
+                </div>
+                <button id="modal-tempos-fechar" class="modal-close">&times;</button>
             </div>
             
             <div id="modal-tempos-corpo" class="space-y-4">
@@ -793,7 +1644,7 @@
             </div>
             
             <div class="mt-6">
-                <button id="modal-tempos-salvar" class="w-full bg-teal-500 hover:bg-teal-600 font-bold py-3 rounded-lg transition-colors">
+                <button id="modal-tempos-salvar" class="secondary-action btn btn-primary">
                     Salvar Tempos
                 </button>
             </div>
@@ -801,15 +1652,18 @@
     </div>
 
     <div id="modal-acompanhamentos" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
-        <div class="glass-container rounded-2xl p-6 w-full max-w-lg text-white max-h-[80vh] flex flex-col">
-            <div class="flex justify-between items-center border-b border-white/20 pb-3 mb-4 flex-shrink-0">
-                <h2 class="text-2xl font-bold">Gerenciar Acompanhamentos</h2>
-                <button id="modal-acompanhamentos-fechar" class="text-2xl hover:text-red-500">&times;</button>
+        <div class="modal-panel modal-panel-compact glass-container flex flex-col">
+            <div class="modal-heading flex-shrink-0">
+                <div>
+                    <div class="eyebrow">Complementos do cardápio</div>
+                    <h2>Gerenciar acompanhamentos</h2>
+                </div>
+                <button id="modal-acompanhamentos-fechar" class="modal-close">&times;</button>
             </div>
     
             <form id="form-adicionar-acompanhamento" class="flex items-center gap-2 mb-4 flex-shrink-0">
                 <input type="text" id="nome-novo-acompanhamento" name="nome_acompanhamento" placeholder="Nome do novo item (ex: Vinagrete)" class="w-full p-2 rounded-lg" required>
-                <button type="submit" title="Adicionar" class="bg-green-500 hover:bg-green-600 font-bold py-2 px-4 rounded-lg transition-colors">
+                <button type="submit" title="Adicionar" class="btn btn-primary">
                     <i class="fas fa-plus"></i>
                 </button>
             </form>
@@ -821,10 +1675,13 @@
     </div>
 
     <div id="modal-tempo-unico" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
-        <div class="glass-container rounded-2xl p-6 w-full max-w-md text-white">
-            <div class="flex justify-between items-center border-b border-white/20 pb-3 mb-4">
-                <h2 id="modal-tempo-unico-titulo" class="text-2xl font-bold">Ajustar Tempo</h2>
-                <button id="modal-tempo-unico-fechar" class="text-2xl hover:text-red-500">&times;</button>
+        <div class="modal-panel modal-panel-compact glass-container">
+            <div class="modal-heading">
+                <div>
+                    <div class="eyebrow">Operação da cozinha</div>
+                    <h2 id="modal-tempo-unico-titulo">Ajustar tempo</h2>
+                </div>
+                <button id="modal-tempo-unico-fechar" class="modal-close">&times;</button>
             </div>
             
             <div id="modal-tempo-unico-corpo" class="space-y-4">
@@ -836,12 +1693,13 @@
             </div>
             
             <div class="mt-6">
-                <button id="modal-tempo-unico-salvar" class="w-full bg-teal-500 hover:bg-teal-600 font-bold py-3 rounded-lg transition-colors">
+                <button id="modal-tempo-unico-salvar" class="secondary-action btn btn-primary">
                     Salvar Tempo
                 </button>
             </div>
         </div>
     </div>
 
+    </div>
 </body>
 </html>

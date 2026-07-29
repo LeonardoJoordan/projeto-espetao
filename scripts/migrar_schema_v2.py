@@ -1,4 +1,4 @@
-"""Migração manual do banco legado para o esquema canônico v2."""
+"""Migração manual do banco para o esquema canônico atual."""
 
 from __future__ import annotations
 
@@ -15,7 +15,9 @@ import database
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Migra o banco do Espetão para o schema v2."
+        description=(
+            f"Migra o banco do PDV Espetinho para o schema v{database.SCHEMA_VERSION}."
+        )
     )
     parser.add_argument(
         "banco",
@@ -24,10 +26,8 @@ def main() -> None:
         help="Caminho do banco SQLite (padrão: banco da aplicação).",
     )
     args = parser.parse_args()
-    resultado = database.migrar_banco_legado(args.banco)
+    database.inicializar_banco(args.banco)
     print(f"Banco pronto: {Path(args.banco).resolve()}")
-    if resultado != Path(args.banco).resolve():
-        print(f"Backup recuperável: {resultado}")
 
 
 if __name__ == "__main__":

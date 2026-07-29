@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
   <id>com.leobelisario.Espetao</id>
-  <name>Espetão do Léo</name>
-  <summary>PDV local para operação e gestão do Espetão</summary>
+  <name>PDV Espetinho</name>
+  <summary>PDV local para atendimento, operação e gestão</summary>
   <developer id="com.leobelisario">
     <name>Leonardo Belisario</name>
   </developer>

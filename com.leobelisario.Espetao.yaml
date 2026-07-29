@@ -55,3 +55,11 @@ modules:
           - __pycache__
           - tests
           - '*.flatpak'
+
+# Sequência para compilar, gerar o instalador e instalar/reinstalar o aplicativo:
+#    flatpak-builder --repo=repo-flatpak --force-clean build-flatpak com.leobelisario.Espetao.yaml
+#    flatpak build-bundle repo-flatpak Espetao.flatpak com.leobelisario.Espetao
+#    flatpak install --reinstall Espetao.flatpak
+
+# Os três comandos acima em uma única linha:
+#    flatpak-builder --repo=repo-flatpak --force-clean build-flatpak com.leobelisario.Espetao.yaml && flatpak build-bundle repo-flatpak Espetao.flatpak com.leobelisario.Espetao && flatpak install --reinstall Espetao.flatpak

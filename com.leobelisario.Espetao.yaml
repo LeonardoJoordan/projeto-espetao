@@ -1,0 +1,57 @@
+app-id: com.leobelisario.Espetao
+runtime: org.gnome.Platform
+runtime-version: '47'
+sdk: org.gnome.Sdk
+command: espetao
+
+# A rede é usada somente durante a compilação para baixar as dependências Python.
+build-options:
+  build-args:
+    - --share=network
+
+finish-args:
+  # Interface Qt nativa.
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --share=ipc
+  - --device=dri
+
+  # Servidor HTTP/Socket.IO na LAN e impressora térmica por IP.
+  - --share=network
+
+modules:
+  - name: dependencias-python
+    buildsystem: simple
+    build-commands:
+      - pip3 install --prefix=/app --no-cache-dir -r requirements-flatpak.txt
+    sources:
+      - type: file
+        path: requirements-flatpak.txt
+
+  - name: projeto-espetao
+    buildsystem: simple
+    build-commands:
+      - install -d /app/share/projeto-espetao
+      - install -m 0644 main.py app.py database.py gerenciador_db.py analytics.py serializers.py network_utils.py /app/share/projeto-espetao/
+      - install -m 0644 espetao.db icon.png /app/share/projeto-espetao/
+      - cp -a templates static /app/share/projeto-espetao/
+      - install -Dm755 flatpak/espetao-launcher /app/bin/espetao
+      - install -Dm644 flatpak/com.leobelisario.Espetao.desktop /app/share/applications/com.leobelisario.Espetao.desktop
+      - install -Dm644 icon.png /app/share/icons/hicolor/512x512/apps/com.leobelisario.Espetao.png
+      - install -Dm644 flatpak/com.leobelisario.Espetao.metainfo.xml /app/share/metainfo/com.leobelisario.Espetao.metainfo.xml
+    sources:
+      - type: dir
+        path: .
+        skip:
+          - .git
+          - .venv
+          - .vscode
+          - .flatpak-builder
+          - build
+          - build-flatpak
+          - dist
+          - node_modules
+          - repo-flatpak
+          - __pycache__
+          - tests
+          - '*.flatpak'

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Espetão do Léo
+Comment=PDV local para atendimento, cozinha, estoque e relatórios
+Exec=espetao
+Icon=com.leobelisario.Espetao
+Terminal=false
+Categories=Office;
+StartupNotify=true

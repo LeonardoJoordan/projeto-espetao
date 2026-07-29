@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.leobelisario.Espetao</id>
+  <name>Espetão do Léo</name>
+  <summary>PDV local para operação e gestão do Espetão</summary>
+  <developer id="com.leobelisario">
+    <name>Leonardo Belisario</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LicenseRef-proprietary</project_license>
+  <description>
+    <p>
+      Sistema de ponto de venda para atendimento, produção, estoque,
+      impressão de comandas e análise de resultados em uma rede local.
+    </p>
+  </description>
+  <url type="homepage">https://github.com/LeonardoJoordan/projeto-espetao</url>
+  <launchable type="desktop-id">com.leobelisario.Espetao.desktop</launchable>
+  <content_rating type="oars-1.1"/>
+</component>

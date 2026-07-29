@@ -61,6 +61,7 @@ from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
 from PySide6.QtCore import Qt, Signal, QObject, QTimer
 from PySide6.QtGui import QIcon, QPixmap, QFont
 import json
+from network_utils import detectar_ipv4_local
 # Importa o 'app' e o 'socketio' do seu arquivo app.py
 from app import app, socketio
 import gerenciador_db
@@ -616,24 +617,19 @@ class PainelControle(QWidget):
         sys.stderr = log_handler
 
     def detectar_ip(self):
-        """Tenta encontrar o IP local da máquina na rede."""
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(('8.8.8.8', 80)) # Conecta a um IP externo para obter o IP local
-            ip = s.getsockname()[0]
-        except Exception:
-            ip = '127.0.0.1'
-            # ALERTA VISUAL AO USUÁRIO
-            QMessageBox.warning(
+        """Encontra um IPv4 configurado sem consultar a internet."""
+        ip = detectar_ipv4_local()
+        if ip:
+            return ip
+
+        QMessageBox.warning(
             self,
             "Rede não encontrada",
-            "Nenhuma conexão de rede válida foi detectada.\n"
+            "Nenhuma interface IPv4 válida foi detectada.\n"
             "O servidor será iniciado em modo LOCALHOST (127.0.0.1).\n\n"
-            "Nesse modo, outros dispositivos não conseguirão acessar."
+            "Nesse modo, outros dispositivos não conseguirão acessar.",
         )
-        finally:
-            s.close()
-        return ip
+        return "127.0.0.1"
     
     def processar_fila_log(self):
         """Verifica a fila de logs e atualiza a UI."""

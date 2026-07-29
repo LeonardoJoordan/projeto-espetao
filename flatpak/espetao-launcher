@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+APP_DIR="/app/share/projeto-espetao"
+DATA_DIR="${HOME}/.espetao"
+STATIC_DIR="${DATA_DIR}/static"
+DATABASE_PATH="${DATA_DIR}/espetao.db"
+
+mkdir -p "${STATIC_DIR}"
+
+# Mantém os recursos da interface atualizados sem apagar fotos cadastradas.
+cp -a "${APP_DIR}/static/." "${STATIC_DIR}/"
+
+# A base distribuída vira a base inicial apenas na primeira execução.
+if [ ! -f "${DATABASE_PATH}" ]; then
+    cp "${APP_DIR}/espetao.db" "${DATABASE_PATH}"
+fi
+
+export ESPETAO_DB_PATH="${DATABASE_PATH}"
+export ESPETAO_STATIC_PATH="${STATIC_DIR}"
+
+cd "${APP_DIR}"
+exec python3 main.py "$@"

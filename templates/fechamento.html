@@ -3,713 +3,1091 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fechamento de Caixa</title>
+    <title>Inteligência do Negócio | Espetão</title>
 
     <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind-output.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/fontawesome.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/flatpickr.min.css') }}">
-    
+
     <script src="{{ url_for('static', filename='js/libs/flatpickr.min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/libs/chart.min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/libs/l10n/pt.js') }}"></script>
-    
+
     <style>
+        :root {
+            color-scheme: dark;
+            --bg: #07111f;
+            --surface: #0d1a2b;
+            --surface-2: #122238;
+            --surface-3: #172a43;
+            --border: #253a55;
+            --text: #f6f8fb;
+            --muted: #91a4bc;
+            --brand: #f59e0b;
+            --brand-soft: rgba(245, 158, 11, .14);
+            --positive: #34d399;
+            --positive-soft: rgba(52, 211, 153, .12);
+            --danger: #fb7185;
+            --danger-soft: rgba(251, 113, 133, .12);
+            --info: #60a5fa;
+            --info-soft: rgba(96, 165, 250, .12);
+        }
+
+        * { box-sizing: border-box; }
+        [hidden] { display: none !important; }
         body {
-            font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #6B73FF 0%, #000DFF 100%);
+            margin: 0;
             min-height: 100vh;
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+            background:
+                radial-gradient(circle at 88% 0%, rgba(245, 158, 11, .08), transparent 26rem),
+                var(--bg);
         }
-        .glass-container {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+        button, input { font: inherit; }
+        button { color: inherit; }
+        .page-shell { width: min(1560px, 100%); margin: 0 auto; padding: 28px; }
+        .surface {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            box-shadow: 0 18px 55px rgba(0, 0, 0, .18);
         }
-        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0,0,0,0.1); border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.5); }
-        
-        /* Estilos para botões da Sidebar */
-        .sidebar-btn.active {
-            background-color: rgba(255, 255, 255, 0.2);
-            font-weight: 600;
+        .eyebrow {
+            color: var(--brand);
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: .18em;
+            text-transform: uppercase;
         }
+        .muted { color: var(--muted); }
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 28px;
+            padding: 22px 24px;
+        }
+        .brand-block { display: flex; align-items: center; gap: 16px; }
+        .brand-mark {
+            display: grid;
+            width: 48px;
+            height: 48px;
+            place-items: center;
+            border-radius: 14px;
+            color: #1b1202;
+            background: var(--brand);
+            box-shadow: 0 10px 30px rgba(245, 158, 11, .22);
+        }
+        .header h1 { margin: 3px 0 0; font-size: clamp(22px, 3vw, 32px); line-height: 1.1; }
+        .date-tools, .compare-tools { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; }
+        .field { display: grid; gap: 6px; }
+        .field label {
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }
+        .field input {
+            min-width: 170px;
+            height: 42px;
+            padding: 0 13px;
+            color: var(--text);
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            outline: none;
+        }
+        .field input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+        #report-date { min-width: 245px; }
+        .btn {
+            display: inline-flex;
+            min-height: 42px;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 0 16px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            cursor: pointer;
+            background: var(--surface-2);
+            transition: transform .15s ease, background .15s ease, border-color .15s ease;
+        }
+        .btn:hover { transform: translateY(-1px); border-color: #3a5372; background: var(--surface-3); }
+        .btn:disabled { cursor: wait; opacity: .65; transform: none; }
+        .btn-primary { color: #1a1203; border-color: var(--brand); background: var(--brand); font-weight: 800; }
+        .btn-primary:hover { background: #fbbf24; border-color: #fbbf24; }
 
-        /* Estilos para os cards de KPI */
-        .kpi-card {
-            transition: all 0.3s ease;
-            border-bottom: 4px solid transparent;
+        .tabs {
+            display: flex;
+            gap: 5px;
+            margin: 18px 0;
+            padding: 5px;
+            overflow-x: auto;
+            background: rgba(13, 26, 43, .76);
+            border: 1px solid var(--border);
+            border-radius: 14px;
         }
-        .kpi-card:hover {
-            transform: translateY(-5px);
-            background: rgba(255, 255, 255, 0.15);
+        .tab-btn {
+            display: inline-flex;
+            min-width: max-content;
+            align-items: center;
+            gap: 9px;
+            padding: 11px 15px;
+            color: var(--muted);
+            border: 0;
+            border-radius: 9px;
+            cursor: pointer;
+            background: transparent;
+            font-size: 14px;
+            font-weight: 700;
         }
-        .kpi-card.faturamento { border-color: #34D399; }
-        .kpi-card.lucro { border-color: #60A5FA; }
-        .kpi-card.pedidos { border-color: #FBBF24; }
-        .kpi-card.ticket { border-color: #A78BFA; }
-        .kpi-card.perdas { border-color: #F87171; }
+        .tab-btn.active { color: var(--text); background: var(--surface-3); box-shadow: 0 4px 16px rgba(0,0,0,.16); }
+        .tab-btn.active i { color: var(--brand); }
+        .section { display: grid; gap: 18px; }
 
-        /* Estilos para abas do relatório avançado */
-        .advanced-tab-btn.active {
-            border-color: #60A5FA;
-            color: #60A5FA;
+        .executive-hero {
+            display: grid;
+            grid-template-columns: minmax(270px, 1.1fr) minmax(340px, 1.9fr);
+            overflow: hidden;
         }
-        
-        /* Estilos para o Flatpickr */
-        .flatpickr-calendar {
-            background: #2d3748;
-            border-radius: 0.5rem;
-            border: 1px solid rgba(255, 255, 255, 0.2);
+        .result-panel { padding: 26px; border-right: 1px solid var(--border); }
+        .result-value { margin: 10px 0 7px; font-size: clamp(38px, 5vw, 58px); font-weight: 850; letter-spacing: -.04em; }
+        .result-value.negative { color: var(--danger); }
+        .result-value.positive { color: var(--positive); }
+        .status-line { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 14px; }
+        .status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+        .status-dot.positive { background: var(--positive); box-shadow: 0 0 0 5px var(--positive-soft); }
+        .status-dot.negative { background: var(--danger); box-shadow: 0 0 0 5px var(--danger-soft); }
+        .result-equation {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 24px;
         }
-        .flatpickr-day { color: #cbd5e0; }
-        .flatpickr-day.selected, .flatpickr-day.startRange, .flatpickr-day.endRange { background: #60A5FA; border-color: #60A5FA; }
-        .flatpickr-day:hover { background: #4a5568; }
-        .flatpickr-weekday, .flatpickr-monthDropdown-month, .numInput, .cur-month, .flatpickr-time input { color: white !important; }
-        .arrowUp:after { border-bottom-color: white !important; }
-        .arrowDown:after { border-top-color: white !important; }
-        .flatpickr-prev-month svg, .flatpickr-next-month svg { fill: white !important; }
+        .equation-item { padding: 10px 0; border-top: 1px solid var(--border); }
+        .equation-item span { display: block; color: var(--muted); font-size: 11px; }
+        .equation-item strong { display: block; margin-top: 4px; font-size: 14px; }
+        .priorities-panel { padding: 26px; }
+        .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
+        .section-heading h2, .section-heading h3 { margin: 3px 0 0; }
+        .section-heading h2 { font-size: 22px; }
+        .section-heading h3 { font-size: 17px; }
+        .section-heading p { margin: 0; font-size: 12px; }
+        .insight-list { display: grid; gap: 10px; }
+        .insight {
+            display: grid;
+            grid-template-columns: 38px 1fr;
+            gap: 12px;
+            padding: 13px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: rgba(255,255,255,.018);
+        }
+        .insight-icon {
+            display: grid;
+            width: 38px;
+            height: 38px;
+            place-items: center;
+            border-radius: 10px;
+            color: var(--info);
+            background: var(--info-soft);
+        }
+        .insight[data-level="positivo"] .insight-icon { color: var(--positive); background: var(--positive-soft); }
+        .insight[data-level="atencao"] .insight-icon { color: var(--brand); background: var(--brand-soft); }
+        .insight[data-level="critico"] .insight-icon { color: var(--danger); background: var(--danger-soft); }
+        .insight h4 { margin: 0 0 4px; font-size: 14px; }
+        .insight p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+        .insight .action { margin-top: 5px; color: #c7d4e3; }
+
+        .kpi-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+        .kpi { min-height: 124px; padding: 17px; }
+        .kpi-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .kpi-icon {
+            display: grid;
+            width: 31px;
+            height: 31px;
+            place-items: center;
+            color: var(--muted);
+            border-radius: 9px;
+            background: var(--surface-2);
+        }
+        .kpi-label { color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+        .kpi-value { margin-top: 14px; font-size: clamp(20px, 2.2vw, 28px); font-weight: 820; letter-spacing: -.03em; }
+        .kpi-note { margin-top: 5px; color: var(--muted); font-size: 11px; }
+
+        .grid-2 { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(300px, .85fr); gap: 18px; }
+        .grid-equal { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+        .card { padding: 20px; min-width: 0; }
+        .chart-wrap { position: relative; height: 300px; }
+        .chart-wrap.compact { height: 245px; }
+
+        .result-bridge { display: grid; gap: 11px; margin-top: 9px; }
+        .bridge-row { display: grid; grid-template-columns: 130px 1fr 86px; align-items: center; gap: 10px; font-size: 12px; }
+        .bridge-track { height: 8px; overflow: hidden; border-radius: 99px; background: var(--surface-3); }
+        .bridge-fill { height: 100%; border-radius: inherit; background: var(--positive); }
+        .bridge-fill.out { background: var(--danger); }
+        .bridge-fill.result { background: var(--brand); }
+        .bridge-value { text-align: right; font-weight: 750; }
+
+        .table-wrap { width: 100%; overflow: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            padding: 11px 12px;
+            color: var(--muted);
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            text-align: left;
+            font-size: 10px;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+        td { padding: 12px; border-bottom: 1px solid rgba(37, 58, 85, .66); vertical-align: middle; }
+        tbody tr:hover { background: rgba(255,255,255,.025); }
+        .number { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .center { text-align: center; }
+        .product-name { min-width: 155px; font-weight: 750; }
+        .product-sub { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; font-weight: 500; }
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 5px 8px;
+            border-radius: 99px;
+            color: var(--info);
+            background: var(--info-soft);
+            font-size: 10px;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+        .badge.estrela, .badge.saudavel { color: var(--positive); background: var(--positive-soft); }
+        .badge.volume, .badge.atencao { color: var(--brand); background: var(--brand-soft); }
+        .badge.revisar, .badge.ruptura, .badge.critico { color: var(--danger); background: var(--danger-soft); }
+        .badge.arquivado, .badge.sem_giro { color: var(--muted); background: rgba(145,164,188,.1); }
+        .recommendation { min-width: 260px; max-width: 360px; color: var(--muted); line-height: 1.4; }
+        .empty {
+            display: grid;
+            min-height: 190px;
+            place-items: center;
+            padding: 26px;
+            color: var(--muted);
+            text-align: center;
+        }
+        .empty i { display: block; margin-bottom: 10px; font-size: 28px; color: #536b86; }
+
+        .comparison-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+        .comparison-card { padding: 16px; }
+        .comparison-delta { margin: 10px 0 5px; font-size: 25px; font-weight: 850; }
+        .comparison-delta.good { color: var(--positive); }
+        .comparison-delta.bad { color: var(--danger); }
+        .comparison-values { color: var(--muted); font-size: 11px; line-height: 1.5; }
+        .comparison-readings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+
+        .pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; color: var(--muted); font-size: 12px; }
+        .pagination .btn { min-height: 36px; }
+        .loading-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 80;
+            display: grid;
+            place-items: center;
+            background: rgba(7, 17, 31, .72);
+            backdrop-filter: blur(4px);
+        }
+        .loading-box { display: flex; align-items: center; gap: 12px; padding: 17px 20px; }
+        .modal {
+            position: fixed;
+            inset: 0;
+            z-index: 90;
+            display: grid;
+            place-items: center;
+            padding: 18px;
+            background: rgba(0,0,0,.72);
+        }
+        .modal-card { width: min(540px, 100%); max-height: 82vh; padding: 22px; overflow: auto; }
+        .modal-head { display: flex; align-items: center; justify-content: space-between; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+        .modal-head h2 { margin: 0; font-size: 19px; }
+        .modal-close { border: 0; background: transparent; cursor: pointer; color: var(--muted); font-size: 25px; }
+        .modal-item { display: flex; justify-content: space-between; gap: 15px; margin-top: 11px; padding: 12px; border-radius: 10px; background: var(--surface-2); }
+
+        .flatpickr-calendar { background: var(--surface-2); border: 1px solid var(--border); box-shadow: 0 16px 45px rgba(0,0,0,.45); }
+        .flatpickr-day, .flatpickr-weekday, .flatpickr-current-month, .flatpickr-monthDropdown-month, .numInput { color: var(--text) !important; }
+        .flatpickr-day.selected, .flatpickr-day.startRange, .flatpickr-day.endRange { color: #1a1203 !important; background: var(--brand); border-color: var(--brand); }
+        .flatpickr-day:hover { background: var(--surface-3); border-color: var(--surface-3); }
+        .flatpickr-prev-month svg, .flatpickr-next-month svg { fill: var(--text) !important; }
+
+        @media (max-width: 1180px) {
+            .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+            .comparison-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 900px) {
+            .page-shell { padding: 16px; }
+            .header, .executive-hero { display: grid; grid-template-columns: 1fr; }
+            .result-panel { border-right: 0; border-bottom: 1px solid var(--border); }
+            .grid-2, .grid-equal { grid-template-columns: 1fr; }
+            .comparison-readings { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 640px) {
+            .page-shell { padding: 10px; }
+            .header, .card, .result-panel, .priorities-panel { padding: 17px; }
+            .header { align-items: stretch; }
+            .date-tools, .compare-tools { display: grid; grid-template-columns: 1fr; }
+            .field input, .btn { width: 100%; }
+            .kpi-grid, .comparison-grid { grid-template-columns: repeat(2, 1fr); }
+            .kpi { min-height: 110px; padding: 14px; }
+            .result-equation { grid-template-columns: 1fr; }
+            .equation-item { display: flex; align-items: center; justify-content: space-between; }
+            .section-heading { display: block; }
+            .section-heading > p { margin-top: 6px; }
+            .chart-wrap { height: 245px; }
+            .bridge-row { grid-template-columns: 105px 1fr 75px; }
+        }
     </style>
 </head>
-<body class="p-4 md:p-8 text-white">
-
-<!-- WRAPPER DO LAYOUT: GRID 2 COLUNAS -->
-<div id="app-grid" class="relative grid gap-6 lg:grid-cols-[18rem,1fr]">
-
-  <!-- SIDEBAR (off-canvas em mobile, fixa em lg+) -->
-  <aside id="sidebar"
-         class="glass-container fixed inset-y-0 left-0 z-40 w-72 p-4 overflow-y-auto custom-scrollbar
-                transform -translate-x-full transition-transform lg:static lg:translate-x-0 rounded-2xl">
-    
-    <nav class="flex flex-col space-y-2">
-        <a href="#relatorio-simples" class="sidebar-btn flex items-center p-3 rounded-lg text-white hover:bg-white/10 transition-colors duration-200 active">
-            <i class="fas fa-chart-bar fa-fw w-6 mr-3"></i>
-            <span>Relatório simples</span>
-        </a>
-        <a href="#relatorio-avancado" class="sidebar-btn flex items-center p-3 rounded-lg text-white hover:bg-white/10 transition-colors duration-200">
-            <i class="fas fa-chart-area fa-fw w-6 mr-3"></i>
-            <span>Relatório avançado</span>
-        </a>
-        <a href="#insights" class="sidebar-btn flex items-center p-3 rounded-lg text-white hover:bg-white/10 transition-colors duration-200">
-            <i class="fas fa-lightbulb fa-fw w-6 mr-3"></i>
-            <span>Insights avançados</span>
-        </a>
-    </nav>
-
-  </aside>
-
-  <!-- BACKDROP da sidebar (somente mobile) -->
-  <div id="sidebar-backdrop" class="fixed inset-0 z-30 bg-black/50 hidden lg:hidden"></div>
-
-  <!-- COLUNA DE CONTEÚDO -->
-  <main id="content-main" class="space-y-8 min-h-screen min-w-0">
-    <header class="glass-container rounded-2xl p-6 space-y-6">
-        <div class="flex items-center justify-center relative">
-            <button id="btn-toggle-sidebar"
-                    class="lg:hidden inline-flex items-center justify-center w-10 h-10 mr-3 rounded-xl bg-white/10 hover:bg-white/20 absolute left-0"
-                    aria-label="Abrir menu">
-              <i class="fas fa-bars"></i>
-            </button>
-            <div class="flex items-center justify-center text-center">
-                 <i class="fas fa-chart-line text-white text-2xl md:text-3xl mr-4"></i>
-                 <h1 class="text-2xl md:text-4xl font-bold text-white">Fechamento e Relatórios</h1>
-            </div>
-        </div>
-        
-        <!-- SELETOR DE DATA ÚNICA -->
-        <div id="single-date-selector-container">
-            <div class="flex items-center justify-center gap-4">
-                <label for="report-date" class="font-semibold text-lg">Data:</label>
-                <input type="text" id="report-date" placeholder="Selecione uma data" class="bg-white/20 border border-white/30 rounded-lg p-2 text-white text-center w-48 cursor-pointer">
-                <button id="btn-analisar" class="bg-blue-500 hover:bg-blue-600 font-bold py-2 px-6 rounded-lg transition-colors flex items-center justify-center gap-2">
-                <i class="fa fa-search"></i>
-                <span>Analisar</span>
-            </button>            
-            </div>
-        </div>
-        
-        <!-- SELETOR DE COMPARAÇÃO DE PERÍODOS -->
-        <div id="comparison-date-selector-container" class="hidden">
-            <div class="flex flex-wrap items-center justify-center gap-x-6 gap-y-4">
-                <label for="periodo-a" class="font-semibold text-lg">Datas:</label>
-                <div class="flex items-center gap-2">
-                    <input type="text" id="periodo-a" placeholder="1ª data ou período" class="bg-white/20 border border-white/30 rounded-lg p-2 text-white text-center w-56 cursor-pointer">
-                </div>
-                <div class="flex items-center gap-2">
-                    <input type="text" id="periodo-b" placeholder="2ª data ou período" class="bg-white/20 border border-white/30 rounded-lg p-2 text-white text-center w-56 cursor-pointer">
-                </div>
-                <button id="btn-comparar" class="bg-blue-500 hover:bg-blue-600 font-bold py-2 px-6 rounded-lg transition-colors flex items-center justify-center gap-2">
-                    <i class="fa fa-exchange"></i>
-                    <span>Comparar</span>
-                </button>
-            </div>
-        </div>
-    </header>
-    
-    <!-- Container para os conteúdos das seções -->
-    <div id="main-content-area">
-
-        <!-- SEÇÃO: RELATÓRIO SIMPLES -->
-        <section id="content-relatorio-simples" class="main-content-section space-y-6">
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
-                <div class="kpi-card faturamento glass-container rounded-2xl p-5 text-center">
-                    <p class="text-sm text-white/80 uppercase">Faturamento Bruto</p>
-                    <p class="text-3xl font-extrabold mt-2">R$ <span id="kpi-faturamento-valor" data-state="idle">1.234,56</span></p>
-                </div>
-                <div class="kpi-card lucro glass-container rounded-2xl p-5 text-center">
-                    <p class="text-sm text-white/80 uppercase">Lucro Estimado</p>
-                    <p class="text-3xl font-extrabold mt-2">R$ <span id="kpi-lucro-valor" data-state="idle">567,89</span></p>
-                </div>
-                <div class="kpi-card perdas glass-container rounded-2xl p-5 text-center">
-                    <p class="text-sm text-white/80 uppercase">Perdas e Ajustes</p>
-                    <p class="text-3xl font-extrabold mt-2">-R$ <span id="kpi-perdas-valor" data-state="idle">50,00</span></p>
-                </div>
-                <div class="kpi-card pedidos glass-container rounded-2xl p-5 text-center">
-                    <p class="text-sm text-white/80 uppercase">Pedidos</p>
-                    <p id="kpi-pedidos" class="text-3xl font-extrabold mt-2"><span id="kpi-pedidos-valor" data-state="idle">42</span></p>
-                </div>
-                <div class="kpi-card ticket glass-container rounded-2xl p-5 text-center">
-                    <p class="text-sm text-white/80 uppercase">Ticket Médio</p>
-                    <p class="text-3xl font-extrabold mt-2">R$ <span id="kpi-ticket-valor" data-state="idle">29,39</span></p>
+<body>
+    <div class="page-shell">
+        <header class="header surface">
+            <div class="brand-block">
+                <div class="brand-mark"><i class="fas fa-chart-line"></i></div>
+                <div>
+                    <div class="eyebrow">Espetão · Gestão</div>
+                    <h1>Inteligência do negócio</h1>
+                    <div class="muted" style="margin-top:6px;font-size:12px;">Dados financeiros reconhecidos no pagamento · estoque global</div>
                 </div>
             </div>
-        </section>
 
-        <!-- SEÇÃO: RELATÓRIO AVANÇADO -->
-        <section id="content-relatorio-avancado" class="main-content-section hidden space-y-6">
-            <!-- Abas internas do relatório avançado -->
-            <div class="border-b border-white/20">
-                <nav class="-mb-px flex space-x-8" aria-label="Tabs">
-                    <button class="advanced-tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-lg border-transparent active" data-tab-target="#advanced-tab-relatorio">
-                        Relatório
-                    </button>
-                    <button class="advanced-tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-lg border-transparent text-white/50 hover:text-white/75 hover:border-white/30" data-tab-target="#advanced-tab-balanco">
-                        Balanço
-                    </button>
-                    <button class="advanced-tab-btn whitespace-nowrap py-4 px-1 border-b-2 font-medium text-lg border-transparent text-white/50 hover:text-white/75 hover:border-white/30" data-tab-target="#advanced-tab-pedidos">
-                        Pedidos
-                    </button>
-                </nav>
+            <div id="date-tools" class="date-tools">
+                <div class="field">
+                    <label for="report-date">Dia ou período operacional</label>
+                    <input id="report-date" type="text" placeholder="Selecione uma data ou intervalo">
+                </div>
+                <button id="btn-analisar" class="btn btn-primary"><i class="fas fa-rotate"></i> Atualizar análise</button>
+                <button id="btn-imprimir" class="btn" title="Imprimir resumo do fechamento"><i class="fas fa-print"></i></button>
             </div>
 
-            <!-- Conteúdo das abas avançadas -->
-            <div id="advanced-tabs-content">
-                <!-- Aba: Relatório -->
-                <div id="advanced-tab-relatorio" class="advanced-tab-content space-y-8">
-                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
-                        <div class="glass-container rounded-xl p-3 text-center">
-                            <p class="text-xs text-white/70 uppercase">Faturamento</p>
-                            <p class="text-xl font-bold">R$ 1.234,56</p>
-                        </div>
-                        <div class="glass-container rounded-xl p-3 text-center">
-                            <p class="text-xs text-white/70 uppercase">Lucro</p>
-                            <p class="text-xl font-bold">R$ 567,89</p>
-                        </div>
-                        <div class="glass-container rounded-xl p-3 text-center">
-                            <p class="text-xs text-white/70 uppercase">Perdas</p>
-                            <p class="text-xl font-bold">-R$ 50,00</p>
-                        </div>
-                        <div class="glass-container rounded-xl p-3 text-center">
-                            <p class="text-xs text-white/70 uppercase">Pedidos</p>
-                            <p class="text-xl font-bold">42</p>
-                        </div>
-                        <div class="glass-container rounded-xl p-3 text-center">
-                            <p class="text-xs text-white/70 uppercase">Ticket Médio</p>
-                            <p class="text-xl font-bold">R$ 29,39</p>
-                        </div>
-                    </div>
-                    <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
-                        <div class="lg:col-span-3 glass-container rounded-2xl p-6 flex flex-col h-96">
-                            <h3 class="text-xl font-bold mb-4">Vendas por Período</h3>
-                            <div class="relative flex-grow min-w-0"><canvas id="grafico-vendas"></canvas></div>
-                        </div>
-                        <div class="lg:col-span-2 glass-container rounded-2xl p-6 flex flex-col h-96">
-                            <h3 class="text-xl font-bold mb-4">Vendas por Pagamento</h3>
-                            <div class="relative flex-grow min-w-0"><canvas id="grafico-pagamentos"></canvas></div>
-                        </div>
-                    </div>
+            <div id="compare-tools" class="compare-tools" hidden>
+                <div class="field">
+                    <label for="periodo-a">Período A</label>
+                    <input id="periodo-a" type="text" placeholder="Selecione o período">
                 </div>
-                <!-- Aba: Balanço -->
-                <div id="advanced-tab-balanco" class="advanced-tab-content hidden">
-                    <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                        <div class="glass-container rounded-2xl p-6">
-                            <h3 class="text-xl font-bold mb-4">Itens Mais Vendidos</h3>
-                            <div id="container-itens-top" class="overflow-auto custom-scrollbar max-h-96">
-                                </div>
-                        </div>
-                        <div class="glass-container rounded-2xl p-6">
-                            <h3 class="text-xl font-bold mb-4">Balanço de Estoque</h3>
-                            <div id="container-balanco-estoque" class="overflow-auto custom-scrollbar max-h-96">
-                                </div>
-                        </div>
-                    </div>
+                <div class="field">
+                    <label for="periodo-b">Período B</label>
+                    <input id="periodo-b" type="text" placeholder="Selecione o período">
                 </div>
-                <!-- Aba: Pedidos -->
-                <div id="advanced-tab-pedidos" class="advanced-tab-content hidden space-y-8">
-                    <div class="glass-container rounded-2xl p-6">
-                        <h3 class="text-xl font-bold mb-4">Histórico de Pedidos</h3>
-                        <div id="container-historico-pedidos" class="overflow-x-auto custom-scrollbar">
+                <button id="btn-comparar" class="btn btn-primary"><i class="fas fa-code-compare"></i> Comparar</button>
+            </div>
+        </header>
+
+        <nav class="tabs" aria-label="Seções do relatório">
+            <button class="tab-btn active" data-section="overview"><i class="fas fa-gauge-high"></i> Visão geral</button>
+            <button class="tab-btn" data-section="products"><i class="fas fa-boxes-stacked"></i> Produtos e estoque</button>
+            <button class="tab-btn" data-section="sales"><i class="fas fa-clock"></i> Comportamento das vendas</button>
+            <button class="tab-btn" data-section="orders"><i class="fas fa-receipt"></i> Pagamentos e estornos</button>
+            <button class="tab-btn" data-section="compare"><i class="fas fa-arrow-trend-up"></i> Comparar períodos</button>
+        </nav>
+
+        <main>
+            <section id="section-overview" class="section">
+                <div class="executive-hero surface">
+                    <article class="result-panel">
+                        <div class="eyebrow">Resultado depois de custos e perdas</div>
+                        <div id="hero-result" class="result-value">R$ 0,00</div>
+                        <div class="status-line">
+                            <span id="hero-status-dot" class="status-dot"></span>
+                            <span id="hero-status">Aguardando dados do período</span>
+                        </div>
+                        <div class="result-equation">
+                            <div class="equation-item"><span>Receita líquida</span><strong id="hero-revenue">R$ 0,00</strong></div>
+                            <div class="equation-item"><span>Margem operacional</span><strong id="hero-margin">0,0%</strong></div>
+                            <div class="equation-item"><span>Alertas de estoque</span><strong id="hero-stock-alerts">0</strong></div>
+                        </div>
+                    </article>
+                    <article class="priorities-panel">
+                        <div class="section-heading">
+                            <div>
+                                <div class="eyebrow">Leitura executiva</div>
+                                <h2>Onde colocar atenção agora</h2>
                             </div>
-                        <div id="paginacao-pedidos" class="flex justify-between items-center mt-4">
-                            </div>
+                            <p>Regras baseadas no período selecionado</p>
+                        </div>
+                        <div id="executive-insights" class="insight-list"></div>
+                    </article>
+                </div>
+
+                <div class="kpi-grid">
+                    <article class="kpi surface">
+                        <div class="kpi-top"><span class="kpi-label">Faturamento líquido</span><span class="kpi-icon"><i class="fas fa-wallet"></i></span></div>
+                        <div id="kpi-revenue" class="kpi-value">R$ 0,00</div>
+                        <div id="kpi-revenue-note" class="kpi-note">Bruto menos estornos</div>
+                    </article>
+                    <article class="kpi surface">
+                        <div class="kpi-top"><span class="kpi-label">Resultado operacional</span><span class="kpi-icon"><i class="fas fa-sack-dollar"></i></span></div>
+                        <div id="kpi-result" class="kpi-value">R$ 0,00</div>
+                        <div class="kpi-note">Após CMV, taxas e perdas</div>
+                    </article>
+                    <article class="kpi surface">
+                        <div class="kpi-top"><span class="kpi-label">Margem operacional</span><span class="kpi-icon"><i class="fas fa-percent"></i></span></div>
+                        <div id="kpi-margin" class="kpi-value">0,0%</div>
+                        <div class="kpi-note">Resultado por real vendido</div>
+                    </article>
+                    <article class="kpi surface">
+                        <div class="kpi-top"><span class="kpi-label">Pedidos pagos</span><span class="kpi-icon"><i class="fas fa-receipt"></i></span></div>
+                        <div id="kpi-orders" class="kpi-value">0</div>
+                        <div id="kpi-units-note" class="kpi-note">0 unidades líquidas</div>
+                    </article>
+                    <article class="kpi surface">
+                        <div class="kpi-top"><span class="kpi-label">Ticket médio</span><span class="kpi-icon"><i class="fas fa-basket-shopping"></i></span></div>
+                        <div id="kpi-ticket" class="kpi-value">R$ 0,00</div>
+                        <div id="kpi-items-note" class="kpi-note">0 itens por pedido</div>
+                    </article>
+                    <article class="kpi surface">
+                        <div class="kpi-top"><span class="kpi-label">Estornos</span><span class="kpi-icon"><i class="fas fa-arrow-rotate-left"></i></span></div>
+                        <div id="kpi-refunds" class="kpi-value">R$ 0,00</div>
+                        <div id="kpi-refunds-note" class="kpi-note">0,0% do faturamento bruto</div>
+                    </article>
+                </div>
+
+                <div class="grid-2">
+                    <article class="card surface">
+                        <div class="section-heading">
+                            <div><div class="eyebrow">Ritmo do caixa</div><h3>Faturamento líquido ao longo do período</h3></div>
+                            <p id="timeline-granularity">Intervalos de 15 minutos</p>
+                        </div>
+                        <div class="chart-wrap"><canvas id="chart-timeline"></canvas></div>
+                    </article>
+                    <article class="card surface">
+                        <div class="section-heading">
+                            <div><div class="eyebrow">Ponte do resultado</div><h3>Como a venda virou resultado</h3></div>
+                        </div>
+                        <div id="result-bridge" class="result-bridge"></div>
+                    </article>
+                </div>
+            </section>
+
+            <section id="section-products" class="section" hidden>
+                <div class="grid-2">
+                    <article class="card surface">
+                        <div class="section-heading">
+                            <div><div class="eyebrow">Decisão de cardápio</div><h2>Contribuição e margem por produto</h2></div>
+                            <p>Classificação relativa ao mix vendido</p>
+                        </div>
+                        <div id="product-analysis" class="table-wrap"></div>
+                    </article>
+                    <article class="card surface">
+                        <div class="section-heading">
+                            <div><div class="eyebrow">Mix de receita</div><h3>Participação por categoria</h3></div>
+                        </div>
+                        <div class="chart-wrap compact"><canvas id="chart-categories"></canvas></div>
+                        <div id="category-ranking" class="table-wrap" style="margin-top:14px;"></div>
+                    </article>
+                </div>
+
+                <article class="card surface">
+                    <div class="section-heading">
+                        <div><div class="eyebrow">Capital e disponibilidade</div><h2>Cobertura do estoque global</h2></div>
+                        <p>Cobertura estimada usando o ritmo de saída do período</p>
+                    </div>
+                    <div id="inventory-analysis" class="table-wrap"></div>
+                </article>
+            </section>
+
+            <section id="section-sales" class="section" hidden>
+                <div class="grid-equal">
+                    <article class="card surface">
+                        <div class="section-heading">
+                            <div><div class="eyebrow">Capacidade operacional</div><h2>Faturamento e pedidos por hora</h2></div>
+                            <p>Dia operacional: 05h às 05h</p>
+                        </div>
+                        <div class="chart-wrap"><canvas id="chart-hours"></canvas></div>
+                    </article>
+                    <article class="card surface">
+                        <div class="section-heading">
+                            <div><div class="eyebrow">Canais financeiros</div><h2>Receita por forma de pagamento</h2></div>
+                            <p>Líquida de estornos</p>
+                        </div>
+                        <div class="chart-wrap"><canvas id="chart-payments"></canvas></div>
+                    </article>
+                </div>
+                <article class="card surface">
+                    <div class="section-heading">
+                        <div><div class="eyebrow">Estrutura econômica</div><h2>Desempenho por categoria</h2></div>
+                        <p>Receita, margem e participação</p>
+                    </div>
+                    <div id="category-detail" class="table-wrap"></div>
+                </article>
+            </section>
+
+            <section id="section-orders" class="section" hidden>
+                <article class="card surface">
+                    <div class="section-heading">
+                        <div><div class="eyebrow">Trilha de auditoria</div><h2>Pagamentos e estornos</h2></div>
+                        <p>Receita reconhecida na data do evento</p>
+                    </div>
+                    <div id="order-history" class="table-wrap"></div>
+                    <div id="order-pagination" class="pagination"></div>
+                </article>
+            </section>
+
+            <section id="section-compare" class="section" hidden>
+                <div id="comparison-empty" class="surface empty">
+                    <div><i class="fas fa-code-compare"></i>Selecione dois períodos no topo para entender o que mudou e por quê.</div>
+                </div>
+                <div id="comparison-content" class="section" hidden>
+                    <div id="comparison-grid" class="comparison-grid"></div>
+                    <div>
+                        <div class="section-heading"><div><div class="eyebrow">Leitura da variação</div><h2>O que mudou entre os períodos</h2></div></div>
+                        <div id="comparison-readings" class="comparison-readings"></div>
                     </div>
                 </div>
-            </div>
-        </section>
-
-        <!-- SEÇÃO: INSIGHTS AVANÇADOS -->
-        <section id="content-insights" class="main-content-section hidden space-y-8">
-            <!-- Seção de Resultados da Comparação -->
-            <div id="comparison-results" class="hidden glass-container rounded-2xl p-6">
-                <h3 class="text-xl font-bold mb-6 text-center">Resultados da Comparação</h3>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div class="bg-white/10 p-5 rounded-xl text-center">
-                        <p class="text-sm uppercase text-white/80">Faturamento</p>
-                        <p id="comp-faturamento-delta" class="text-3xl font-extrabold my-2 text-green-400">+15.2%</p>
-                        <p class="text-xs text-white/60">
-                            <span id="comp-faturamento-a">R$ 1.200,00</span> (A) vs <span id="comp-faturamento-b">R$ 1.041,68</span> (B)
-                        </p>
-                    </div>
-                    <div class="bg-white/10 p-5 rounded-xl text-center">
-                        <p class="text-sm uppercase text-white/80">Qtd. Vendas</p>
-                        <p id="comp-vendas-delta" class="text-3xl font-extrabold my-2 text-red-400">-5</p>
-                        <p class="text-xs text-white/60">
-                            <span id="comp-vendas-a">45</span> (A) vs <span id="comp-vendas-b">50</span> (B)
-                        </p>
-                    </div>
-                    <div class="bg-white/10 p-5 rounded-xl text-center">
-                        <p class="text-sm uppercase text-white/80">Ticket Médio</p>
-                        <p id="comp-ticket-delta" class="text-3xl font-extrabold my-2 text-green-400">+26.7%</p>
-                        <p class="text-xs text-white/60">
-                            <span id="comp-ticket-a">R$ 26,67</span> (A) vs <span id="comp-ticket-b">R$ 21,04</span> (B)
-                        </p>
-                    </div>
-                </div>
-            </div>
-            <div id="comparison-placeholder" class="glass-container rounded-2xl p-6 min-h-[50vh] flex items-center justify-center">
-                <p class="text-center text-white/70">Selecione dois períodos acima e clique em "Comparar" para ver os resultados.</p>
-            </div>
-        </section>
-
+            </section>
+        </main>
     </div>
-  </main>
-</div>
 
+    <div id="loading-overlay" class="loading-overlay" hidden>
+        <div class="loading-box surface"><i class="fas fa-circle-notch fa-spin" style="color:var(--brand);"></i><span>Atualizando análise...</span></div>
+    </div>
 
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // --- LÓGICA DE UI (SIDEBAR, ABAS) ---
-    // (Esta parte permanece a mesma da Etapa 2)
-    const sidebar = document.getElementById('sidebar');
-    const sidebarBackdrop = document.getElementById('sidebar-backdrop');
-    const btnToggleSidebar = document.getElementById('btn-toggle-sidebar');
-    const bodyEl = document.body;
-    function abrirSidebar() { sidebar.classList.remove('-translate-x-full'); sidebarBackdrop.classList.remove('hidden'); if (window.innerWidth < 1024) { bodyEl.classList.add('overflow-hidden'); } }
-    function fecharSidebar() { sidebar.classList.add('-translate-x-full'); sidebarBackdrop.classList.add('hidden'); bodyEl.classList.remove('overflow-hidden'); }
-    btnToggleSidebar?.addEventListener('click', (e) => { e.stopPropagation(); if (sidebar.classList.contains('-translate-x-full')) { abrirSidebar(); } else { fecharSidebar(); } });
-    sidebarBackdrop?.addEventListener('click', fecharSidebar);
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !sidebar.classList.contains('-translate-x-full')) { fecharSidebar(); } });
-    const sidebarButtons = document.querySelectorAll('.sidebar-btn');
-    const mainContentSections = document.querySelectorAll('.main-content-section');
-    const singleDateSelector = document.getElementById('single-date-selector-container');
-    const comparisonDateSelector = document.getElementById('comparison-date-selector-container');
-    sidebarButtons.forEach(button => {
-        button.addEventListener('click', function(e) {
-            e.preventDefault();
-            sidebarButtons.forEach(btn => btn.classList.remove('active')); this.classList.add('active');
-            const targetId = this.getAttribute('href').substring(1);
-            mainContentSections.forEach(section => section.classList.toggle('hidden', section.id !== `content-${targetId}`));
-            const isInsights = targetId === 'insights';
-            singleDateSelector.classList.toggle('hidden', isInsights);
-            comparisonDateSelector.classList.toggle('hidden', !isInsights);
-            if (window.innerWidth < 1024) { fecharSidebar(); }
+    <div id="order-modal" class="modal" hidden>
+        <div class="modal-card surface">
+            <div class="modal-head">
+                <h2 id="modal-title">Detalhes do pedido</h2>
+                <button id="modal-close" class="modal-close" aria-label="Fechar">&times;</button>
+            </div>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const API_REPORT = "{{ url_for('api_fechamento_dia_v2') }}";
+        const API_COMPARE = "{{ url_for('api_insights_comparativos_v2') }}";
+        const API_PRINT = "{{ url_for('api_imprimir_relatorio_fechamento') }}";
+        const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+        const number = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 });
+        const charts = {};
+        let currentData = null;
+        let currentSection = 'overview';
+
+        flatpickr.localize(flatpickr.l10ns.pt);
+        let dayPicker = null;
+        dayPicker = flatpickr('#report-date', {
+            mode: 'range',
+            dateFormat: 'Y-m-d',
+            defaultDate: 'today',
+            locale: 'pt',
+            onChange: syncPrintState
         });
-    });
-    const advancedTabButtons = document.querySelectorAll('.advanced-tab-btn');
-    const advancedTabContents = document.querySelectorAll('.advanced-tab-content');
-    advancedTabButtons.forEach(button => {
-        button.addEventListener('click', function() {
-            advancedTabButtons.forEach(btn => { btn.classList.remove('active'); btn.classList.add('text-white/50', 'hover:text-white/75', 'hover:border-white/30'); });
-            this.classList.add('active'); this.classList.remove('text-white/50', 'hover:text-white/75', 'hover:border-white/30');
-            const targetId = this.getAttribute('data-tab-target');
-            advancedTabContents.forEach(content => { content.classList.toggle('hidden', content.id !== targetId.substring(1)); });
-        });
-    });
+        const periodA = flatpickr('#periodo-a', { mode: 'range', dateFormat: 'Y-m-d', locale: 'pt' });
+        const periodB = flatpickr('#periodo-b', { mode: 'range', dateFormat: 'Y-m-d', locale: 'pt' });
 
-    // --- CONFIGURAÇÃO E LÓGICA DE DADOS ---
-    
-    // 1. Configuração e Variáveis Globais
-    const API_FECHAMENTO_V2 = "{{ url_for('api_fechamento_dia_v2') }}";
-    const API_COMPARATIVOS_V2 = "{{ url_for('api_insights_comparativos_v2') }}";
-    let chartVendas = null;
-    let chartPagamentos = null;
+        const money = value => currency.format(Number(value || 0));
+        const percent = value => `${number.format(Number(value || 0))}%`;
+        const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+        })[char]);
+        const empty = message => `<div class="empty"><div><i class="fas fa-chart-simple"></i>${escapeHtml(message)}</div></div>`;
+        const paymentNames = { pix: 'Pix', cartao_credito: 'Crédito', cartao_debito: 'Débito', dinheiro: 'Dinheiro' };
+        const statusNames = {
+            ruptura: 'Sem estoque', critico: 'Crítico', atencao: 'Atenção',
+            saudavel: 'Saudável', sem_giro: 'Sem giro no período', arquivado: 'Arquivado'
+        };
+        const insightIcons = {
+            positivo: 'fa-circle-check', atencao: 'fa-triangle-exclamation',
+            critico: 'fa-circle-exclamation', informativo: 'fa-lightbulb'
+        };
 
-    const btnAnalisar = document.getElementById('btn-analisar');
-    const btnComparar = document.getElementById('btn-comparar');
+        function normalize(raw) {
+            return {
+                ...raw,
+                itensTop: raw.itens_top || raw.itensTop || [],
+                historicoPedidos: raw.historico_pedidos || raw.historicoPedidos || { items: [] },
+                analiseProdutos: raw.analiseProdutos || [],
+                categorias: raw.categorias || [],
+                desempenhoPorHora: raw.desempenhoPorHora || [],
+                composicaoResultado: raw.composicaoResultado || [],
+                resumoExecutivo: raw.resumoExecutivo || { insights: [], alertasEstoque: 0 }
+            };
+        }
 
-    flatpickr.localize(flatpickr.l10ns.pt);
-    const datePickerSimples = flatpickr("#report-date", { dateFormat: "Y-m-d", defaultDate: "today" });
-    const datePickerA = flatpickr("#periodo-a", { mode: "range", dateFormat: "Y-m-d", locale: "pt" });
-    const datePickerB = flatpickr("#periodo-b", { mode: "range", dateFormat: "Y-m-d", locale: "pt" });
+        function setLoading(active) {
+            document.getElementById('loading-overlay').hidden = !active;
+            document.getElementById('btn-analisar').disabled = active;
+            document.getElementById('btn-comparar').disabled = active;
+        }
 
-    // 2. Funções Utilitárias e de Adaptação
-    function formatarMoeda(valor) { return (valor || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+        function updateChart(name, canvasId, config) {
+            if (charts[name]) charts[name].destroy();
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            charts[name] = new Chart(canvas.getContext('2d'), config);
+        }
 
-    function setLoadingState(button, isLoading) {
-        if (isLoading) {
+        const chartScales = {
+            x: { ticks: { color: '#91a4bc', maxRotation: 0 }, grid: { color: 'rgba(37,58,85,.45)' } },
+            y: { ticks: { color: '#91a4bc' }, grid: { color: 'rgba(37,58,85,.45)' }, beginAtZero: true }
+        };
+        const tooltipMoney = {
+            callbacks: { label: context => `${context.dataset.label || 'Valor'}: ${money(context.raw)}` }
+        };
+
+        function renderKPIs(data) {
+            const k = data.kpis;
+            const result = Number(k.resultadoOperacional || 0);
+            const hasSales = Number(k.pedidosPagos || 0) > 0;
+            document.getElementById('hero-result').textContent = money(result);
+            document.getElementById('hero-result').className = `result-value ${result < 0 ? 'negative' : hasSales ? 'positive' : ''}`;
+            document.getElementById('hero-status-dot').className = `status-dot ${result < 0 ? 'negative' : hasSales ? 'positive' : ''}`;
+            document.getElementById('hero-status').textContent = !hasSales
+                ? 'Sem pagamentos no período'
+                : result < 0
+                    ? 'Resultado negativo — requer atenção'
+                    : `Operação positiva · ${percent(k.margemOperacionalPct)} de margem`;
+            document.getElementById('hero-revenue').textContent = money(k.faturamentoLiquido);
+            document.getElementById('hero-margin').textContent = percent(k.margemOperacionalPct);
+            document.getElementById('hero-stock-alerts').textContent = data.resumoExecutivo.alertasEstoque || 0;
+            document.getElementById('kpi-revenue').textContent = money(k.faturamentoLiquido);
+            document.getElementById('kpi-revenue-note').textContent = `${money(k.faturamentoBruto)} bruto · ${money(k.estornos)} estornado`;
+            document.getElementById('kpi-result').textContent = money(k.resultadoOperacional);
+            document.getElementById('kpi-margin').textContent = percent(k.margemOperacionalPct);
+            document.getElementById('kpi-orders').textContent = number.format(k.pedidosPagos);
+            document.getElementById('kpi-units-note').textContent = `${number.format(k.unidadesVendidas)} unidades líquidas`;
+            document.getElementById('kpi-ticket').textContent = money(k.ticketMedio);
+            document.getElementById('kpi-items-note').textContent = `${number.format(k.mediaItensPedido)} itens por pedido`;
+            document.getElementById('kpi-refunds').textContent = money(k.estornos);
+            document.getElementById('kpi-refunds-note').textContent = `${percent(k.taxaEstornoPct)} do faturamento bruto`;
+        }
+
+        function renderInsights(data) {
+            const target = document.getElementById('executive-insights');
+            const insights = data.resumoExecutivo.insights || [];
+            if (!insights.length) {
+                target.innerHTML = empty('Ainda não há informação suficiente para recomendações.');
+                return;
+            }
+            target.innerHTML = insights.slice(0, 4).map(item => `
+                <article class="insight" data-level="${escapeHtml(item.nivel)}">
+                    <div class="insight-icon"><i class="fas ${insightIcons[item.nivel] || insightIcons.informativo}"></i></div>
+                    <div>
+                        <h4>${escapeHtml(item.titulo)}</h4>
+                        <p>${escapeHtml(item.descricao)}</p>
+                        <p class="action"><strong>Próximo passo:</strong> ${escapeHtml(item.acao)}</p>
+                    </div>
+                </article>
+            `).join('');
+        }
+
+        function renderBridge(data) {
+            const target = document.getElementById('result-bridge');
+            const rows = data.composicaoResultado || [];
+            const maxValue = Math.max(...rows.map(item => Math.abs(Number(item.valor))), 1);
+            target.innerHTML = rows.map(item => {
+                const width = Math.max(Math.abs(Number(item.valor)) / maxValue * 100, item.valor ? 3 : 0);
+                return `
+                    <div class="bridge-row">
+                        <span>${escapeHtml(item.label)}</span>
+                        <div class="bridge-track"><div class="bridge-fill ${item.tipo === 'saida' ? 'out' : item.tipo === 'resultado' ? 'result' : ''}" style="width:${width}%"></div></div>
+                        <span class="bridge-value">${money(item.valor)}</span>
+                    </div>`;
+            }).join('');
+        }
+
+        function renderTimeline(data) {
+            document.getElementById('timeline-granularity').textContent =
+                data.vendasPorPeriodo.granularidadeLabel || 'Intervalos de 15 minutos';
+            updateChart('timeline', 'chart-timeline', {
+                type: 'bar',
+                data: {
+                    labels: data.vendasPorPeriodo.labels,
+                    datasets: [{
+                        label: 'Faturamento líquido',
+                        data: data.vendasPorPeriodo.data,
+                        backgroundColor: 'rgba(245,158,11,.7)',
+                        borderColor: '#f59e0b',
+                        borderWidth: 1,
+                        borderRadius: 3
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false }, tooltip: tooltipMoney },
+                    scales: {
+                        ...chartScales,
+                        x: { ...chartScales.x, ticks: { ...chartScales.x.ticks, maxTicksLimit: 12 } }
+                    }
+                }
+            });
+        }
+
+        function renderProducts(data) {
+            const products = data.analiseProdutos || [];
+            const productTarget = document.getElementById('product-analysis');
+            if (!products.length) {
+                productTarget.innerHTML = empty('Nenhum produto vendido no período.');
+            } else {
+                productTarget.innerHTML = `
+                    <table>
+                        <thead><tr>
+                            <th>Produto</th><th>Leitura</th><th class="number">Qtd.</th>
+                            <th class="number">Receita</th><th class="number">Lucro bruto</th>
+                            <th class="number">Margem</th><th class="number">Part.</th><th>Direção sugerida</th>
+                        </tr></thead>
+                        <tbody>${products.map(item => `
+                            <tr>
+                                <td class="product-name">${escapeHtml(item.nome)}<span class="product-sub">${escapeHtml(item.categoria)}</span></td>
+                                <td><span class="badge ${escapeHtml(item.classificacao)}">${escapeHtml(item.classificacaoLabel)}</span></td>
+                                <td class="number">${number.format(item.quantidade)}</td>
+                                <td class="number">${money(item.receita)}</td>
+                                <td class="number">${money(item.lucro)}</td>
+                                <td class="number">${percent(item.margemPercentual)}</td>
+                                <td class="number">${percent(item.participacaoReceita)}</td>
+                                <td class="recommendation">${escapeHtml(item.recomendacao)}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>`;
+            }
+
+            const inventory = (data.estoque || []).filter(item => item.ativo);
+            document.getElementById('inventory-analysis').innerHTML = !inventory.length
+                ? empty('Nenhum saldo de estoque para analisar.')
+                : `<table>
+                    <thead><tr>
+                        <th>Produto</th><th>Status</th><th class="number">Saldo inicial</th>
+                        <th class="number">Entradas</th><th class="number">Saídas</th>
+                        <th class="number">Saldo final</th><th class="number">Ritmo/dia</th>
+                        <th class="number">Cobertura</th>
+                    </tr></thead>
+                    <tbody>${inventory.map(item => `
+                        <tr>
+                            <td class="product-name">${escapeHtml(item.nome)}</td>
+                            <td><span class="badge ${escapeHtml(item.status)}">${escapeHtml(statusNames[item.status] || item.status)}</span></td>
+                            <td class="number">${number.format(item.inicial)}</td>
+                            <td class="number">${number.format(item.entradas)}</td>
+                            <td class="number">${number.format(item.saidas)}</td>
+                            <td class="number"><strong>${number.format(item.final)}</strong></td>
+                            <td class="number">${number.format(item.ritmoDiario)}</td>
+                            <td class="number">${item.coberturaDias == null ? '—' : `${number.format(item.coberturaDias)} dias`}</td>
+                        </tr>`).join('')}
+                    </tbody>
+                </table>`;
+
+            renderCategoryTable(data, 'category-ranking', true);
+            const categories = data.categorias || [];
+            updateChart('categories', 'chart-categories', {
+                type: 'doughnut',
+                data: {
+                    labels: categories.map(item => item.nome),
+                    datasets: [{
+                        data: categories.map(item => item.receita),
+                        backgroundColor: ['#f59e0b', '#34d399', '#60a5fa', '#a78bfa', '#fb7185', '#22d3ee'],
+                        borderColor: '#0d1a2b',
+                        borderWidth: 3
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, cutout: '62%',
+                    plugins: {
+                        legend: { position: 'bottom', labels: { color: '#91a4bc', boxWidth: 10, padding: 14 } },
+                        tooltip: tooltipMoney
+                    }
+                }
+            });
+        }
+
+        function renderCategoryTable(data, targetId, compact = false) {
+            const categories = data.categorias || [];
+            const target = document.getElementById(targetId);
+            if (!categories.length) {
+                target.innerHTML = compact ? '' : empty('Nenhuma categoria vendida no período.');
+                return;
+            }
+            target.innerHTML = `<table>
+                <thead><tr><th>Categoria</th>${compact ? '' : '<th class="number">Qtd.</th><th class="number">Receita</th><th class="number">Lucro</th>'}<th class="number">Margem</th><th class="number">Part.</th></tr></thead>
+                <tbody>${categories.map(item => `<tr>
+                    <td class="product-name">${escapeHtml(item.nome)}</td>
+                    ${compact ? '' : `<td class="number">${number.format(item.quantidade)}</td><td class="number">${money(item.receita)}</td><td class="number">${money(item.lucro)}</td>`}
+                    <td class="number">${percent(item.margemPercentual)}</td>
+                    <td class="number">${percent(item.participacaoReceita)}</td>
+                </tr>`).join('')}</tbody>
+            </table>`;
+        }
+
+        function renderSales(data) {
+            const hours = data.desempenhoPorHora || [];
+            updateChart('hours', 'chart-hours', {
+                data: {
+                    labels: hours.map(item => item.label),
+                    datasets: [
+                        {
+                            type: 'bar', label: 'Faturamento',
+                            data: hours.map(item => item.faturamento),
+                            backgroundColor: 'rgba(52,211,153,.58)', borderColor: '#34d399',
+                            borderWidth: 1, borderRadius: 4, yAxisID: 'y'
+                        },
+                        {
+                            type: 'line', label: 'Pedidos',
+                            data: hours.map(item => item.pedidos),
+                            borderColor: '#f59e0b', backgroundColor: '#f59e0b',
+                            tension: .3, pointRadius: 2, yAxisID: 'orders'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: '#91a4bc' } } },
+                    scales: {
+                        x: chartScales.x,
+                        y: { ...chartScales.y, position: 'left' },
+                        orders: { ...chartScales.y, position: 'right', grid: { display: false }, ticks: { color: '#f59e0b', precision: 0 } }
+                    }
+                }
+            });
+
+            updateChart('payments', 'chart-payments', {
+                type: 'bar',
+                data: {
+                    labels: data.vendasPorPagamento.labels.map(item => paymentNames[item] || item),
+                    datasets: [{
+                        label: 'Faturamento líquido',
+                        data: data.vendasPorPagamento.data,
+                        backgroundColor: ['#60a5fa', '#a78bfa', '#22d3ee', '#34d399'],
+                        borderRadius: 5
+                    }]
+                },
+                options: {
+                    indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false }, tooltip: tooltipMoney },
+                    scales: chartScales
+                }
+            });
+            renderCategoryTable(data, 'category-detail');
+        }
+
+        function renderOrders(data) {
+            const history = data.historicoPedidos || { items: [] };
+            const target = document.getElementById('order-history');
+            if (!history.items?.length) {
+                target.innerHTML = empty('Nenhum pagamento ou estorno no período.');
+                document.getElementById('order-pagination').innerHTML = '';
+                return;
+            }
+            target.innerHTML = `<table>
+                <thead><tr><th class="center">Senha</th><th>Cliente</th><th>Horário</th><th>Evento</th><th>Pagamento</th><th class="number">Valor</th><th class="center">Itens</th></tr></thead>
+                <tbody>${history.items.map(event => {
+                    const refund = event.tipo === 'estorno';
+                    return `<tr>
+                        <td class="center"><strong>${number.format(event.senha_diaria)}</strong></td>
+                        <td class="product-name">${escapeHtml(event.nome_cliente)}</td>
+                        <td>${new Date(event.horario).toLocaleString('pt-BR')}</td>
+                        <td><span class="badge ${refund ? 'revisar' : 'estrela'}">${refund ? 'Estorno' : 'Pagamento'}</span></td>
+                        <td>${escapeHtml(paymentNames[event.metodo_pagamento] || event.metodo_pagamento)}</td>
+                        <td class="number" style="color:${refund ? 'var(--danger)' : 'inherit'}">${money(event.valor_total)}</td>
+                        <td class="center"><button class="btn order-detail" style="min-height:32px;padding:0 11px;" data-id="${event.id}" data-items="${encodeURIComponent(event.itens_json || '[]')}"><i class="fas fa-eye"></i></button></td>
+                    </tr>`;
+                }).join('')}</tbody>
+            </table>`;
+
+            const pages = Math.max(Math.ceil((history.total || 0) / (history.limit || 50)), 1);
+            document.getElementById('order-pagination').innerHTML = `
+                <button id="prev-page" class="btn" ${history.page <= 1 ? 'disabled' : ''}><i class="fas fa-chevron-left"></i> Anterior</button>
+                <span>Página ${history.page} de ${pages} · ${history.total || 0} eventos</span>
+                <button id="next-page" class="btn" ${history.page >= pages ? 'disabled' : ''}>Próxima <i class="fas fa-chevron-right"></i></button>`;
+            document.getElementById('prev-page')?.addEventListener('click', () => loadReport(history.page - 1));
+            document.getElementById('next-page')?.addEventListener('click', () => loadReport(history.page + 1));
+        }
+
+        function renderActiveSection() {
+            if (!currentData) return;
+            if (currentSection === 'overview') {
+                renderKPIs(currentData);
+                renderInsights(currentData);
+                renderBridge(currentData);
+                renderTimeline(currentData);
+            } else if (currentSection === 'products') {
+                renderProducts(currentData);
+            } else if (currentSection === 'sales') {
+                renderSales(currentData);
+            } else if (currentSection === 'orders') {
+                renderOrders(currentData);
+            }
+        }
+
+        function activateSection(section) {
+            currentSection = section;
+            document.querySelectorAll('.tab-btn').forEach(button => button.classList.toggle('active', button.dataset.section === section));
+            document.querySelectorAll('main > .section').forEach(element => { element.hidden = element.id !== `section-${section}`; });
+            document.getElementById('date-tools').hidden = section === 'compare';
+            document.getElementById('compare-tools').hidden = section !== 'compare';
+            requestAnimationFrame(renderActiveSection);
+        }
+
+        async function loadReport(page = 1) {
+            const selectedDates = dayPicker.selectedDates;
+            if (!selectedDates.length) return;
+            const url = new URL(API_REPORT, window.location.origin);
+            if (selectedDates.length > 1) {
+                const [start, end] = operationalRange(selectedDates);
+                url.searchParams.set('inicio', start);
+                url.searchParams.set('fim', end);
+            } else {
+                url.searchParams.set('data', flatpickr.formatDate(selectedDates[0], 'Y-m-d'));
+            }
+            url.searchParams.set('local_id', 'todos');
+            url.searchParams.set('page', page);
+            url.searchParams.set('limit', 50);
+            setLoading(true);
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`Erro ${response.status}`);
+                currentData = normalize(await response.json());
+                renderActiveSection();
+            } catch (error) {
+                console.error(error);
+                alert('Não foi possível carregar a análise do período.');
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        function operationalRange(dates) {
+            const start = new Date(dates[0]);
+            start.setHours(5, 0, 0, 0);
+            const end = new Date(dates[1] || dates[0]);
+            end.setDate(end.getDate() + 1);
+            end.setHours(5, 0, 0, 0);
+            return [start.toISOString(), end.toISOString()];
+        }
+
+        function renderComparison(payload) {
+            const definitions = [
+                ['faturamento', 'Faturamento líquido', 'money'],
+                ['resultado_operacional', 'Resultado operacional', 'money'],
+                ['margem_operacional', 'Margem operacional', 'points'],
+                ['qtd_vendas', 'Pedidos pagos', 'number'],
+                ['ticket_medio', 'Ticket médio', 'money'],
+                ['unidades', 'Unidades vendidas', 'number'],
+                ['estornos', 'Estornos', 'money']
+            ];
+            document.getElementById('comparison-grid').innerHTML = definitions.map(([key, label, type]) => {
+                const value = payload.kpis[key] || {};
+                const delta = Number(type === 'points' ? value.delta_abs : value.delta_pct || 0);
+                const lowerIsBetter = key === 'estornos';
+                const good = lowerIsBetter ? delta <= 0 : delta >= 0;
+                const deltaText = type === 'points'
+                    ? `${delta >= 0 ? '+' : ''}${number.format(delta)} p.p.`
+                    : `${delta >= 0 ? '+' : ''}${number.format(delta)}%`;
+                const formatter = type === 'money' ? money : type === 'points' ? percent : number.format;
+                return `<article class="comparison-card surface">
+                    <div class="kpi-label">${escapeHtml(label)}</div>
+                    <div class="comparison-delta ${good ? 'good' : 'bad'}">${deltaText}</div>
+                    <div class="comparison-values">A: <strong>${formatter(value.A || 0)}</strong><br>B: <strong>${formatter(value.B || 0)}</strong></div>
+                </article>`;
+            }).join('');
+
+            const readings = payload.leituras || [];
+            document.getElementById('comparison-readings').innerHTML = readings.length
+                ? readings.map(item => `<article class="insight surface" data-level="${escapeHtml(item.nivel)}">
+                    <div class="insight-icon"><i class="fas ${insightIcons[item.nivel] || insightIcons.informativo}"></i></div>
+                    <div><h4>${escapeHtml(item.titulo)}</h4><p>${escapeHtml(item.descricao)}</p></div>
+                </article>`).join('')
+                : `<div class="surface empty" style="grid-column:1/-1;min-height:130px;">Não houve variação relevante entre os períodos.</div>`;
+            document.getElementById('comparison-empty').hidden = true;
+            document.getElementById('comparison-content').hidden = false;
+        }
+
+        async function comparePeriods() {
+            if (!periodA.selectedDates.length || !periodB.selectedDates.length) {
+                alert('Selecione uma data ou intervalo em cada período.');
+                return;
+            }
+            const [aStart, aEnd] = operationalRange(periodA.selectedDates);
+            const [bStart, bEnd] = operationalRange(periodB.selectedDates);
+            const url = new URL(API_COMPARE, window.location.origin);
+            url.searchParams.set('periodoA_inicio', aStart);
+            url.searchParams.set('periodoA_fim', aEnd);
+            url.searchParams.set('periodoB_inicio', bStart);
+            url.searchParams.set('periodoB_fim', bEnd);
+            url.searchParams.set('local_id', 'todos');
+            setLoading(true);
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`Erro ${response.status}`);
+                renderComparison(await response.json());
+            } catch (error) {
+                console.error(error);
+                alert('Não foi possível comparar os períodos.');
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        async function printReport() {
+            const selectedDates = dayPicker.selectedDates;
+            if (!selectedDates.length) return;
+            if (selectedDates.length > 1) {
+                alert('A impressão térmica está disponível apenas para um único dia operacional.');
+                return;
+            }
+            const selectedDate = flatpickr.formatDate(selectedDates[0], 'Y-m-d');
+            const button = document.getElementById('btn-imprimir');
             button.disabled = true;
-            button.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Carregando...`;
-        } else {
-            button.disabled = false;
-            const icon = button.id === 'btn-analisar' ? 'fa-search' : 'fa-exchange-alt';
-            const text = button.id === 'btn-analisar' ? 'Analisar' : 'Comparar';
-            button.innerHTML = `<i class="fas ${icon} mr-2"></i> ${text}`;
-        }
-    }
-
-    function preencherKPIs(kpis) {
-        document.getElementById('kpi-faturamento-valor').textContent = formatarMoeda(kpis.faturamentoBruto);
-        document.getElementById('kpi-lucro-valor').textContent = formatarMoeda(kpis.lucroEstimado);
-        document.getElementById('kpi-perdas-valor').textContent = formatarMoeda(Math.abs(kpis.perdasAjustes));
-        document.getElementById('kpi-pedidos-valor').textContent = kpis.pedidosRealizados;
-        document.getElementById('kpi-ticket-valor').textContent = formatarMoeda(kpis.ticketMedio);
-        document.querySelector('#advanced-tab-relatorio .glass-container:nth-child(1) p:last-child').textContent = `R$ ${formatarMoeda(kpis.faturamentoBruto)}`;
-        document.querySelector('#advanced-tab-relatorio .glass-container:nth-child(2) p:last-child').textContent = `R$ ${formatarMoeda(kpis.lucroEstimado)}`;
-        document.querySelector('#advanced-tab-relatorio .glass-container:nth-child(3) p:last-child').textContent = `-R$ ${formatarMoeda(Math.abs(kpis.perdasAjustes))}`;
-        document.querySelector('#advanced-tab-relatorio .glass-container:nth-child(4) p:last-child').textContent = kpis.pedidosRealizados;
-        document.querySelector('#advanced-tab-relatorio .glass-container:nth-child(5) p:last-child').textContent = `R$ ${formatarMoeda(kpis.ticketMedio)}`;
-    }
-
-    function preencherComparativos(kpis) {
-        const kpiMap = { faturamento: 'comp-faturamento', qtd_vendas: 'comp-vendas', ticket_medio: 'comp-ticket' };
-        Object.entries(kpis).forEach(([key, value]) => {
-            const prefixo = kpiMap[key];
-            const isCurrency = key !== 'qtd_vendas';
-            
-            document.getElementById(`${prefixo}-a`).textContent = isCurrency ? `R$ ${formatarMoeda(value.A)}` : value.A;
-            document.getElementById(`${prefixo}-b`).textContent = isCurrency ? `R$ ${formatarMoeda(value.B)}` : value.B;
-            
-            const deltaEl = document.getElementById(`${prefixo}-delta`);
-            const deltaValue = value.delta_pct ?? value.delta_abs;
-            const isPositive = deltaValue >= 0;
-
-            deltaEl.classList.toggle('text-green-400', isPositive);
-            deltaEl.classList.toggle('text-red-400', !isPositive);
-
-            let deltaText = '';
-            if (value.delta_pct !== undefined) {
-                deltaText = `${isPositive ? '+' : ''}${deltaValue.toFixed(1)}%`;
-            } else {
-                deltaText = `${isPositive ? '+' : ''}${deltaValue}`;
+            try {
+                const response = await fetch(API_PRINT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ data: selectedDate })
+                });
+                const payload = await response.json();
+                alert(payload.mensagem || 'Solicitação de impressão concluída.');
+            } catch (error) {
+                alert('Não foi possível solicitar a impressão.');
+            } finally {
+                button.disabled = false;
             }
-            deltaEl.textContent = deltaText;
+        }
+
+        function syncPrintState() {
+            const button = document.getElementById('btn-imprimir');
+            const isRange = dayPicker?.selectedDates?.length > 1;
+            button.disabled = isRange;
+            button.title = isRange
+                ? 'A impressão térmica está disponível apenas para um dia'
+                : 'Imprimir resumo do fechamento';
+        }
+
+        function openOrderModal(button) {
+            const items = JSON.parse(decodeURIComponent(button.dataset.items || '%5B%5D'));
+            document.getElementById('modal-title').textContent = `Itens do pedido #${button.dataset.id}`;
+            document.getElementById('modal-body').innerHTML = items.length
+                ? items.map(item => `<div class="modal-item"><span><strong>${number.format(item.quantidade)}×</strong> ${escapeHtml(item.nome)}</span><strong>${money(Number(item.quantidade) * Number(item.preco))}</strong></div>`).join('')
+                : '<div class="empty">Nenhum item encontrado.</div>';
+            document.getElementById('order-modal').hidden = false;
+        }
+
+        document.querySelectorAll('.tab-btn').forEach(button => button.addEventListener('click', () => activateSection(button.dataset.section)));
+        document.getElementById('btn-analisar').addEventListener('click', () => loadReport(1));
+        document.getElementById('btn-comparar').addEventListener('click', comparePeriods);
+        document.getElementById('btn-imprimir').addEventListener('click', printReport);
+        document.getElementById('order-history').addEventListener('click', event => {
+            const button = event.target.closest('.order-detail');
+            if (button) openOrderModal(button);
+        });
+        document.getElementById('modal-close').addEventListener('click', () => { document.getElementById('order-modal').hidden = true; });
+        document.getElementById('order-modal').addEventListener('click', event => {
+            if (event.target.id === 'order-modal') event.currentTarget.hidden = true;
+        });
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape') document.getElementById('order-modal').hidden = true;
         });
 
-        document.getElementById('comparison-results').classList.remove('hidden');
-        document.getElementById('comparison-placeholder').classList.add('hidden');
-    }
-
-    // 3. Funções de Controle dos Gráficos
-    const chartDefaultOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: 'white' } }, tooltip: { callbacks: { 
-        label: function(ctx) {
-            let label = ctx.dataset.label || '';
-            if (label) {
-                label += ': ';
-            }
-            // Usamos ctx.raw, que contém o valor numérico original do dataset.
-            // Number() é uma camada extra de segurança para garantir que o tipo é numérico.
-            const value = Number(ctx.raw);
-            label += new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-            return label;
-        } 
-
-        } } }, scales: { y: { ticks: { color: 'white' }, grid: { color: 'rgba(255, 255, 255, 0.2)' } }, x: { ticks: { color: 'white' }, grid: { color: 'rgba(255, 255, 255, 0.1)' } } } };
-    function initOuUpdateChart(chartVar, canvasId, type, data, options) { if (chartVar) { chartVar.destroy(); } const ctx = document.getElementById(canvasId).getContext('2d'); return new Chart(ctx, { type, data, options }); }
-
-    // 4. Lógica Principal de Carregamento
-
-    // Função auxiliar para converter snake_case para camelCase
-    function toCamelCase(s) {
-        return s.replace(/([-_][a-z])/ig, ($1) => {
-            return $1.toUpperCase().replace('-', '').replace('_', '');
-        });
-    }
-
-    // O Adapter: nosso tradutor de payload
-    function adaptarRespostaFechamentoV2(data) {
-        console.debug('[FechamentoV2] Adaptando payload recebido:', data);
-        const raw = data || {};
-
-        // Mapeia chaves de um objeto para camelCase
-        const mapKeys = (obj) => {
-            if (typeof obj !== 'object' || obj === null) return obj;
-            return Object.keys(obj).reduce((acc, key) => {
-                acc[toCamelCase(key)] = obj[key];
-                return acc;
-            }, {});
-        };
-
-        // Adapta um array de objetos
-        const mapArray = (arr) => (arr || []).map(item => mapKeys(item));
-
-        // Ponto da correção: Aceita tanto o nome antigo (camelCase) quanto o novo (snake_case)
-        const rawHistorico = raw.historicoPedidos || raw.historico_pedidos || {};
-        const rawItensTop = raw.itensTop || raw.itens_top || [];
-        const rawEstoque = raw.estoque || raw.estoque || [];
-
-        return {
-            kpis: mapKeys(raw.kpis),
-            vendasPorPagamento: raw.vendasPorPagamento, 
-            vendasPorPeriodo: raw.vendasPorPeriodo,   
-            itensTop: mapArray(rawItensTop),
-            estoque: mapArray(rawEstoque),
-            historicoPedidos: {
-                ...mapKeys(rawHistorico), // Mapeia a raiz do histórico (page, limit, etc.)
-                items: mapArray(rawHistorico.items) // Mapeia os itens internos para camelCase
-            }
-        };
-    }
-
-    // Função para renderizar a aba "Balanço"
-    function preencherBalanco(itensTop, estoque) {
-        const containerItens = document.getElementById('container-itens-top');
-        const containerEstoque = document.getElementById('container-balanco-estoque');
-
-        // Renderiza Itens Mais Vendidos (lógica inalterada)
-        if (!itensTop || itensTop.length === 0) {
-            containerItens.innerHTML = '<p class="text-white/50 text-center py-4">Sem itens para exibir.</p>';
-        } else {
-            const tableHeadItens = `
-                <thead class="bg-white/10">
-                    <tr>
-                        <th class="px-4 py-2 text-left">Produto</th>
-                        <th class="px-4 py-2 text-center">Qtd</th>
-                        <th class="px-4 py-2 text-right">Receita</th>
-                        <th class="px-4 py-2 text-right">Lucro</th>
-                    </tr>
-                </thead>`;
-            const tableBodyItens = itensTop.map(item => `
-                <tr class="border-b border-white/10">
-                    <td class="px-4 py-2">${item.nome}</td>
-                    <td class="px-4 py-2 text-center">${item.quantidade}</td>
-                    <td class="px-4 py-2 text-right">R$ ${formatarMoeda(item.receita)}</td>
-                    <td class="px-4 py-2 text-right">R$ ${formatarMoeda(item.lucro)}</td>
-                </tr>`).join('');
-            containerItens.innerHTML = `<table class="w-full text-sm">${tableHeadItens}<tbody>${tableBodyItens}</tbody></table>`;
-        }
-
-        // Renderiza Balanço de Estoque (lógica ATUALIZADA)
-        if (!estoque || estoque.length === 0) {
-            containerEstoque.innerHTML = '<p class="text-white/50 text-center py-4">Sem movimentação de estoque no período.</p>';
-        } else {
-            // Cabeçalhos atualizados para o novo fluxo
-            const tableHead = `
-                <thead class="bg-white/10">
-                    <tr>
-                        <th class="px-4 py-2 text-left">Produto</th>
-                        <th class="px-4 py-2 text-center">Est. Anterior</th>
-                        <th class="px-4 py-2 text-center">Entradas</th>
-                        <th class="px-4 py-2 text-center">Est. Atual</th>
-                        <th class="px-4 py-2 text-center">Saídas</th>
-                        <th class="px-4 py-2 text-center">Est. Final</th>
-                    </tr>
-                </thead>`;
-            // Corpo da tabela mapeando para os novos campos da API
-            const tableBody = estoque.map(item => `
-                <tr class="border-b border-white/10">
-                    <td class="px-4 py-2">${item.nome}</td>
-                    <td class="px-4 py-2 text-center">${item.inicial}</td>
-                    <td class="px-4 py-2 text-center text-green-400">+${item.entradas}</td>
-                    <td class="px-4 py-2 text-center font-semibold">${item.estoqueAtual}</td>
-                    <td class="px-4 py-2 text-center text-red-400">-${item.saidas}</td>
-                    <td class="px-4 py-2 text-center font-bold">${item.final}</td>
-                </tr>`).join('');
-            containerEstoque.innerHTML = `<table class="w-full text-sm">${tableHead}<tbody>${tableBody}</tbody></table>`;
-        }
-    }
-
-    // Função para renderizar a aba "Pedidos" com botão de detalhes
-    function preencherPedidos(historicoPedidos) {
-        const container = document.getElementById('container-historico-pedidos');
-        // Removemos a paginação por enquanto
-        document.getElementById('paginacao-pedidos').innerHTML = '';
-        const dados = historicoPedidos || { items: [] };
-
-        if (!dados.items || dados.items.length === 0) {
-            container.innerHTML = '<p class="text-white/50 text-center py-4">Nenhum pedido encontrado para o período.</p>';
-            return;
-        }
-
-        const tableHead = `
-            <thead class="bg-white/10 sticky top-0">
-                <tr>
-                    <th class="p-3 text-center">Senha</th>
-                    <th class="p-3 text-left">Cliente</th>
-                    <th class="p-3 text-left">Horário</th>
-                    <th class="p-3 text-right">Valor Total</th>
-                    <th class="p-3 text-center">Detalhes</th>
-                </tr>
-            </thead>`;
-            
-        const tableBody = dados.items.map(p => {
-            const dataHora = new Date(p.horario).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            return `
-                <tr class="border-b border-white/10 hover:bg-white/5">
-                    <td class="p-3 text-center font-bold text-lg">${p.senhaDiaria}</td>
-                    <td class="p-3 text-left">${p.nomeCliente || 'N/A'}</td>
-                    <td class="p-3 text-left">${dataHora}</td>
-                    <td class="p-3 text-right font-semibold">R$ ${formatarMoeda(p.valorTotal)}</td>
-                    <td class="p-3 text-center">
-                        <button class="btn-detalhes-pedido text-blue-400 hover:text-blue-300 text-xl"
-                                data-id-pedido="${p.id}" 
-                                data-itens='${p.itensJson}'>
-                            <i class="fas fa-eye"></i>
-                        </button>
-                    </td>
-                </tr>`;
-        }).join('');
-        
-        container.innerHTML = `<table class="w-full text-sm whitespace-nowrap">${tableHead}<tbody>${tableBody}</tbody></table>`;
-    }
-
-    // --- LÓGICA DO MODAL DE DETALHES ---
-
-    const modalDetalhes = document.getElementById('modal-detalhes-pedido');
-    const modalTituloPedido = document.getElementById('modal-titulo-pedido');
-    const modalCorpoPedido = document.getElementById('modal-corpo-pedido');
-    const modalFecharPedido = document.getElementById('modal-fechar-pedido');
-
-    function abrirModalDetalhes(idPedido, itensJson) {
-        modalTituloPedido.textContent = `Detalhes do Pedido #${idPedido}`;
-        let htmlItens = '';
-        try {
-            const itens = JSON.parse(itensJson || '[]');
-            if (itens && itens.length > 0) {
-                htmlItens = itens.map(item => {
-                    const subtotal = (item.quantidade || 0) * (item.preco || 0);
-                    return `
-                        <div class="bg-white/10 p-3 rounded-lg">
-                            <div class="flex justify-between items-baseline">
-                               <span class="font-semibold text-lg">${item.quantidade}x ${item.nome}</span>
-                               <span class="font-bold">R$ ${formatarMoeda(subtotal)}</span>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-            } else {
-                htmlItens = '<p class="text-white/60">Não foi possível carregar os itens deste pedido.</p>';
-            }
-        } catch (e) {
-            console.error("Erro ao processar itens do pedido:", e);
-            htmlItens = '<p class="text-red-400">Erro ao ler os dados dos itens.</p>';
-        }
-        modalCorpoPedido.innerHTML = htmlItens;
-        modalDetalhes.classList.remove('hidden');
-    }
-
-    function fecharModalDetalhes() {
-        modalDetalhes.classList.add('hidden');
-    }
-
-    // Event listeners para o modal
-    modalFecharPedido.addEventListener('click', fecharModalDetalhes);
-    modalDetalhes.addEventListener('click', (event) => {
-        if (event.target === modalDetalhes) { // Fecha se clicar no fundo escuro
-            fecharModalDetalhes();
-        }
+        syncPrintState();
+        loadReport();
     });
-
-    document.getElementById('container-historico-pedidos').addEventListener('click', function(event) {
-        const botaoDetalhes = event.target.closest('.btn-detalhes-pedido');
-        if (botaoDetalhes) {
-            const idPedido = botaoDetalhes.dataset.idPedido;
-            const itensJson = botaoDetalhes.dataset.itens;
-            abrirModalDetalhes(idPedido, itensJson);
-        }
-    });
-
-    async function carregarFechamentoDia() {
-        const datasSelecionadas = datePickerSimples.selectedDates;
-        if (datasSelecionadas.length === 0) { alert("Por favor, selecione uma data."); return; }
-        setLoadingState(btnAnalisar, true);
-        const dataSelecionada = datePickerSimples.input.value; // Pega o valor 'YYYY-MM-DD' direto do campo
-        const url = `${API_FECHAMENTO_V2}?data=${dataSelecionada}&local_id=todos`;
-
-        try {
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`O servidor respondeu com um erro: ${response.status}`);
-            const dadosApi = await response.json();
-            
-            // PASSO 1: Usar o adapter
-            const d = adaptarRespostaFechamentoV2(dadosApi);
-
-            // PASSO 2: Usar os dados adaptados (d) para tudo
-            preencherKPIs(d.kpis);
-            preencherBalanco(d.itensTop, d.estoque);
-            preencherPedidos(d.historicoPedidos);
-
-            // Atualiza Gráficos (já usavam a estrutura correta)
-            chartVendas = initOuUpdateChart(chartVendas, 'grafico-vendas', 'bar', { labels: d.vendasPorPeriodo.labels, datasets: [{ label: 'Faturamento', data: d.vendasPorPeriodo.data.map(Number), backgroundColor: 'rgba(52, 211, 153, 0.7)', borderColor: '#34D399', borderWidth: 2, borderRadius: 5, }] }, chartDefaultOptions);
-            chartPagamentos = initOuUpdateChart(chartPagamentos, 'grafico-pagamentos', 'doughnut', { labels: d.vendasPorPagamento.labels.map(l => l.replace(/_/g, ' ').replace(/(^\w{1})|(\s+\w{1})/g, letra => letra.toUpperCase())), datasets: [{ label: 'Formas de Pagamento', data: d.vendasPorPagamento.data, backgroundColor: ['#60A5FA', '#FBBF24', '#A78BFA', '#34D399'], borderColor: 'rgba(255, 255, 255, 0.1)', borderWidth: 2, }] }, { ...chartDefaultOptions, scales: {} });
-
-        } catch (error) {
-            console.error("Falha ao carregar dados do fechamento:", error);
-            alert(`Não foi possível carregar os dados do relatório. Detalhes: ${error.message}`);
-        } finally {
-            setLoadingState(btnAnalisar, false);
-        }
-    }
-    
-    async function carregarComparativo() {
-        if (datePickerA.selectedDates.length < 2 || datePickerB.selectedDates.length < 2) {
-            alert("Por favor, selecione um intervalo de datas para ambos os períodos.");
-            return;
-        }
-        setLoadingState(btnComparar, true);
-        const [inicioA, fimA] = [datePickerA.selectedDates[0].toISOString(), datePickerA.selectedDates[1].toISOString()];
-        const [inicioB, fimB] = [datePickerB.selectedDates[0].toISOString(), datePickerB.selectedDates[1].toISOString()];
-        
-        const url = new URL(API_COMPARATIVOS_V2, window.location.origin);
-        url.searchParams.append('periodoA_inicio', inicioA);
-        url.searchParams.append('periodoA_fim', fimA);
-        url.searchParams.append('periodoB_inicio', inicioB);
-        url.searchParams.append('periodoB_fim', fimB);
-        url.searchParams.append('local_id', 'todos');
-
-        try {
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`O servidor respondeu com um erro: ${response.status}`);
-            const dados = await response.json();
-            preencherComparativos(dados.kpis);
-        } catch (error) {
-            console.error("Falha ao carregar dados comparativos:", error);
-            alert(`Não foi possível carregar os dados comparativos. Detalhes: ${error.message}`);
-        } finally {
-            setLoadingState(btnComparar, false);
-        }
-    }
-
-    // 5. Event Listeners
-    btnAnalisar.addEventListener('click', carregarFechamentoDia);
-    btnComparar.addEventListener('click', carregarComparativo);
-
-    carregarFechamentoDia();
-});
-</script>
-
-<div id="modal-detalhes-pedido" class="fixed inset-0 bg-black bg-opacity-70 backdrop-blur-sm flex items-center justify-center p-4 hidden z-50">
-    <div class="glass-container rounded-2xl p-6 w-full max-w-lg text-white max-h-[80vh] flex flex-col">
-        <div class="flex justify-between items-center border-b border-white/20 pb-3 mb-4 flex-shrink-0">
-            <h2 id="modal-titulo-pedido" class="text-2xl font-bold">Detalhes do Pedido</h2>
-            <button id="modal-fechar-pedido" class="text-2xl hover:text-red-500 transition-colors">&times;</button>
-        </div>
-        <div id="modal-corpo-pedido" class="overflow-y-auto custom-scrollbar pr-2 space-y-3">
-            </div>
-    </div>
-</div>
-
+    </script>
 </body>
 </html>

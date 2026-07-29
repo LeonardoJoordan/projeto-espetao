@@ -1,0 +1,7 @@
+Flask==3.1.2
+Flask-SocketIO==5.6.0
+PySide6_Essentials==6.10.1
+eventlet==0.40.4
+python-escpos==3.1
+pytz==2025.2
+requests==2.32.5

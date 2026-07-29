@@ -33,6 +33,11 @@ except ImportError:
 
 def resource_path(relative_path):
     """ Obtém o caminho absoluto para o recurso, funciona para dev e para o cx_Freeze """
+    if relative_path == 'static':
+        static_override = os.environ.get('ESPETAO_STATIC_PATH')
+        if static_override:
+            return os.path.abspath(os.path.expanduser(static_override))
+
     try:
         # cx_Freeze cria uma pasta e armazena o caminho em sys.frozen
         if getattr(sys, 'frozen', False):
@@ -673,37 +678,6 @@ def tela_fechamento():
     """ Rota para exibir a página de fechamento de caixa e relatórios. """
     return render_template('fechamento.html')
 
-@app.route('/api/relatorio')
-def api_relatorio():
-    """
-    Endpoint da API para buscar os dados consolidados para o relatório.
-    Recebe as datas como parâmetros na URL. Ex: /api/relatorio?inicio=...&fim=...
-    """
-    # Pega as datas da URL
-    data_inicio_str = request.args.get('inicio')
-    data_fim_str = request.args.get('fim')
-    local_id = request.args.get('local_id', type=int, default=None)
-    
-    # Se não forem fornecidas, retorna um erro
-    if not data_inicio_str or not data_fim_str:
-        return jsonify({"erro": "As datas de início e fim são obrigatórias"}), 400
-
-    # Chama nosso especialista para buscar os dados
-    # Busca os dados do relatório e as configurações do sistema
-    dados_relatorio = gerenciador_db.obter_dados_relatorio(data_inicio_str, data_fim_str, local_id)
-    configuracoes = gerenciador_db.obter_configuracoes()
-
-    if dados_relatorio:
-        # Combina os dois dicionários em uma única resposta JSON
-        dados = {**dados_relatorio, "configuracoes": configuracoes}
-    else:
-        dados = None # Mantém a lógica de erro original
-        
-    if dados:
-        return jsonify(dados)
-    else:
-        return jsonify({"erro": "Não foi possível gerar o relatório"}), 500
-
 @app.route('/monitor')
 def tela_monitor():
     """ Rota para exibir o monitor de pedidos para os clientes. """
@@ -837,38 +811,6 @@ def api_mudar_categoria_produto():
     else:
         return jsonify({"status": "erro", "mensagem": "Falha ao atualizar o banco de dados."}), 500
 
-@app.route('/api/insights/comparativos')
-def api_insights_comparativos():
-    """
-    Nova rota para servir dados comparativos entre dois períodos.
-    """
-    # 1. Extrai os parâmetros obrigatórios dos períodos
-    periodoA_inicio = request.args.get('periodoA_inicio')
-    periodoA_fim = request.args.get('periodoA_fim')
-    periodoB_inicio = request.args.get('periodoB_inicio')
-    periodoB_fim = request.args.get('periodoB_fim')
-
-    # Validação básica
-    if not all([periodoA_inicio, periodoA_fim, periodoB_inicio, periodoB_fim]):
-        return jsonify({"erro": "Os quatro parâmetros de data (periodoA_inicio, etc.) são obrigatórios."}), 400
-
-    # 2. Coleta todos os outros parâmetros como filtros opcionais
-    filtros = {
-        'granularidade': request.args.get('granularidade', 'custom'),
-        'local_id': request.args.get('local_id', 'todos')
-        # Outros filtros como 'categoria_id' podem ser adicionados aqui no futuro
-    }
-
-    # 3. Chama a função especialista em analytics
-    dados_comparativos = analytics.insights_comparativos(
-        periodoA_inicio, periodoA_fim,
-        periodoB_inicio, periodoB_fim,
-        filtros
-    )
-
-    # 4. Retorna o resultado
-    return jsonify(dados_comparativos)
-
 @app.route('/api/insights/heatmap')
 def api_insights_heatmap():
     """
@@ -912,8 +854,8 @@ def api_fechamento_dia_v2():
 
                 # O dia de trabalho começa às 05:00 do dia D
                 inicio_local = tz_sp.localize(dia_selecionado.replace(hour=5, minute=0, second=0, microsecond=0))
-                # E termina 1 microssegundo antes das 05:00 do dia D+1
-                fim_local = inicio_local + timedelta(days=1, microseconds=-1)
+                # O fim é exclusivo: 05:00 do dia seguinte.
+                fim_local = inicio_local + timedelta(days=1)
 
                 # Converte para UTC para as queries no banco
                 inicio_str = inicio_local.astimezone(pytz.utc).isoformat()
@@ -930,6 +872,7 @@ def api_fechamento_dia_v2():
 
         # Garante que page e limit sejam sensatos
         if page < 1: page = 1
+        if limit < 1: limit = 50
         if limit > 100: limit = 100
 
         # 2. Chama a nova função orquestradora no módulo de analytics
@@ -1374,7 +1317,13 @@ def _formatar_e_imprimir_relatorio_fechamento(config_impressora, dados_relatorio
             return label + (' ' * espacos) + valor_str + "\n"
 
         p.text(linha_sumario("Receita Bruta:", f"R$ {sumario['faturamento_bruto']:.2f}".replace('.', ',')))
-        p.text(linha_sumario("Lucro Apurado:", f"R$ {sumario['lucro_bruto_aproximado']:.2f}".replace('.', ',')))
+        p.text(linha_sumario("Estornos:", f"-R$ {sumario['estornos']:.2f}".replace('.', ',')))
+        p.text(linha_sumario("Receita Liquida:", f"R$ {sumario['faturamento_liquido']:.2f}".replace('.', ',')))
+        p.text(linha_sumario("CMV:", f"-R$ {sumario['cmv']:.2f}".replace('.', ',')))
+        p.text(linha_sumario("Lucro Bruto:", f"R$ {sumario['lucro_bruto_aproximado']:.2f}".replace('.', ',')))
+        p.text(linha_sumario("Taxas:", f"-R$ {sumario['taxas_pagamento']:.2f}".replace('.', ',')))
+        p.text(linha_sumario("Perdas:", f"-R$ {sumario['perdas']:.2f}".replace('.', ',')))
+        p.text(linha_sumario("Resultado:", f"R$ {sumario['resultado_operacional']:.2f}".replace('.', ',')))
         p.text(linha_sumario("Ticket Medio:", f"R$ {sumario['ticket_medio']:.2f}".replace('.', ',')))
         p.text(linha_sumario("Total de Pedidos:", str(sumario['total_pedidos'])))
         p.text(linha_sumario("Tempo de Operacao:", sumario['tempo_operacao']))

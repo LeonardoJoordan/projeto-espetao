@@ -1,6 +1,54 @@
-# Ambiente virtual
+# Python: ambientes virtuais, caches e ferramentas
 .venv/
-
-# Cache do Python
+venv/
+env/
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+*.egg-info/
+
+# Node.js e Tailwind
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Builds e empacotamento Python
+build/
+dist/
+
+# Flatpak
+.flatpak-builder/
+build-flatpak/
+repo-flatpak/
+*.flatpak
+
+# SQLite: somente arquivos transitórios e backups
+# O espetao.db não é ignorado porque é a base inicial distribuída pelo aplicativo.
+*.db-journal
+*.db-wal
+*.db-shm
+*.db.v2.tmp
+*.legacy-v1*.bak
+
+# Configurações locais da aplicação
+config_impressora.json
+
+# IDEs e editores
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Sistema operacional e logs
+.DS_Store
+Thumbs.db
+*.log

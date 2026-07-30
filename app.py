@@ -89,6 +89,7 @@ print("SocketIO iniciado com async_mode='eventlet'")
 
 # Variável global para armazenar o ID do local da sessão atual
 LOCAL_SESSAO_ATUAL = None
+OPERACAO_SESSAO_ATUAL = None
 
 
 
@@ -168,21 +169,33 @@ def handle_connect():
 
 @app.route('/api/definir_local_sessao', methods=['POST'])
 def definir_local_sessao_view():
-    """View HTTP: lê JSON {local_id: ...} e define a sessão."""
+    """View HTTP: define o local e, quando necessário, abre sua operação."""
     data = request.get_json(silent=True) or {}
     local_id = data.get('local_id')
-    ok = definir_local_sessao(local_id)
+    operacao_id = data.get('operacao_id')
+    ok = definir_local_sessao(local_id, operacao_id)
     if ok:
-        return jsonify({"status": "sucesso"}), 200
+        return jsonify({
+            "status": "sucesso",
+            "operacao_id": OPERACAO_SESSAO_ATUAL,
+        }), 200
     return jsonify({"status": "erro"}), 400
 
-def definir_local_sessao(local_id):
+def definir_local_sessao(local_id, operacao_id=None):
     """Função utilitária: pode ser chamada direto (como você já faz no main.py)."""
-    global LOCAL_SESSAO_ATUAL
+    global LOCAL_SESSAO_ATUAL, OPERACAO_SESSAO_ATUAL
     try:
         if local_id is None:
             return False
-        LOCAL_SESSAO_ATUAL = int(local_id)
+        local_id = int(local_id)
+        if operacao_id is None:
+            operacao_id = gerenciador_db.iniciar_operacao(local_id)
+        if operacao_id is None or not gerenciador_db.operacao_aberta_pertence_ao_local(
+            operacao_id, local_id
+        ):
+            return False
+        LOCAL_SESSAO_ATUAL = local_id
+        OPERACAO_SESSAO_ATUAL = int(operacao_id)
         print(f"Sessão de trabalho definida para o local ID: {LOCAL_SESSAO_ATUAL}")
         return True
     except Exception as e:
@@ -726,7 +739,11 @@ def salvar_pedido():
     print("-----------------------------")
 
     # A função "trabalhadora" ainda recebe o local_id para o carimbo
-    resultado_salvo = gerenciador_db.salvar_novo_pedido(dados_do_pedido, LOCAL_SESSAO_ATUAL)
+    resultado_salvo = gerenciador_db.salvar_novo_pedido(
+        dados_do_pedido,
+        LOCAL_SESSAO_ATUAL,
+        OPERACAO_SESSAO_ATUAL,
+    )
 
     if resultado_salvo is None:
         return jsonify({
@@ -1038,6 +1055,32 @@ def api_insights_heatmap():
 
     # 4. Retorna o resultado
     return jsonify(dados_heatmap)
+
+
+@app.route('/api/insights/locais')
+def api_insights_locais():
+    """Analisa uma visita ou compara até três pontos de trabalho."""
+    try:
+        locais_param = request.args.get('local_ids', '')
+        local_ids = [
+            item.strip()
+            for item in locais_param.split(',')
+            if item.strip()
+        ]
+        dados = analytics.desempenho_locais(
+            local_ids=local_ids,
+            modo=request.args.get('amostra', 'historico'),
+            limite=request.args.get('limite', 6, type=int),
+            inicio=request.args.get('inicio'),
+            fim=request.args.get('fim'),
+        )
+        return jsonify(dados)
+    except (ValueError, TypeError) as exc:
+        return jsonify({"erro": str(exc)}), 400
+    except Exception as exc:
+        print(f"ERRO em /api/insights/locais: {exc}")
+        return jsonify({"erro": "Não foi possível analisar os locais."}), 500
+
 
 @app.route('/api/fechamento_dia_v2')
 def api_fechamento_dia_v2():

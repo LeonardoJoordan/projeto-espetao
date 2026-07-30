@@ -78,10 +78,26 @@ class PDVTestCase(unittest.TestCase):
                     "SELECT name FROM sqlite_master WHERE type = 'table'"
                 )
             })
+            self.assertIn("operacoes", {
+                row["name"]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            })
+            self.assertIn("operacao_estoque", {
+                row["name"]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            })
             colunas_item = {
                 row["name"] for row in conn.execute("PRAGMA table_info(pedido_itens)")
             }
             self.assertIn("custo_total_centavos", colunas_item)
+            colunas_pedido = {
+                row["name"] for row in conn.execute("PRAGMA table_info(pedidos)")
+            }
+            self.assertIn("operacao_id", colunas_pedido)
             colunas_movimento = {
                 row["name"]
                 for row in conn.execute(
@@ -198,7 +214,7 @@ class PDVTestCase(unittest.TestCase):
             self.assertEqual(lote["saldo"], 4)
             self.assertEqual(
                 migrado.execute("SELECT MAX(version) FROM schema_version").fetchone()[0],
-                4,
+                database.SCHEMA_VERSION,
             )
 
     def test_migracao_v3_habilita_ajuste_neutro_sem_apagar_movimentos(self):
@@ -249,7 +265,7 @@ class PDVTestCase(unittest.TestCase):
             )
             self.assertEqual(
                 migrado.execute("SELECT MAX(version) FROM schema_version").fetchone()[0],
-                4,
+                database.SCHEMA_VERSION,
             )
 
     def test_servidor_recalcula_preco_nome_custo_e_total(self):
@@ -616,6 +632,97 @@ class PDVTestCase(unittest.TestCase):
         self.assertEqual(
             db.obter_disponibilidade_para_produtos([self.produto_id, segundo_id]),
             {self.produto_id: 0, segundo_id: 0},
+        )
+
+    def test_analise_por_local_respeita_visitas_e_disponibilidade(self):
+        self.assertTrue(db.adicionar_local("Evento Teste"))
+        evento_id = next(
+            item["id"]
+            for item in db.obter_todos_locais()
+            if item["nome"] == "Evento Teste"
+        )
+        produto_zero_id = db.adicionar_novo_produto(
+            "Produto sem saída", None, None, 5.0, 5, 1.0, 1, 0
+        )
+        produto_indisponivel_id = db.adicionar_novo_produto(
+            "Produto não levado", None, None, 6.0, 0, 1.0, 1, 0
+        )
+
+        operacao_um = db.iniciar_operacao(self.local_id)
+        pedido_um = db.salvar_novo_pedido(
+            {
+                "nome_cliente": "Visita um",
+                "itens": [{"id": self.produto_id, "quantidade": 2}],
+                "metodo_pagamento": "pix",
+                "modalidade": "local",
+            },
+            self.local_id,
+            operacao_um,
+        )
+        self.assertTrue(db.confirmar_pagamento_pedido(pedido_um["id"]))
+        self.assertTrue(db.encerrar_operacao(operacao_um))
+
+        operacao_dois = db.iniciar_operacao(self.local_id)
+        self.assertTrue(db.zerar_todos_estoques()["sucesso"])
+        self.assertTrue(db.adicionar_estoque(self.produto_id, 4, 4.0))
+        self.assertTrue(db.adicionar_estoque(produto_zero_id, 3, 1.0))
+        pedido_dois = db.salvar_novo_pedido(
+            {
+                "nome_cliente": "Visita dois",
+                "itens": [{"id": self.produto_id, "quantidade": 4}],
+                "metodo_pagamento": "dinheiro",
+                "modalidade": "local",
+            },
+            self.local_id,
+            operacao_dois,
+        )
+        self.assertTrue(db.confirmar_pagamento_pedido(pedido_dois["id"]))
+        self.assertTrue(db.encerrar_operacao(operacao_dois))
+
+        self.assertTrue(db.zerar_todos_estoques()["sucesso"])
+        self.assertTrue(db.adicionar_estoque(self.produto_id, 2, 4.0))
+        operacao_evento = db.iniciar_operacao(evento_id)
+        pedido_evento = db.salvar_novo_pedido(
+            {
+                "nome_cliente": "Evento",
+                "itens": [{"id": self.produto_id, "quantidade": 1}],
+                "metodo_pagamento": "pix",
+                "modalidade": "local",
+            },
+            evento_id,
+            operacao_evento,
+        )
+        self.assertTrue(db.confirmar_pagamento_pedido(pedido_evento["id"]))
+        self.assertTrue(db.encerrar_operacao(operacao_evento))
+
+        dados = analytics.desempenho_locais(
+            [self.local_id, evento_id], modo="ultimas", limite=2
+        )
+        self.assertEqual(len(dados["locais"]), 2)
+        loja = next(item for item in dados["locais"] if item["id"] == self.local_id)
+        self.assertEqual(loja["visitas"], 2)
+        principal = next(
+            item
+            for item in loja["produtos"]
+            if item["produtoId"] == self.produto_id
+        )
+        self.assertEqual(principal["totalVendido"], 6)
+        self.assertEqual(principal["mediaPorVisita"], 3)
+        self.assertEqual(principal["visitasDisponivel"], 2)
+        self.assertEqual(principal["esgotamentos"], 1)
+        self.assertEqual(principal["mediaLevada"], 7)
+
+        sem_saida = next(
+            item
+            for item in loja["produtos"]
+            if item["produtoId"] == produto_zero_id
+        )
+        self.assertEqual(sem_saida["totalVendido"], 0)
+        self.assertEqual(sem_saida["mediaPorVisita"], 0)
+        self.assertEqual(sem_saida["visitasDisponivel"], 2)
+        self.assertNotIn(
+            produto_indisponivel_id,
+            {item["produtoId"] for item in loja["produtos"]},
         )
 
     def test_produto_com_historico_e_apenas_arquivado(self):

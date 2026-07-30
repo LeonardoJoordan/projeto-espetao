@@ -1,4 +1,4 @@
-"""Operações transacionais do PDV sobre o esquema canônico v3 com FIFO."""
+"""Operações transacionais do PDV sobre o esquema canônico v5 com FIFO."""
 
 from __future__ import annotations
 
@@ -71,6 +71,43 @@ def _saldo_produto(cursor: sqlite3.Cursor, produto_id: int) -> int:
             (produto_id,),
         ).fetchone()[0]
     )
+
+
+def _fotografar_estoque_operacao(
+    cursor: sqlite3.Cursor,
+    operacao_id: int,
+    *,
+    encerramento: bool,
+) -> None:
+    produtos = cursor.execute(
+        "SELECT id, ativo FROM produtos ORDER BY id"
+    ).fetchall()
+    for produto in produtos:
+        produto_id = int(produto["id"])
+        saldo = max(_saldo_produto(cursor, produto_id), 0)
+        if encerramento:
+            cursor.execute(
+                """
+                INSERT INTO operacao_estoque(
+                    operacao_id, produto_id, quantidade_inicial,
+                    quantidade_final, ativo_no_inicio
+                ) VALUES (?, ?, 0, ?, ?)
+                ON CONFLICT(operacao_id, produto_id) DO UPDATE SET
+                    quantidade_final = excluded.quantidade_final
+                """,
+                (operacao_id, produto_id, saldo, int(bool(produto["ativo"]))),
+            )
+        else:
+            cursor.execute(
+                """
+                INSERT INTO operacao_estoque(
+                    operacao_id, produto_id, quantidade_inicial,
+                    quantidade_final, ativo_no_inicio
+                ) VALUES (?, ?, ?, NULL, ?)
+                ON CONFLICT(operacao_id, produto_id) DO NOTHING
+                """,
+                (operacao_id, produto_id, saldo, int(bool(produto["ativo"]))),
+            )
 
 
 def _custo_medio_centavos(cursor: sqlite3.Cursor, produto_id: int) -> int:
@@ -973,7 +1010,7 @@ def obter_historico_produto(id_produto):
 # ---------------------------------------------------------------------------
 
 
-def salvar_novo_pedido(dados_do_pedido, local_id):
+def salvar_novo_pedido(dados_do_pedido, local_id, operacao_id=None):
     conn = None
     try:
         itens_recebidos = list((dados_do_pedido or {}).get("itens") or [])
@@ -1003,6 +1040,29 @@ def salvar_novo_pedido(dados_do_pedido, local_id):
         if not cursor.execute("SELECT 1 FROM locais WHERE id = ?", (local_id,)).fetchone():
             conn.rollback()
             return None
+        if operacao_id is not None:
+            operacao = cursor.execute(
+                """
+                SELECT 1 FROM operacoes
+                WHERE id = ? AND local_id = ? AND status = 'aberta'
+                """,
+                (int(operacao_id), int(local_id)),
+            ).fetchone()
+            if not operacao:
+                conn.rollback()
+                return None
+            if not cursor.execute(
+                """
+                SELECT 1 FROM operacao_estoque
+                WHERE operacao_id = ? LIMIT 1
+                """,
+                (int(operacao_id),),
+            ).fetchone():
+                # O servidor pode ser iniciado antes do preparo da carga.
+                # A fotografia é feita imediatamente antes da primeira venda.
+                _fotografar_estoque_operacao(
+                    cursor, int(operacao_id), encerramento=False
+                )
 
         placeholders = ",".join("?" for _ in quantidades)
         produtos_rows = cursor.execute(
@@ -1066,8 +1126,8 @@ def salvar_novo_pedido(dados_do_pedido, local_id):
             INSERT INTO pedidos(
                 nome_cliente, status, metodo_pagamento, modalidade,
                 valor_total_centavos, timestamp_criacao, senha_diaria,
-                fluxo_simples, local_id
-            ) VALUES (?, 'aguardando_pagamento', ?, ?, ?, ?, ?, ?, ?)
+                fluxo_simples, local_id, operacao_id
+            ) VALUES (?, 'aguardando_pagamento', ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 nome_cliente,
@@ -1078,6 +1138,7 @@ def salvar_novo_pedido(dados_do_pedido, local_id):
                 senha,
                 1 if fluxo_simples else 0,
                 int(local_id),
+                int(operacao_id) if operacao_id is not None else None,
             ),
         )
         pedido_id = cursor.lastrowid
@@ -1922,6 +1983,131 @@ def excluir_local(id_local):
         return cursor.rowcount > 0
     except sqlite3.IntegrityError:
         return False
+
+
+def iniciar_operacao(local_id):
+    """Abre uma visita e fotografa o estoque que está saindo com o trailer."""
+    try:
+        local_id = int(local_id)
+        with _conexao() as conn:
+            cursor = conn.cursor()
+            cursor.execute("BEGIN IMMEDIATE")
+            if not cursor.execute(
+                "SELECT 1 FROM locais WHERE id = ?", (local_id,)
+            ).fetchone():
+                return None
+
+            agora = _agora()
+            abertas = cursor.execute(
+                "SELECT id FROM operacoes WHERE status = 'aberta' ORDER BY id"
+            ).fetchall()
+            for aberta in abertas:
+                operacao_aberta = int(aberta["id"])
+                if not cursor.execute(
+                    """
+                    SELECT 1 FROM operacao_estoque
+                    WHERE operacao_id = ? LIMIT 1
+                    """,
+                    (operacao_aberta,),
+                ).fetchone():
+                    _fotografar_estoque_operacao(
+                        cursor, operacao_aberta, encerramento=False
+                    )
+                _fotografar_estoque_operacao(
+                    cursor, operacao_aberta, encerramento=True
+                )
+                cursor.execute(
+                    """
+                    UPDATE operacoes
+                    SET status = 'encerrada', encerrada_em = ?
+                    WHERE id = ?
+                    """,
+                    (agora, operacao_aberta),
+                )
+
+            operacao = cursor.execute(
+                """
+                INSERT INTO operacoes(local_id, iniciada_em, status, origem)
+                VALUES (?, ?, 'aberta', 'real')
+                """,
+                (local_id, agora),
+            )
+            operacao_id = int(operacao.lastrowid)
+        return operacao_id
+    except (sqlite3.Error, ValueError, TypeError):
+        return None
+
+
+def encerrar_operacao(operacao_id):
+    """Encerra uma visita de modo idempotente e fotografa o saldo de retorno."""
+    try:
+        operacao_id = int(operacao_id)
+        with _conexao() as conn:
+            cursor = conn.cursor()
+            cursor.execute("BEGIN IMMEDIATE")
+            operacao = cursor.execute(
+                "SELECT status FROM operacoes WHERE id = ?", (operacao_id,)
+            ).fetchone()
+            if not operacao:
+                return False
+            if operacao["status"] == "encerrada":
+                return True
+            if not cursor.execute(
+                """
+                SELECT 1 FROM operacao_estoque
+                WHERE operacao_id = ? LIMIT 1
+                """,
+                (operacao_id,),
+            ).fetchone():
+                _fotografar_estoque_operacao(
+                    cursor, operacao_id, encerramento=False
+                )
+            _fotografar_estoque_operacao(
+                cursor, operacao_id, encerramento=True
+            )
+            cursor.execute(
+                """
+                UPDATE operacoes
+                SET status = 'encerrada', encerrada_em = ?
+                WHERE id = ?
+                """,
+                (_agora(), operacao_id),
+            )
+        return True
+    except (sqlite3.Error, ValueError, TypeError):
+        return False
+
+
+def operacao_aberta_pertence_ao_local(operacao_id, local_id):
+    try:
+        with _conexao() as conn:
+            return bool(
+                conn.execute(
+                    """
+                    SELECT 1 FROM operacoes
+                    WHERE id = ? AND local_id = ? AND status = 'aberta'
+                    """,
+                    (int(operacao_id), int(local_id)),
+                ).fetchone()
+            )
+    except (sqlite3.Error, ValueError, TypeError):
+        return False
+
+
+def obter_operacoes(local_ids=None):
+    with _conexao() as conn:
+        query = """
+            SELECT o.*, l.nome AS local_nome
+            FROM operacoes o
+            JOIN locais l ON l.id = o.local_id
+        """
+        params = []
+        if local_ids:
+            ids = [int(item) for item in local_ids]
+            query += f" WHERE o.local_id IN ({','.join('?' for _ in ids)})"
+            params.extend(ids)
+        query += " ORDER BY o.iniciada_em DESC, o.id DESC"
+        return [dict(row) for row in conn.execute(query, params)]
 
 
 def obter_dados_para_menu_data_js():

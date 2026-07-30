@@ -55,6 +55,9 @@ modules:
           - __pycache__
           - tests
           - '*.flatpak'
+          - '*.bak'
+          - '*.db-wal'
+          - '*.db-shm'
 
 # Sequência para compilar, gerar o instalador e instalar/reinstalar o aplicativo:
 #    flatpak-builder --repo=repo-flatpak --force-clean build-flatpak com.leobelisario.Espetao.yaml

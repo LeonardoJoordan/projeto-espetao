@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import date, datetime, time, timedelta, timezone
@@ -272,7 +273,7 @@ def _calcular_fechamento(inicio, fim, local_id="todos"):
 
         inicio_local = datetime.fromisoformat(inicio).astimezone(TZ_LOCAL)
         duracao = datetime.fromisoformat(fim) - datetime.fromisoformat(inicio)
-        total_buckets = max(int(duracao.total_seconds() // 900), 1)
+        total_buckets = max(math.ceil(duracao.total_seconds() / 900), 1)
         labels = [
             (inicio_local + timedelta(minutes=15 * indice)).strftime("%H:%M")
             for indice in range(total_buckets)
@@ -764,6 +765,405 @@ def insights_heatmap(inicio, fim, filtros):
             }
             for chave, valor in sorted(buckets.items())
         ],
+    }
+
+
+def _selecionar_operacoes_local(
+    conn,
+    local_id,
+    modo,
+    limite,
+    inicio,
+    fim,
+):
+    query = """
+        SELECT * FROM operacoes
+        WHERE local_id = ?
+    """
+    params = [local_id]
+    if modo == "periodo":
+        query += " AND iniciada_em >= ? AND iniciada_em < ?"
+        params.extend((inicio, fim))
+    query += " ORDER BY iniciada_em DESC, id DESC"
+    if modo == "ultimas":
+        query += " LIMIT ?"
+        params.append(limite)
+    return list(reversed(conn.execute(query, params).fetchall()))
+
+
+def _saldo_atual_produto(conn, produto_id):
+    return int(
+        conn.execute(
+            """
+            SELECT COALESCE(SUM(
+                l.quantidade_inicial + COALESCE((
+                    SELECT SUM(m.quantidade)
+                    FROM estoque_movimentacoes m
+                    WHERE m.lote_id = l.id
+                ), 0)
+            ), 0)
+            FROM estoque_lotes l
+            WHERE l.produto_id = ?
+            """,
+            (produto_id,),
+        ).fetchone()[0]
+    )
+
+
+def _analisar_operacao_local(conn, operacao):
+    eventos = conn.execute(
+        """
+        SELECT pg.*, p.id AS pedido_id
+        FROM pagamentos pg
+        JOIN pedidos p ON p.id = pg.pedido_id
+        WHERE p.operacao_id = ?
+        ORDER BY pg.ocorrido_em, pg.id
+        """,
+        (operacao["id"],),
+    ).fetchall()
+    receita = 0
+    taxas = 0
+    custo = 0
+    pedidos_liquidos = 0
+    estornos = 0
+    itens_liquidos = defaultdict(int)
+    itens_brutos = defaultdict(int)
+    horas = defaultdict(lambda: {"faturamento": 0, "pedidos": 0, "unidades": 0})
+    cache_itens = {}
+
+    for evento in eventos:
+        sinal = 1 if evento["tipo"] == "pagamento" else -1
+        pedido_id = int(evento["pedido_id"])
+        if pedido_id not in cache_itens:
+            cache_itens[pedido_id] = _itens_pedido(conn, pedido_id)
+        itens = cache_itens[pedido_id]
+        receita += sinal * int(evento["valor_centavos"])
+        taxas += sinal * int(evento["taxa_centavos"])
+        custo += sinal * sum(int(item["custo_total_centavos"]) for item in itens)
+        pedidos_liquidos += sinal
+        if sinal < 0:
+            estornos += int(evento["valor_centavos"])
+        for item in itens:
+            produto_id = int(item["produto_id"])
+            quantidade = int(item["quantidade"])
+            itens_liquidos[produto_id] += sinal * quantidade
+            if sinal > 0:
+                itens_brutos[produto_id] += quantidade
+
+        if sinal > 0:
+            hora = datetime.fromisoformat(evento["ocorrido_em"]).astimezone(
+                TZ_LOCAL
+            ).hour
+            horas[hora]["faturamento"] += int(evento["valor_centavos"])
+            horas[hora]["pedidos"] += 1
+            horas[hora]["unidades"] += sum(
+                int(item["quantidade"]) for item in itens
+            )
+
+    snapshots = {
+        int(row["produto_id"]): row
+        for row in conn.execute(
+            """
+            SELECT * FROM operacao_estoque
+            WHERE operacao_id = ?
+            """,
+            (operacao["id"],),
+        )
+    }
+    if not snapshots and operacao["status"] == "aberta":
+        for produto in conn.execute("SELECT id, ativo FROM produtos"):
+            produto_id = int(produto["id"])
+            saldo = max(_saldo_atual_produto(conn, produto_id), 0)
+            snapshots[produto_id] = {
+                "produto_id": produto_id,
+                "quantidade_inicial": saldo,
+                "quantidade_final": saldo,
+                "ativo_no_inicio": int(bool(produto["ativo"])),
+            }
+    fim_operacao = operacao["encerrada_em"] or datetime.now(timezone.utc).isoformat()
+    entradas_durante = set()
+    if operacao["origem"] == "real":
+        entradas_durante = {
+            int(row["produto_id"])
+            for row in conn.execute(
+                """
+                SELECT DISTINCT produto_id
+                FROM estoque_lotes
+                WHERE recebido_em >= ? AND recebido_em <= ?
+                """,
+                (operacao["iniciada_em"], fim_operacao),
+            )
+        }
+    ultimo_movimento = {}
+    for movimento in conn.execute(
+        """
+        SELECT produto_id, tipo
+        FROM estoque_movimentacoes
+        WHERE created_at >= ? AND created_at <= ?
+        ORDER BY created_at, id
+        """,
+        (operacao["iniciada_em"], fim_operacao),
+    ):
+        ultimo_movimento[int(movimento["produto_id"])] = movimento["tipo"]
+    disponiveis = set(itens_brutos) | entradas_durante
+    for produto_id, snapshot in snapshots.items():
+        final = snapshot["quantidade_final"]
+        if bool(snapshot["ativo_no_inicio"]) and (
+            int(snapshot["quantidade_inicial"]) > 0
+            or (final is not None and int(final) > 0)
+        ):
+            disponiveis.add(produto_id)
+
+    produtos = {}
+    for produto_id in disponiveis:
+        snapshot = snapshots.get(produto_id)
+        final = snapshot["quantidade_final"] if snapshot else None
+        if final is None and operacao["status"] == "aberta":
+            final = max(_saldo_atual_produto(conn, produto_id), 0)
+        produtos[produto_id] = {
+            "vendidas": int(itens_liquidos.get(produto_id, 0)),
+            "levadas": (
+                int(snapshot["quantidade_inicial"]) if snapshot is not None else None
+            ),
+            "restantes": int(final) if final is not None else None,
+            "esgotou": (
+                bool(
+                    final == 0
+                    and ultimo_movimento.get(produto_id) == "venda"
+                )
+                if final is not None
+                else None
+            ),
+        }
+
+    return {
+        "receita_centavos": receita,
+        "taxas_centavos": taxas,
+        "custo_centavos": custo,
+        "resultado_centavos": receita - custo - taxas,
+        "pedidos": pedidos_liquidos,
+        "estornos_centavos": estornos,
+        "unidades": sum(itens_liquidos.values()),
+        "horas": horas,
+        "produtos": produtos,
+    }
+
+
+def desempenho_locais(
+    local_ids,
+    modo="historico",
+    limite=6,
+    inicio=None,
+    fim=None,
+):
+    """Compara até três locais usando visitas e disponibilidade fotografada."""
+    ids = []
+    for valor in local_ids or []:
+        local_id = int(valor)
+        if local_id not in ids:
+            ids.append(local_id)
+    if not 1 <= len(ids) <= 3:
+        raise ValueError("Selecione entre um e três locais.")
+    if modo not in {"historico", "ultimas", "periodo"}:
+        raise ValueError("Amostra inválida.")
+    limite = min(max(int(limite or 1), 1), 100)
+    if modo == "periodo" and (not inicio or not fim):
+        raise ValueError("O período da análise é obrigatório.")
+
+    with _conexao() as conn:
+        placeholders = ",".join("?" for _ in ids)
+        locais_rows = conn.execute(
+            f"SELECT id, nome FROM locais WHERE id IN ({placeholders})",
+            ids,
+        ).fetchall()
+        locais_por_id = {int(row["id"]): row for row in locais_rows}
+        if len(locais_por_id) != len(ids):
+            raise ValueError("Um dos locais selecionados não existe.")
+        produtos_rows = conn.execute(
+            """
+            SELECT p.id, p.nome, COALESCE(c.nome, 'Sem categoria') AS categoria
+            FROM produtos p
+            LEFT JOIN categorias c ON c.id = p.categoria_id
+            ORDER BY c.ordem, p.ordem, p.nome
+            """
+        ).fetchall()
+        catalogo = {int(row["id"]): row for row in produtos_rows}
+
+        resultado_locais = []
+        for local_id in ids:
+            operacoes = _selecionar_operacoes_local(
+                conn, local_id, modo, limite, inicio, fim
+            )
+            agregados_produtos = defaultdict(
+                lambda: {
+                    "total": 0,
+                    "disponivel_visitas": 0,
+                    "vendas_por_visita": [],
+                    "levadas": [],
+                    "restantes": [],
+                    "esgotamentos": 0,
+                }
+            )
+            horas = [
+                {"faturamento": 0, "pedidos": 0, "unidades": 0}
+                for _ in range(24)
+            ]
+            totais = {
+                "receita": 0,
+                "taxas": 0,
+                "custo": 0,
+                "resultado": 0,
+                "pedidos": 0,
+                "estornos": 0,
+                "unidades": 0,
+            }
+
+            for operacao in operacoes:
+                dados = _analisar_operacao_local(conn, operacao)
+                totais["receita"] += dados["receita_centavos"]
+                totais["taxas"] += dados["taxas_centavos"]
+                totais["custo"] += dados["custo_centavos"]
+                totais["resultado"] += dados["resultado_centavos"]
+                totais["pedidos"] += dados["pedidos"]
+                totais["estornos"] += dados["estornos_centavos"]
+                totais["unidades"] += dados["unidades"]
+                for hora, valores in dados["horas"].items():
+                    for chave in ("faturamento", "pedidos", "unidades"):
+                        horas[hora][chave] += valores[chave]
+                for produto_id, produto in dados["produtos"].items():
+                    agregado = agregados_produtos[produto_id]
+                    vendidas = int(produto["vendidas"])
+                    agregado["total"] += vendidas
+                    agregado["disponivel_visitas"] += 1
+                    agregado["vendas_por_visita"].append(vendidas)
+                    if produto["levadas"] is not None:
+                        agregado["levadas"].append(int(produto["levadas"]))
+                    if produto["restantes"] is not None:
+                        agregado["restantes"].append(int(produto["restantes"]))
+                    if produto["esgotou"]:
+                        agregado["esgotamentos"] += 1
+
+            visitas = len(operacoes)
+            divisor = max(visitas, 1)
+            produtos = []
+            for produto_id, agregado in agregados_produtos.items():
+                catalogo_item = catalogo.get(produto_id)
+                if not catalogo_item:
+                    continue
+                amostras = agregado["vendas_por_visita"]
+                produtos.append(
+                    {
+                        "produtoId": produto_id,
+                        "nome": catalogo_item["nome"],
+                        "categoria": catalogo_item["categoria"],
+                        "totalVendido": agregado["total"],
+                        "mediaPorVisita": round(
+                            agregado["total"] / max(len(amostras), 1), 2
+                        ),
+                        "menorVenda": min(amostras) if amostras else 0,
+                        "maiorVenda": max(amostras) if amostras else 0,
+                        "visitasDisponivel": agregado["disponivel_visitas"],
+                        "visitasSelecionadas": visitas,
+                        "mediaLevada": (
+                            round(sum(agregado["levadas"]) / len(agregado["levadas"]), 2)
+                            if agregado["levadas"]
+                            else None
+                        ),
+                        "mediaRestante": (
+                            round(
+                                sum(agregado["restantes"])
+                                / len(agregado["restantes"]),
+                                2,
+                            )
+                            if agregado["restantes"]
+                            else None
+                        ),
+                        "esgotamentos": agregado["esgotamentos"],
+                    }
+                )
+            produtos.sort(
+                key=lambda item: (
+                    -item["mediaPorVisita"],
+                    -item["totalVendido"],
+                    item["nome"],
+                )
+            )
+
+            pico = max(
+                range(24),
+                key=lambda hora: (
+                    horas[hora]["pedidos"],
+                    horas[hora]["faturamento"],
+                ),
+                default=0,
+            )
+            tem_atividade = any(item["pedidos"] for item in horas)
+            resultado_locais.append(
+                {
+                    "id": local_id,
+                    "nome": locais_por_id[local_id]["nome"],
+                    "visitas": visitas,
+                    "operacoesInferidas": sum(
+                        1 for operacao in operacoes if operacao["origem"] == "inferida"
+                    ),
+                    "kpis": {
+                        "faturamentoTotal": _reais(totais["receita"]),
+                        "faturamentoMedio": _reais(totais["receita"] / divisor),
+                        "resultadoTotal": _reais(totais["resultado"]),
+                        "resultadoMedio": _reais(totais["resultado"] / divisor),
+                        "ticketMedio": (
+                            _reais(totais["receita"] / totais["pedidos"])
+                            if totais["pedidos"] > 0
+                            else 0
+                        ),
+                        "pedidosTotal": totais["pedidos"],
+                        "pedidosPorVisita": round(totais["pedidos"] / divisor, 2),
+                        "unidadesTotal": totais["unidades"],
+                        "unidadesPorVisita": round(totais["unidades"] / divisor, 2),
+                        "estornos": _reais(totais["estornos"]),
+                        "margemContribuicaoPct": _percentual(
+                            totais["resultado"], totais["receita"]
+                        ),
+                    },
+                    "pico": (
+                        {
+                            "hora": pico,
+                            "label": f"{pico:02d}h–{(pico + 1) % 24:02d}h",
+                            "pedidosMedios": round(
+                                horas[pico]["pedidos"] / divisor, 2
+                            ),
+                        }
+                        if tem_atividade
+                        else None
+                    ),
+                    "horas": [
+                        {
+                            "hora": hora,
+                            "label": f"{hora:02d}h",
+                            "faturamentoMedio": _reais(
+                                valores["faturamento"] / divisor
+                            ),
+                            "pedidosMedios": round(
+                                valores["pedidos"] / divisor, 2
+                            ),
+                            "unidadesMedias": round(
+                                valores["unidades"] / divisor, 2
+                            ),
+                        }
+                        for hora, valores in enumerate(horas)
+                    ],
+                    "produtos": produtos,
+                }
+            )
+
+    return {
+        "amostra": {
+            "modo": modo,
+            "limite": limite if modo == "ultimas" else None,
+            "inicio": inicio if modo == "periodo" else None,
+            "fim": fim if modo == "periodo" else None,
+        },
+        "locais": resultado_locais,
     }
 
 

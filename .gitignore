@@ -35,11 +35,9 @@ repo-flatpak/
 *.db-journal
 *.db-wal
 *.db-shm
-*.db.v2.tmp
-*.db.v3.tmp
+*.db.*.tmp
 *.legacy-v1*.bak
-*.pre-v3*.bak
-*.pre-v4*.bak
+*.pre-v*.bak
 
 # Configurações locais da aplicação
 config_impressora.json

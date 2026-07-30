@@ -6,11 +6,13 @@ import os
 import shutil
 import sqlite3
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
+TIMEZONE_LOCAL = ZoneInfo("America/Sao_Paulo")
 
 
 def _diretorio_aplicacao() -> Path:
@@ -68,6 +70,18 @@ CREATE TABLE IF NOT EXISTS locais (
     nome TEXT NOT NULL COLLATE NOCASE UNIQUE
 );
 
+CREATE TABLE IF NOT EXISTS operacoes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    local_id INTEGER NOT NULL,
+    iniciada_em TEXT NOT NULL,
+    encerrada_em TEXT,
+    status TEXT NOT NULL DEFAULT 'aberta'
+        CHECK (status IN ('aberta', 'encerrada')),
+    origem TEXT NOT NULL DEFAULT 'real'
+        CHECK (origem IN ('real', 'inferida')),
+    FOREIGN KEY (local_id) REFERENCES locais(id) ON DELETE RESTRICT
+);
+
 CREATE TABLE IF NOT EXISTS categorias (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nome TEXT NOT NULL COLLATE NOCASE UNIQUE,
@@ -87,6 +101,21 @@ CREATE TABLE IF NOT EXISTS produtos (
         CHECK (ocultar_quando_esgotado IN (0, 1)),
     ativo INTEGER NOT NULL DEFAULT 1 CHECK (ativo IN (0, 1)),
     FOREIGN KEY (categoria_id) REFERENCES categorias(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS operacao_estoque (
+    operacao_id INTEGER NOT NULL,
+    produto_id INTEGER NOT NULL,
+    quantidade_inicial INTEGER NOT NULL DEFAULT 0
+        CHECK (quantidade_inicial >= 0),
+    quantidade_final INTEGER CHECK (
+        quantidade_final IS NULL OR quantidade_final >= 0
+    ),
+    ativo_no_inicio INTEGER NOT NULL DEFAULT 1
+        CHECK (ativo_no_inicio IN (0, 1)),
+    PRIMARY KEY (operacao_id, produto_id),
+    FOREIGN KEY (operacao_id) REFERENCES operacoes(id) ON DELETE CASCADE,
+    FOREIGN KEY (produto_id) REFERENCES produtos(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS tempos_preparo (
@@ -129,7 +158,9 @@ CREATE TABLE IF NOT EXISTS pedidos (
     senha_diaria INTEGER NOT NULL CHECK (senha_diaria > 0),
     fluxo_simples INTEGER NOT NULL DEFAULT 0 CHECK (fluxo_simples IN (0, 1)),
     local_id INTEGER NOT NULL,
-    FOREIGN KEY (local_id) REFERENCES locais(id) ON DELETE RESTRICT
+    operacao_id INTEGER,
+    FOREIGN KEY (local_id) REFERENCES locais(id) ON DELETE RESTRICT,
+    FOREIGN KEY (operacao_id) REFERENCES operacoes(id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS pedido_itens (
@@ -210,6 +241,15 @@ ON pedidos(status, timestamp_criacao);
 
 CREATE INDEX IF NOT EXISTS idx_pedidos_local
 ON pedidos(local_id);
+
+CREATE INDEX IF NOT EXISTS idx_pedidos_operacao
+ON pedidos(operacao_id);
+
+CREATE INDEX IF NOT EXISTS idx_operacoes_local_inicio
+ON operacoes(local_id, iniciada_em);
+
+CREATE INDEX IF NOT EXISTS idx_operacoes_status
+ON operacoes(status);
 
 CREATE INDEX IF NOT EXISTS idx_pagamentos_periodo
 ON pagamentos(ocorrido_em, tipo);
@@ -517,7 +557,7 @@ def migrar_v2_para_v3(db_path: str | os.PathLike[str] | None = None) -> Path:
         )
         conn.execute(
             "INSERT OR REPLACE INTO schema_version(version, applied_at) VALUES (?, ?)",
-            (SCHEMA_VERSION, datetime.now(timezone.utc).isoformat()),
+            (3, datetime.now(timezone.utc).isoformat()),
         )
         if conn.execute("PRAGMA foreign_key_check").fetchone():
             raise sqlite3.IntegrityError(
@@ -551,7 +591,7 @@ def migrar_v3_para_v4(db_path: str | os.PathLike[str] | None = None) -> Path:
         )
         conn.execute(
             "INSERT OR REPLACE INTO schema_version(version, applied_at) VALUES (?, ?)",
-            (SCHEMA_VERSION, datetime.now(timezone.utc).isoformat()),
+            (4, datetime.now(timezone.utc).isoformat()),
         )
         if conn.execute("PRAGMA foreign_key_check").fetchone():
             raise sqlite3.IntegrityError(
@@ -560,6 +600,148 @@ def migrar_v3_para_v4(db_path: str | os.PathLike[str] | None = None) -> Path:
         if conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise sqlite3.IntegrityError(
                 "Falha de integridade após habilitar ajustes neutros"
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    return backup
+
+
+def _dia_operacional(timestamp: str) -> str:
+    instante = datetime.fromisoformat(timestamp).astimezone(TIMEZONE_LOCAL)
+    return (instante - timedelta(hours=5)).date().isoformat()
+
+
+def migrar_v4_para_v5(db_path: str | os.PathLike[str] | None = None) -> Path:
+    """Registra visitas por local e preserva pedidos anteriores como operações inferidas."""
+    path = Path(db_path or caminho_banco()).resolve()
+    backup = _backup_path(path, "pre-v5")
+    _criar_backup_sqlite(path, backup)
+
+    conn = conectar(path)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS operacoes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                local_id INTEGER NOT NULL,
+                iniciada_em TEXT NOT NULL,
+                encerrada_em TEXT,
+                status TEXT NOT NULL DEFAULT 'aberta'
+                    CHECK (status IN ('aberta', 'encerrada')),
+                origem TEXT NOT NULL DEFAULT 'real'
+                    CHECK (origem IN ('real', 'inferida')),
+                FOREIGN KEY (local_id) REFERENCES locais(id) ON DELETE RESTRICT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS operacao_estoque (
+                operacao_id INTEGER NOT NULL,
+                produto_id INTEGER NOT NULL,
+                quantidade_inicial INTEGER NOT NULL DEFAULT 0
+                    CHECK (quantidade_inicial >= 0),
+                quantidade_final INTEGER CHECK (
+                    quantidade_final IS NULL OR quantidade_final >= 0
+                ),
+                ativo_no_inicio INTEGER NOT NULL DEFAULT 1
+                    CHECK (ativo_no_inicio IN (0, 1)),
+                PRIMARY KEY (operacao_id, produto_id),
+                FOREIGN KEY (operacao_id) REFERENCES operacoes(id) ON DELETE CASCADE,
+                FOREIGN KEY (produto_id) REFERENCES produtos(id) ON DELETE RESTRICT
+            )
+            """
+        )
+        tabelas = _tabelas(conn)
+        pedidos = []
+        if "pedidos" in tabelas:
+            _adicionar_coluna_se_ausente(
+                conn,
+                "pedidos",
+                "operacao_id",
+                "INTEGER REFERENCES operacoes(id) ON DELETE RESTRICT",
+            )
+            pedidos = conn.execute(
+                """
+                SELECT id, local_id, timestamp_criacao, timestamp_pagamento,
+                       timestamp_finalizacao, timestamp_cancelamento
+                FROM pedidos
+                WHERE operacao_id IS NULL
+                ORDER BY timestamp_criacao, id
+                """
+            ).fetchall()
+        agrupados: dict[tuple[int, str], list[sqlite3.Row]] = {}
+        for pedido in pedidos:
+            chave = (
+                int(pedido["local_id"]),
+                _dia_operacional(pedido["timestamp_criacao"]),
+            )
+            agrupados.setdefault(chave, []).append(pedido)
+
+        for (local_id, _), grupo in agrupados.items():
+            inicio = min(row["timestamp_criacao"] for row in grupo)
+            timestamps_fim = [
+                timestamp
+                for row in grupo
+                for timestamp in (
+                    row["timestamp_cancelamento"],
+                    row["timestamp_finalizacao"],
+                    row["timestamp_pagamento"],
+                    row["timestamp_criacao"],
+                )
+                if timestamp
+            ]
+            fim = max(timestamps_fim)
+            operacao = conn.execute(
+                """
+                INSERT INTO operacoes(
+                    local_id, iniciada_em, encerrada_em, status, origem
+                ) VALUES (?, ?, ?, 'encerrada', 'inferida')
+                """,
+                (local_id, inicio, fim),
+            )
+            ids = [int(row["id"]) for row in grupo]
+            placeholders = ",".join("?" for _ in ids)
+            conn.execute(
+                f"UPDATE pedidos SET operacao_id = ? WHERE id IN ({placeholders})",
+                (int(operacao.lastrowid), *ids),
+            )
+
+        if "pedidos" in tabelas:
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_pedidos_operacao
+                ON pedidos(operacao_id)
+                """
+            )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_operacoes_local_inicio
+            ON operacoes(local_id, iniciada_em)
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_operacoes_status
+            ON operacoes(status)
+            """
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO schema_version(version, applied_at) VALUES (?, ?)",
+            (5, datetime.now(timezone.utc).isoformat()),
+        )
+        if conn.execute("PRAGMA foreign_key_check").fetchone():
+            raise sqlite3.IntegrityError(
+                "A migração de operações criou referências inválidas"
+            )
+        if conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+            raise sqlite3.IntegrityError(
+                "Falha de integridade após habilitar operações por local"
             )
         conn.commit()
     except Exception:
@@ -670,7 +852,7 @@ def migrar_banco_legado(db_path: str | os.PathLike[str] | None = None) -> Path:
     backup = _backup_path(path, "legacy-v1")
     _criar_backup_sqlite(path, backup)
 
-    temporario = path.with_suffix(path.suffix + ".v3.tmp")
+    temporario = path.with_suffix(path.suffix + ".migracao.tmp")
     if temporario.exists():
         temporario.unlink()
     novo = conectar(temporario)
@@ -742,20 +924,24 @@ def inicializar_banco(db_path: str | os.PathLike[str] | None = None) -> None:
             path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(embutido, path)
     if path.exists():
-        conn = sqlite3.connect(path)
-        conn.row_factory = sqlite3.Row
-        try:
-            versao = _versao_atual(conn)
-        finally:
-            conn.close()
-        if versao == 2:
-            migrar_v2_para_v3(path)
-            return
-        if versao == 3:
-            migrar_v3_para_v4(path)
-            return
-        if versao != SCHEMA_VERSION:
-            migrar_banco_legado(path)
+        while True:
+            conn = sqlite3.connect(path)
+            conn.row_factory = sqlite3.Row
+            try:
+                versao = _versao_atual(conn)
+            finally:
+                conn.close()
+            if versao == 2:
+                migrar_v2_para_v3(path)
+                continue
+            if versao == 3:
+                migrar_v3_para_v4(path)
+                continue
+            if versao == 4:
+                migrar_v4_para_v5(path)
+                continue
+            if versao != SCHEMA_VERSION:
+                migrar_banco_legado(path)
             return
     conn = conectar(path)
     try:

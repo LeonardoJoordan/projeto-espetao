@@ -93,6 +93,14 @@ class APITestCase(unittest.TestCase):
         )
         self.assertTrue(fechamento.json["resumoExecutivo"]["insights"])
         self.assertEqual(len(fechamento.json["desempenhoPorHora"]), 24)
+        locais = self.client.get(
+            f"/api/insights/locais?local_ids={self.local_id}&amostra=historico"
+        )
+        self.assertEqual(locais.status_code, 200)
+        self.assertEqual(locais.json["locais"][0]["visitas"], 1)
+        self.assertEqual(
+            locais.json["locais"][0]["produtos"][0]["mediaPorVisita"], 1
+        )
 
     def test_produto_pode_ocultar_e_reaparecer_quando_esgotado(self):
         resposta = self.client.post(
@@ -160,6 +168,11 @@ class APITestCase(unittest.TestCase):
         self.assertIn('id="modal-estoque"', pagina)
         self.assertIn('class="btn-estoque icon-btn is-info"', pagina)
         self.assertIn('id="btn-zerar-estoques"', pagina)
+
+        relatorio = self.client.get("/fechamento").get_data(as_text=True)
+        self.assertIn('data-section="locations"', relatorio)
+        self.assertIn('id="location-products-table"', relatorio)
+        self.assertIn('id="chart-location-hours"', relatorio)
 
         criacao = self.client.post(
             "/api/produtos",

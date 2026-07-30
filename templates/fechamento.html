@@ -45,7 +45,7 @@
                 radial-gradient(circle at 88% 0%, rgba(245, 158, 11, .08), transparent 26rem),
                 var(--bg);
         }
-        button, input { font: inherit; }
+        button, input, select { font: inherit; }
         button { color: inherit; }
         .page-shell { width: min(1560px, 100%); margin: 0 auto; padding: 28px; }
         .surface {
@@ -289,6 +289,63 @@
         .comparison-values { color: var(--muted); font-size: 11px; line-height: 1.5; }
         .comparison-readings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 
+        .location-controls {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(180px, 1fr)) minmax(160px, .8fr) auto;
+            align-items: end;
+            gap: 12px;
+            padding: 18px;
+        }
+        .field select {
+            width: 100%;
+            height: 42px;
+            padding: 0 12px;
+            color: var(--text);
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            outline: none;
+        }
+        .field select:focus { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+        .location-sample-fields { display: flex; align-items: end; gap: 10px; }
+        #location-limit { min-width: 90px; width: 90px; }
+        .location-summary-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 14px;
+        }
+        .location-summary { padding: 18px; min-width: 0; }
+        .location-title { margin: 4px 0 2px; font-size: 19px; }
+        .location-meta { color: var(--muted); font-size: 11px; }
+        .location-kpis {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 9px;
+            margin: 16px 0;
+        }
+        .location-kpi { padding: 10px; border-radius: 10px; background: var(--surface-2); }
+        .location-kpi span { display: block; color: var(--muted); font-size: 9px; font-weight: 800; text-transform: uppercase; }
+        .location-kpi strong { display: block; margin-top: 4px; font-size: 15px; }
+        .top-products { display: grid; gap: 7px; margin-top: 12px; }
+        .top-product {
+            display: grid;
+            grid-template-columns: 25px minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 9px;
+            border-radius: 9px;
+            background: rgba(255,255,255,.025);
+            font-size: 11px;
+        }
+        .top-product .position { color: var(--brand); font-weight: 850; }
+        .top-product strong { font-size: 12px; }
+        .location-table-tools { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; }
+        .location-table-tools .field { min-width: 160px; }
+        .availability-note { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; line-height: 1.35; }
+        .location-metric { min-width: 190px; }
+        .location-metric strong { font-size: 14px; }
+        .location-metric.empty-metric { color: #60738b; }
+
         .pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; color: var(--muted); font-size: 12px; }
         .pagination .btn { min-height: 36px; }
         .loading-overlay {
@@ -325,6 +382,8 @@
         @media (max-width: 1180px) {
             .kpi-grid { grid-template-columns: repeat(3, 1fr); }
             .comparison-grid { grid-template-columns: repeat(2, 1fr); }
+            .location-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .location-summary-grid { grid-template-columns: 1fr; }
         }
         @media (max-width: 900px) {
             .page-shell { padding: 16px; }
@@ -332,6 +391,7 @@
             .result-panel { border-right: 0; border-bottom: 1px solid var(--border); }
             .grid-2, .grid-equal { grid-template-columns: 1fr; }
             .comparison-readings { grid-template-columns: 1fr; }
+            .location-controls { grid-template-columns: 1fr; }
         }
         @media (max-width: 640px) {
             .page-shell { padding: 10px; }
@@ -388,6 +448,7 @@
             <button class="tab-btn active" data-section="overview"><i class="fas fa-gauge-high"></i> Visão geral</button>
             <button class="tab-btn" data-section="products"><i class="fas fa-boxes-stacked"></i> Produtos e estoque</button>
             <button class="tab-btn" data-section="sales"><i class="fas fa-clock"></i> Comportamento das vendas</button>
+            <button class="tab-btn" data-section="locations"><i class="fas fa-location-dot"></i> Desempenho por local</button>
             <button class="tab-btn" data-section="orders"><i class="fas fa-receipt"></i> Pagamentos e estornos</button>
             <button class="tab-btn" data-section="compare"><i class="fas fa-arrow-trend-up"></i> Comparar períodos</button>
         </nav>
@@ -523,6 +584,95 @@
                 </article>
             </section>
 
+            <section id="section-locations" class="section" hidden>
+                <div class="location-controls surface">
+                    <div class="field">
+                        <label for="location-one">Local principal</label>
+                        <select id="location-one"></select>
+                    </div>
+                    <div class="field">
+                        <label for="location-two">Comparar com</label>
+                        <select id="location-two"><option value="">Nenhum</option></select>
+                    </div>
+                    <div class="field">
+                        <label for="location-three">Terceiro local</label>
+                        <select id="location-three"><option value="">Nenhum</option></select>
+                    </div>
+                    <div class="location-sample-fields">
+                        <div class="field" style="flex:1;">
+                            <label for="location-sample">Base da análise</label>
+                            <select id="location-sample">
+                                <option value="historico">Todo o histórico</option>
+                                <option value="ultimas">Últimas visitas</option>
+                                <option value="periodo">Período</option>
+                            </select>
+                        </div>
+                        <div id="location-limit-field" class="field" hidden>
+                            <label for="location-limit">Visitas</label>
+                            <input id="location-limit" type="number" min="1" max="100" value="6">
+                        </div>
+                        <div id="location-period-field" class="field" hidden>
+                            <label for="location-period">Período operacional</label>
+                            <input id="location-period" type="text" placeholder="Selecione o período">
+                        </div>
+                    </div>
+                    <button id="btn-location-analyze" class="btn btn-primary"><i class="fas fa-chart-column"></i>Analisar</button>
+                </div>
+
+                <div id="location-empty" class="surface empty">
+                    <div><i class="fas fa-location-dot"></i>Selecione um local para conhecer seu padrão de vendas.</div>
+                </div>
+                <div id="location-content" class="section" hidden>
+                    <div id="location-summaries" class="location-summary-grid"></div>
+
+                    <article class="card surface">
+                        <div class="section-heading">
+                            <div>
+                                <div class="eyebrow">Ritmo médio por visita</div>
+                                <h2>Horários de maior movimento</h2>
+                            </div>
+                            <div class="field">
+                                <label for="location-hour-metric">Métrica</label>
+                                <select id="location-hour-metric">
+                                    <option value="pedidosMedios">Pedidos</option>
+                                    <option value="faturamentoMedio">Faturamento</option>
+                                    <option value="unidadesMedias">Unidades</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="chart-wrap"><canvas id="chart-location-hours"></canvas></div>
+                    </article>
+
+                    <article class="card surface">
+                        <div class="section-heading">
+                            <div>
+                                <div class="eyebrow">Padrão de consumo</div>
+                                <h2>Comparação produto a produto</h2>
+                            </div>
+                            <div class="location-table-tools">
+                                <div class="field">
+                                    <label for="location-product-order">Visualização</label>
+                                    <select id="location-product-order">
+                                        <option value="mais">Mais vendidos</option>
+                                        <option value="menos">Menor saída</option>
+                                        <option value="todos">Todos os produtos</option>
+                                    </select>
+                                </div>
+                                <div class="field">
+                                    <label for="location-product-search">Buscar produto</label>
+                                    <input id="location-product-search" type="search" placeholder="Nome ou categoria">
+                                </div>
+                                <button id="btn-location-products-toggle" class="btn">Mostrar todos</button>
+                            </div>
+                        </div>
+                        <p class="muted" style="margin:-8px 0 16px;font-size:11px;">
+                            As médias consideram somente visitas em que o produto esteve disponível. Produto não levado não é tratado como baixa venda.
+                        </p>
+                        <div id="location-products-table" class="table-wrap"></div>
+                    </article>
+                </div>
+            </section>
+
             <section id="section-orders" class="section" hidden>
                 <article class="card surface">
                     <div class="section-heading">
@@ -567,11 +717,15 @@
     document.addEventListener('DOMContentLoaded', () => {
         const API_REPORT = "{{ url_for('api_fechamento_dia_v2') }}";
         const API_COMPARE = "{{ url_for('api_insights_comparativos_v2') }}";
+        const API_LOCATIONS = "{{ url_for('api_insights_locais') }}";
+        const API_LOCATION_LIST = "{{ url_for('api_obter_locais') }}";
         const API_PRINT = "{{ url_for('api_imprimir_relatorio_fechamento') }}";
         const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
         const number = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 });
         const charts = {};
         let currentData = null;
+        let locationData = null;
+        let locationProductsExpanded = false;
         let currentSection = 'overview';
 
         flatpickr.localize(flatpickr.l10ns.pt);
@@ -585,6 +739,7 @@
         });
         const periodA = flatpickr('#periodo-a', { mode: 'range', dateFormat: 'Y-m-d', locale: 'pt' });
         const periodB = flatpickr('#periodo-b', { mode: 'range', dateFormat: 'Y-m-d', locale: 'pt' });
+        const locationPeriod = flatpickr('#location-period', { mode: 'range', dateFormat: 'Y-m-d', locale: 'pt' });
 
         const money = value => currency.format(Number(value || 0));
         const percent = value => `${number.format(Number(value || 0))}%`;
@@ -619,6 +774,7 @@
             document.getElementById('loading-overlay').hidden = !active;
             document.getElementById('btn-analisar').disabled = active;
             document.getElementById('btn-comparar').disabled = active;
+            document.getElementById('btn-location-analyze').disabled = active;
         }
 
         function updateChart(name, canvasId, config) {
@@ -868,6 +1024,241 @@
             renderCategoryTable(data, 'category-detail');
         }
 
+        async function loadLocationOptions() {
+            try {
+                const response = await fetch(API_LOCATION_LIST);
+                if (!response.ok) throw new Error(`Erro ${response.status}`);
+                const locations = await response.json();
+                const selects = [
+                    document.getElementById('location-one'),
+                    document.getElementById('location-two'),
+                    document.getElementById('location-three')
+                ];
+                selects.forEach((select, index) => {
+                    const current = select.value;
+                    select.innerHTML = `${index ? '<option value="">Nenhum</option>' : ''}${
+                        locations.map(item => `<option value="${item.id}">${escapeHtml(item.nome)}</option>`).join('')
+                    }`;
+                    if ([...select.options].some(option => option.value === current)) select.value = current;
+                });
+                if (!locations.length) {
+                    document.getElementById('location-empty').innerHTML =
+                        '<div><i class="fas fa-location-dot"></i>Cadastre um local de trabalho para iniciar esta análise.</div>';
+                    document.getElementById('btn-location-analyze').disabled = true;
+                }
+            } catch (error) {
+                console.error(error);
+                document.getElementById('location-empty').innerHTML =
+                    '<div><i class="fas fa-triangle-exclamation"></i>Não foi possível carregar os locais cadastrados.</div>';
+            }
+        }
+
+        function syncLocationSampleFields() {
+            const mode = document.getElementById('location-sample').value;
+            document.getElementById('location-limit-field').hidden = mode !== 'ultimas';
+            document.getElementById('location-period-field').hidden = mode !== 'periodo';
+        }
+
+        async function loadLocationAnalysis() {
+            const selected = [
+                document.getElementById('location-one').value,
+                document.getElementById('location-two').value,
+                document.getElementById('location-three').value
+            ].filter(Boolean);
+            if (!selected.length) {
+                alert('Selecione ao menos um local.');
+                return;
+            }
+            if (new Set(selected).size !== selected.length) {
+                alert('Selecione locais diferentes para a comparação.');
+                return;
+            }
+            const mode = document.getElementById('location-sample').value;
+            const url = new URL(API_LOCATIONS, window.location.origin);
+            url.searchParams.set('local_ids', selected.join(','));
+            url.searchParams.set('amostra', mode);
+            if (mode === 'ultimas') {
+                url.searchParams.set('limite', document.getElementById('location-limit').value || 1);
+            } else if (mode === 'periodo') {
+                if (!locationPeriod.selectedDates.length) {
+                    alert('Selecione o período da análise.');
+                    return;
+                }
+                const [start, end] = operationalRange(locationPeriod.selectedDates);
+                url.searchParams.set('inicio', start);
+                url.searchParams.set('fim', end);
+            }
+            setLoading(true);
+            try {
+                const response = await fetch(url);
+                const payload = await response.json();
+                if (!response.ok) throw new Error(payload.erro || `Erro ${response.status}`);
+                locationData = payload;
+                locationProductsExpanded = false;
+                renderLocations();
+            } catch (error) {
+                console.error(error);
+                alert(error.message || 'Não foi possível analisar os locais.');
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        function renderLocationSummaries() {
+            const target = document.getElementById('location-summaries');
+            target.innerHTML = locationData.locais.map(local => {
+                const k = local.kpis;
+                const inferred = Number(local.operacoesInferidas || 0);
+                const top = (local.produtos || []).slice(0, 5);
+                return `<article class="location-summary surface">
+                    <div class="eyebrow">Perfil do ponto</div>
+                    <h3 class="location-title">${escapeHtml(local.nome)}</h3>
+                    <div class="location-meta">
+                        ${number.format(local.visitas)} visita(s) analisada(s)
+                        ${inferred ? ` · ${number.format(inferred)} reconstruída(s) do histórico` : ''}
+                    </div>
+                    <div class="location-kpis">
+                        <div class="location-kpi"><span>Faturamento/visita</span><strong>${money(k.faturamentoMedio)}</strong></div>
+                        <div class="location-kpi"><span>Ticket médio</span><strong>${money(k.ticketMedio)}</strong></div>
+                        <div class="location-kpi"><span>Pedidos/visita</span><strong>${number.format(k.pedidosPorVisita)}</strong></div>
+                        <div class="location-kpi"><span>Unidades/visita</span><strong>${number.format(k.unidadesPorVisita)}</strong></div>
+                        <div class="location-kpi"><span>Contribuição/visita</span><strong>${money(k.resultadoMedio)}</strong></div>
+                        <div class="location-kpi"><span>Horário de pico</span><strong>${escapeHtml(local.pico?.label || 'Sem dados')}</strong></div>
+                    </div>
+                    <div class="kpi-label">5 itens com maior média</div>
+                    <div class="top-products">${
+                        top.length
+                            ? top.map((item, index) => `<div class="top-product">
+                                <span class="position">${index + 1}º</span>
+                                <span>${escapeHtml(item.nome)}</span>
+                                <strong>${number.format(item.mediaPorVisita)}/visita</strong>
+                            </div>`).join('')
+                            : '<span class="muted" style="font-size:11px;">Sem produtos vendidos com disponibilidade conhecida.</span>'
+                    }</div>
+                </article>`;
+            }).join('');
+        }
+
+        function renderLocationHours() {
+            const metric = document.getElementById('location-hour-metric').value;
+            const labels = locationData.locais[0]?.horas?.map(item => item.label) || [];
+            const names = {
+                pedidosMedios: 'Pedidos médios',
+                faturamentoMedio: 'Faturamento médio',
+                unidadesMedias: 'Unidades médias'
+            };
+            const colors = ['#f59e0b', '#34d399', '#60a5fa'];
+            updateChart('locationHours', 'chart-location-hours', {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: locationData.locais.map((local, index) => ({
+                        label: local.nome,
+                        data: local.horas.map(item => item[metric]),
+                        borderColor: colors[index],
+                        backgroundColor: colors[index],
+                        tension: .28,
+                        pointRadius: 2,
+                        pointHoverRadius: 5
+                    }))
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { labels: { color: '#91a4bc' } },
+                        tooltip: metric === 'faturamentoMedio' ? tooltipMoney : {}
+                    },
+                    scales: chartScales
+                }
+            });
+        }
+
+        function locationProductRows() {
+            const rows = new Map();
+            locationData.locais.forEach(local => {
+                (local.produtos || []).forEach(product => {
+                    if (!rows.has(product.produtoId)) {
+                        rows.set(product.produtoId, {
+                            id: product.produtoId,
+                            nome: product.nome,
+                            categoria: product.categoria,
+                            locais: {}
+                        });
+                    }
+                    rows.get(product.produtoId).locais[local.id] = product;
+                });
+            });
+            const search = document.getElementById('location-product-search').value.trim().toLocaleLowerCase('pt-BR');
+            const mode = document.getElementById('location-product-order').value;
+            const result = [...rows.values()].filter(row =>
+                !search || `${row.nome} ${row.categoria}`.toLocaleLowerCase('pt-BR').includes(search)
+            );
+            const score = row => {
+                const values = Object.values(row.locais).map(item => Number(item.mediaPorVisita || 0));
+                return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+            };
+            result.sort((a, b) => {
+                if (mode === 'menos') return score(a) - score(b) || a.nome.localeCompare(b.nome);
+                if (mode === 'todos') return a.nome.localeCompare(b.nome);
+                return score(b) - score(a) || a.nome.localeCompare(b.nome);
+            });
+            return result;
+        }
+
+        function renderLocationProducts() {
+            const target = document.getElementById('location-products-table');
+            const mode = document.getElementById('location-product-order').value;
+            const searchActive = Boolean(document.getElementById('location-product-search').value.trim());
+            const allRows = locationProductRows();
+            const collapsed = !locationProductsExpanded && !searchActive && mode !== 'todos';
+            const rows = collapsed ? allRows.slice(0, 5) : allRows;
+            const toggle = document.getElementById('btn-location-products-toggle');
+            toggle.hidden = mode === 'todos' || searchActive || allRows.length <= 5;
+            toggle.textContent = locationProductsExpanded ? 'Mostrar resumo' : `Mostrar todos (${allRows.length})`;
+            if (!rows.length) {
+                target.innerHTML = empty('Nenhum produto disponível foi identificado na amostra.');
+                return;
+            }
+            target.innerHTML = `<table>
+                <thead><tr>
+                    <th>Produto</th>
+                    ${locationData.locais.map(local => `<th>${escapeHtml(local.nome)}</th>`).join('')}
+                </tr></thead>
+                <tbody>${rows.map(row => `<tr>
+                    <td class="product-name">${escapeHtml(row.nome)}<span class="product-sub">${escapeHtml(row.categoria)}</span></td>
+                    ${locationData.locais.map(local => {
+                        const item = row.locais[local.id];
+                        if (!item) {
+                            return '<td class="location-metric empty-metric">Não disponível na amostra</td>';
+                        }
+                        const levada = item.mediaLevada == null ? 'sem fotografia histórica' : `levado ${number.format(item.mediaLevada)}`;
+                        const restante = item.mediaRestante == null ? '' : ` · retorno ${number.format(item.mediaRestante)}`;
+                        return `<td class="location-metric">
+                            <strong>${number.format(item.mediaPorVisita)} por visita</strong>
+                            <span class="availability-note">
+                                ${number.format(item.totalVendido)} vendido(s) · disponível em
+                                ${number.format(item.visitasDisponivel)}/${number.format(item.visitasSelecionadas)} visita(s)<br>
+                                ${levada}${restante} · ${number.format(item.esgotamentos)} esgotamento(s)<br>
+                                faixa de venda: ${number.format(item.menorVenda)}–${number.format(item.maiorVenda)}
+                            </span>
+                        </td>`;
+                    }).join('')}
+                </tr>`).join('')}</tbody>
+            </table>`;
+        }
+
+        function renderLocations() {
+            const hasLocations = Boolean(locationData?.locais?.length);
+            document.getElementById('location-empty').hidden = hasLocations;
+            document.getElementById('location-content').hidden = !hasLocations;
+            if (!hasLocations) return;
+            renderLocationSummaries();
+            renderLocationHours();
+            renderLocationProducts();
+        }
+
         function renderOrders(data) {
             const history = data.historicoPedidos || { items: [] };
             const target = document.getElementById('order-history');
@@ -902,6 +1293,10 @@
         }
 
         function renderActiveSection() {
+            if (currentSection === 'locations') {
+                if (locationData) renderLocations();
+                return;
+            }
             if (!currentData) return;
             if (currentSection === 'overview') {
                 renderKPIs(currentData);
@@ -921,7 +1316,7 @@
             currentSection = section;
             document.querySelectorAll('.tab-btn').forEach(button => button.classList.toggle('active', button.dataset.section === section));
             document.querySelectorAll('main > .section').forEach(element => { element.hidden = element.id !== `section-${section}`; });
-            document.getElementById('date-tools').hidden = section === 'compare';
+            document.getElementById('date-tools').hidden = ['compare', 'locations'].includes(section);
             document.getElementById('compare-tools').hidden = section !== 'compare';
             requestAnimationFrame(renderActiveSection);
         }
@@ -1072,6 +1467,22 @@
         document.querySelectorAll('.tab-btn').forEach(button => button.addEventListener('click', () => activateSection(button.dataset.section)));
         document.getElementById('btn-analisar').addEventListener('click', () => loadReport(1));
         document.getElementById('btn-comparar').addEventListener('click', comparePeriods);
+        document.getElementById('btn-location-analyze').addEventListener('click', loadLocationAnalysis);
+        document.getElementById('location-sample').addEventListener('change', syncLocationSampleFields);
+        document.getElementById('location-hour-metric').addEventListener('change', () => {
+            if (locationData) renderLocationHours();
+        });
+        document.getElementById('location-product-order').addEventListener('change', () => {
+            locationProductsExpanded = false;
+            if (locationData) renderLocationProducts();
+        });
+        document.getElementById('location-product-search').addEventListener('input', () => {
+            if (locationData) renderLocationProducts();
+        });
+        document.getElementById('btn-location-products-toggle').addEventListener('click', () => {
+            locationProductsExpanded = !locationProductsExpanded;
+            renderLocationProducts();
+        });
         document.getElementById('btn-imprimir').addEventListener('click', printReport);
         document.getElementById('order-history').addEventListener('click', event => {
             const button = event.target.closest('.order-detail');
@@ -1086,6 +1497,8 @@
         });
 
         syncPrintState();
+        syncLocationSampleFields();
+        loadLocationOptions();
         loadReport();
     });
     </script>

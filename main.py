@@ -83,13 +83,14 @@ class LogHandler(QObject):
 
 # --- Classe para rodar o Flask em uma thread separada ---
 class ServidorProcess(multiprocessing.Process):
-    def __init__(self, host, port, log_queue, local_id): # Adicionamos local_id
+    def __init__(self, host, port, log_queue, local_id, operacao_id):
         super().__init__()
         self.daemon = True
         self.host = host
         self.port = port
         self.log_queue = log_queue
-        self.local_id = local_id # Armazenamos o local_id
+        self.local_id = local_id
+        self.operacao_id = operacao_id
 
     def run(self):
         sys.stdout = LogWriter(self.log_queue)
@@ -99,7 +100,7 @@ class ServidorProcess(multiprocessing.Process):
             from app import definir_local_sessao
 
             # Define o local ANTES de iniciar o servidor
-            definir_local_sessao(self.local_id)
+            definir_local_sessao(self.local_id, self.operacao_id)
 
             print("Iniciando servidor Flask em um novo processo...")
             socketio.run(app, host=self.host, port=self.port, debug=False, allow_unsafe_werkzeug=True)
@@ -442,6 +443,7 @@ class PainelControle(QWidget):
         super().__init__()
         self.servidor_rodando = False
         self.servidor_process = None # CORREÇÃO: Atributo correto inicializado
+        self.operacao_id = None
         self.ip_servidor = self.detectar_ip()
         self.porta = 5001
         self.keepalive_stop_event = None # << ADICIONAR ESTA LINHA
@@ -597,9 +599,16 @@ class PainelControle(QWidget):
 
         try:
             url = f'http://{self.ip_servidor}:{self.porta}/api/definir_local_sessao'
-            payload = {'local_id': local_id_selecionado}
+            payload = {
+                'local_id': local_id_selecionado,
+                'operacao_id': self.operacao_id,
+            }
             response = requests.post(url, json=payload, timeout=2)
             if response.status_code == 200:
+                resposta = response.json()
+                self.operacao_id = resposta.get(
+                    'operacao_id', self.operacao_id
+                )
                 print(f"Servidor configurado para o local: {self.combo_locais.currentText()}")
                 return True
             else:
@@ -654,8 +663,18 @@ class PainelControle(QWidget):
             return
 
         try:
-            # Passa o local_id diretamente para o novo processo
-            self.servidor_process = ServidorProcess(self.ip_servidor, self.porta, self.log_queue, local_id_selecionado)
+            self.operacao_id = gerenciador_db.iniciar_operacao(
+                local_id_selecionado
+            )
+            if self.operacao_id is None:
+                raise RuntimeError("Não foi possível registrar a operação do local.")
+            self.servidor_process = ServidorProcess(
+                self.ip_servidor,
+                self.porta,
+                self.log_queue,
+                local_id_selecionado,
+                self.operacao_id,
+            )
             self.servidor_process.start()
             self.servidor_rodando = True
 
@@ -669,6 +688,9 @@ class PainelControle(QWidget):
 
             self.atualizar_status_ui()
         except Exception as e:
+            if self.operacao_id is not None:
+                gerenciador_db.encerrar_operacao(self.operacao_id)
+                self.operacao_id = None
             QMessageBox.critical(self, "Erro Fatal", f"Não foi possível iniciar o processo do servidor: {e}")
 
     def setup_sessao(self):
@@ -692,6 +714,10 @@ class PainelControle(QWidget):
         if self.servidor_process and self.servidor_process.is_alive():
             self.servidor_process.terminate()
             self.servidor_process.join()
+        if self.operacao_id is not None:
+            if not gerenciador_db.encerrar_operacao(self.operacao_id):
+                print("AVISO: não foi possível encerrar a operação atual.")
+            self.operacao_id = None
         
         self.servidor_rodando = False
         self.servidor_process = None
@@ -711,6 +737,9 @@ class PainelControle(QWidget):
         except requests.exceptions.RequestException:
             # Se falhar, assume que o servidor caiu
             print("Erro: O servidor não está respondendo.")
+            if self.operacao_id is not None:
+                gerenciador_db.encerrar_operacao(self.operacao_id)
+                self.operacao_id = None
             self.servidor_rodando = False
             self.atualizar_status_ui()
 

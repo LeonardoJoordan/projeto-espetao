@@ -7,7 +7,6 @@ import math
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import date, datetime, time, timedelta, timezone
-from statistics import median
 from zoneinfo import ZoneInfo
 
 import database
@@ -43,9 +42,10 @@ def periodo_operacional(data_str: str) -> tuple[str, str]:
 def _eventos_pagamento(conn, inicio, fim, local_id):
     query = """
         SELECT pg.*, o.nome_cliente, o.senha_diaria, o.local_id,
-               o.valor_total_centavos
+               o.operacao_id, o.valor_total_centavos, l.nome AS local_nome
         FROM pagamentos pg
         JOIN pedidos o ON o.id = pg.pedido_id
+        JOIN locais l ON l.id = o.local_id
         WHERE pg.ocorrido_em >= ? AND pg.ocorrido_em < ?
     """
     params = [inicio, fim]
@@ -53,6 +53,21 @@ def _eventos_pagamento(conn, inicio, fim, local_id):
         query += " AND o.local_id = ?"
         params.append(int(local_id))
     query += " ORDER BY pg.ocorrido_em, pg.id"
+    return conn.execute(query, params).fetchall()
+
+
+def _visitas_periodo(conn, inicio, fim, local_id):
+    query = """
+        SELECT o.*, l.nome AS local_nome
+        FROM operacoes o
+        JOIN locais l ON l.id = o.local_id
+        WHERE o.iniciada_em >= ? AND o.iniciada_em < ?
+    """
+    params = [inicio, fim]
+    if local_id not in ("todos", None):
+        query += " AND o.local_id = ?"
+        params.append(int(local_id))
+    query += " ORDER BY o.iniciada_em, o.id"
     return conn.execute(query, params).fetchall()
 
 
@@ -86,48 +101,21 @@ def _percentual(parte, total):
     return round((parte / total) * 100, 2) if total else 0
 
 
-def _classificar_produtos(itens, margem_referencia):
-    """Cria uma matriz simples de contribuição x margem para orientar decisões."""
-    candidatos = [item for item in itens if item["receita"] > 0]
-    if not candidatos:
-        return []
-
-    mediana_receita = median(item["receita"] for item in candidatos)
-    mediana_margem = median(item["margemPercentual"] for item in candidatos)
-    referencia_margem = mediana_margem if len(candidatos) > 1 else margem_referencia
-
-    orientacoes = {
-        "estrela": (
-            "Estrela",
-            "Proteja a disponibilidade e mantenha o padrão: combina contribuição e margem.",
-        ),
-        "volume": (
-            "Alto volume",
-            "Vende bem, mas entrega margem menor. Revise custo, porção ou preço.",
-        ),
-        "oportunidade": (
-            "Oportunidade",
-            "Boa margem com menor participação. Teste mais destaque e oferta combinada.",
-        ),
-        "revisar": (
-            "Revisar",
-            "Baixa contribuição e margem. Reavalie preço, custo ou permanência no cardápio.",
-        ),
-    }
-    for item in candidatos:
-        alta_receita = item["receita"] >= mediana_receita
-        alta_margem = item["margemPercentual"] >= referencia_margem
-        if alta_receita and alta_margem:
-            chave = "estrela"
-        elif alta_receita:
-            chave = "volume"
-        elif alta_margem:
-            chave = "oportunidade"
-        else:
-            chave = "revisar"
-        item["classificacao"] = chave
-        item["classificacaoLabel"], item["recomendacao"] = orientacoes[chave]
-    return sorted(candidatos, key=lambda item: (item["lucro"], item["receita"]), reverse=True)
+def _estrelas_frequencia(percentual):
+    """Converte somente a frequência de saída em uma escala de zero a cinco."""
+    if percentual is None:
+        return None
+    if percentual >= 80:
+        return 5
+    if percentual >= 60:
+        return 4
+    if percentual >= 40:
+        return 3
+    if percentual >= 20:
+        return 2
+    if percentual > 0:
+        return 1
+    return 0
 
 
 def _montar_insights(
@@ -167,7 +155,7 @@ def _montar_insights(
                     f"De cada R$ 100 vendidos, R$ {kpis['margemOperacionalPct']:.2f} "
                     "permaneceram após CMV, taxas e perdas."
                 ),
-                "acao": "Revise primeiro os itens classificados como “Alto volume” ou “Revisar”.",
+                "acao": "Compare margem, lucro bruto e participação dos produtos antes de ajustar preços.",
             }
         )
     else:
@@ -179,12 +167,15 @@ def _montar_insights(
                     f"A operação reteve {kpis['margemOperacionalPct']:.1f}% "
                     "do faturamento líquido no período."
                 ),
-                "acao": "Preserve os produtos estrela e monitore a disponibilidade deles.",
+                "acao": "Preserve a disponibilidade dos itens que sustentam o resultado.",
             }
         )
 
-    if produtos:
-        campeao = produtos[0]
+    produtos_com_contribuicao = [
+        produto for produto in produtos if produto["receita"] > 0
+    ]
+    if produtos_com_contribuicao:
+        campeao = produtos_com_contribuicao[0]
         insights.append(
             {
                 "nivel": "positivo",
@@ -193,7 +184,7 @@ def _montar_insights(
                     f"Gerou R$ {campeao['lucro']:.2f} de lucro bruto, "
                     f"com margem de {campeao['margemPercentual']:.1f}%."
                 ),
-                "acao": campeao["recomendacao"],
+                "acao": "Acompanhe sua frequência de venda e preserve a disponibilidade sem excesso de carga.",
             }
         )
 
@@ -270,6 +261,22 @@ def _calcular_fechamento(inicio, fim, local_id="todos"):
         itens_agregados = {}
         historico = []
         cache_itens = {}
+        visitas_por_local = defaultdict(set)
+        nomes_locais = {}
+        visitas_periodo = _visitas_periodo(conn, inicio, fim, local_id)
+        frequencias_produtos = defaultdict(
+            lambda: {"visitas_disponivel": 0, "visitas_com_venda": 0}
+        )
+        for visita in visitas_periodo:
+            visita_local_id = int(visita["local_id"])
+            visitas_por_local[visita_local_id].add(int(visita["id"]))
+            nomes_locais[visita_local_id] = visita["local_nome"]
+            dados_visita = _analisar_operacao_local(conn, visita)
+            for produto_id, produto in dados_visita["produtos"].items():
+                frequencia = frequencias_produtos[int(produto_id)]
+                frequencia["visitas_disponivel"] += 1
+                if int(produto["vendidas"]) > 0:
+                    frequencia["visitas_com_venda"] += 1
 
         inicio_local = datetime.fromisoformat(inicio).astimezone(TZ_LOCAL)
         duracao = datetime.fromisoformat(fim) - datetime.fromisoformat(inicio)
@@ -294,6 +301,8 @@ def _calcular_fechamento(inicio, fim, local_id="todos"):
             pagamentos_por_metodo[evento["metodo"]] += sinal * evento["valor_centavos"]
 
             pedido_id = evento["pedido_id"]
+            local_evento_id = int(evento["local_id"])
+            nomes_locais[local_evento_id] = evento["local_nome"]
             if pedido_id not in cache_itens:
                 cache_itens[pedido_id] = _itens_pedido(conn, pedido_id)
             itens = cache_itens[pedido_id]
@@ -378,8 +387,21 @@ def _calcular_fechamento(inicio, fim, local_id="todos"):
         duracao_dias = max(duracao.total_seconds() / 86400, 1)
 
         produtos = conn.execute(
-            "SELECT id, nome, ativo FROM produtos ORDER BY nome"
+            """
+            SELECT p.id, p.nome, p.ativo,
+                   COALESCE(c.nome, 'Sem categoria') AS categoria
+            FROM produtos p
+            LEFT JOIN categorias c ON c.id = p.categoria_id
+            ORDER BY p.nome
+            """
         ).fetchall()
+        catalogo_produtos = {
+            int(produto["id"]): {
+                "nome": produto["nome"],
+                "categoria": produto["categoria"],
+            }
+            for produto in produtos
+        }
         estoque = []
         for produto in produtos:
             anterior = int(
@@ -473,18 +495,87 @@ def _calcular_fechamento(inicio, fim, local_id="todos"):
         if dados["quantidade"] or dados["receita_centavos"]
     ]
     itens_formatados.sort(key=lambda item: item["quantidade"], reverse=True)
-    analise_produtos = _classificar_produtos(itens_formatados, margem_bruta_pct)
+    analise_produtos_por_id = {
+        int(item["produtoId"]): dict(item)
+        for item in itens_formatados
+        if item["receita"] > 0
+    }
+    for produto_id, frequencia in frequencias_produtos.items():
+        if frequencia["visitas_disponivel"] <= 0:
+            continue
+        if produto_id not in analise_produtos_por_id:
+            produto = catalogo_produtos.get(produto_id)
+            if not produto:
+                continue
+            analise_produtos_por_id[produto_id] = {
+                "produtoId": produto_id,
+                "nome": produto["nome"],
+                "categoria": produto["categoria"],
+                "quantidade": 0,
+                "receita": 0,
+                "custo": 0,
+                "lucro": 0,
+                "margemPercentual": 0,
+                "participacaoReceita": 0,
+                "precoMedio": 0,
+            }
+
+    analise_produtos = []
+    for produto_id, item in analise_produtos_por_id.items():
+        frequencia = frequencias_produtos.get(produto_id)
+        visitas_disponivel = (
+            int(frequencia["visitas_disponivel"]) if frequencia else 0
+        )
+        visitas_com_venda = (
+            int(frequencia["visitas_com_venda"]) if frequencia else 0
+        )
+        frequencia_pct = (
+            round(visitas_com_venda / visitas_disponivel * 100, 2)
+            if visitas_disponivel > 0
+            else None
+        )
+        item.update(
+            {
+                "frequenciaPct": frequencia_pct,
+                "frequenciaEstrelas": _estrelas_frequencia(frequencia_pct),
+                "visitasDisponivel": visitas_disponivel,
+                "visitasComVenda": visitas_com_venda,
+            }
+        )
+        analise_produtos.append(item)
+    analise_produtos.sort(
+        key=lambda item: (-item["lucro"], -item["receita"], item["nome"])
+    )
 
     por_categoria = {}
     for item in itens_formatados:
         categoria = por_categoria.setdefault(
             item["categoria"],
-            {"nome": item["categoria"], "quantidade": 0, "receita": 0, "custo": 0, "lucro": 0},
+            {
+                "nome": item["categoria"],
+                "quantidade": 0,
+                "receita": 0,
+                "custo": 0,
+                "lucro": 0,
+                "itens": [],
+            },
         )
         categoria["quantidade"] += item["quantidade"]
         categoria["receita"] += item["receita"]
         categoria["custo"] += item["custo"]
         categoria["lucro"] += item["lucro"]
+        if item["quantidade"] >= 1:
+            categoria["itens"].append(
+                {
+                    "produtoId": item["produtoId"],
+                    "nome": item["nome"],
+                    "quantidade": item["quantidade"],
+                    "receita": item["receita"],
+                    "lucro": item["lucro"],
+                    "margemPercentual": item["margemPercentual"],
+                    "participacaoReceita": item["participacaoReceita"],
+                }
+            )
     categorias = []
     for categoria in por_categoria.values():
         categoria["receita"] = round(categoria["receita"], 2)
@@ -495,6 +586,13 @@ def _calcular_fechamento(inicio, fim, local_id="todos"):
         )
         categoria["participacaoReceita"] = _percentual(
             categoria["receita"], _reais(faturamento_liquido)
+        )
+        categoria["itens"].sort(
+            key=lambda item: (
+                -item["quantidade"],
+                -item["receita"],
+                item["nome"],
+            )
         )
         categorias.append(categoria)
     categorias.sort(key=lambda item: item["receita"], reverse=True)
@@ -640,6 +738,19 @@ def _calcular_fechamento(inicio, fim, local_id="todos"):
         },
         "periodo": {"inicio": inicio, "fim": fim},
         "estoqueGlobal": True,
+        "contextoAmostra": {
+            "visitas": sum(len(ids) for ids in visitas_por_local.values()),
+            "locais": len(visitas_por_local),
+            "visitasPorLocal": [
+                {
+                    "localId": local_id,
+                    "nome": nomes_locais.get(local_id, f"Local {local_id}"),
+                    "visitas": len(visitas_por_local[local_id]),
+                }
+                for local_id in sorted(visitas_por_local)
+            ],
+            "tipoValores": "totais",
+        },
     }
 
 
@@ -738,8 +849,18 @@ def insights_comparativos_v2(
     return {
         "kpis": kpis,
         "leituras": leituras,
-        "periodoA": {"kpis": a, "produtoDestaque": dados_a["analiseProdutos"][:1]},
-        "periodoB": {"kpis": b, "produtoDestaque": dados_b["analiseProdutos"][:1]},
+        "periodoA": {
+            "kpis": a,
+            "produtoDestaque": [
+                item for item in dados_a["analiseProdutos"] if item["receita"] > 0
+            ][:1],
+        },
+        "periodoB": {
+            "kpis": b,
+            "produtoDestaque": [
+                item for item in dados_b["analiseProdutos"] if item["receita"] > 0
+            ][:1],
+        },
     }
 
 

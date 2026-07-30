@@ -488,6 +488,38 @@ class PDVTestCase(unittest.TestCase):
         self.assertEqual(sum(fechamento["vendasPorPeriodo"]["data"]), 20.0)
         self.assertEqual(sum(fechamento["vendasPorPagamento"]["data"]), 20.0)
 
+    def test_pagamento_confirmado_substitui_escolha_inicial_e_define_taxa(self):
+        self.assertTrue(
+            db.salvar_configuracoes(
+                {"taxa_credito": 10, "taxa_debito": 5, "taxa_pix": 0}
+            )
+        )
+        pedido = self.novo_pedido(2, "dinheiro")
+        self.assertTrue(
+            db.confirmar_pagamento_pedido(
+                pedido["id"], "cartao_credito"
+            )
+        )
+        salvo = db.obter_pedido_por_id(pedido["id"])
+        self.assertEqual(salvo["metodo_pagamento"], "cartao_credito")
+        with closing(database.conectar()) as conn:
+            pagamento = conn.execute(
+                """
+                SELECT metodo, taxa_centavos
+                FROM pagamentos WHERE pedido_id = ?
+                """,
+                (pedido["id"],),
+            ).fetchone()
+            self.assertEqual(pagamento["metodo"], "cartao_credito")
+            self.assertEqual(pagamento["taxa_centavos"], 200)
+
+        inicio, fim = self.periodo_do_pagamento(pedido["id"])
+        fechamento = analytics.fechamento_operacional_v2(
+            inicio, fim, "todos", 1, 50
+        )
+        self.assertEqual(fechamento["kpis"]["taxasPagamento"], 2)
+        self.assertEqual(fechamento["kpis"]["resultadoOperacional"], 10)
+
     def test_estorno_integral_e_idempotente(self):
         pedido = self.novo_pedido(2)
         self.assertTrue(db.confirmar_pagamento_pedido(pedido["id"]))
@@ -724,6 +756,42 @@ class PDVTestCase(unittest.TestCase):
             produto_indisponivel_id,
             {item["produtoId"] for item in loja["produtos"]},
         )
+        visita_sem_venda = db.iniciar_operacao(self.local_id)
+        self.assertTrue(db.encerrar_operacao(visita_sem_venda))
+        inicio, fim = self.periodo_do_pagamento(pedido_um["id"])
+        fechamento = analytics.fechamento_operacional_v2(
+            inicio, fim, "todos", 1, 50
+        )
+        self.assertEqual(fechamento["contextoAmostra"]["visitas"], 4)
+        categoria = next(
+            item
+            for item in fechamento["categorias"]
+            if item["nome"] == "Espetinhos"
+        )
+        self.assertEqual(categoria["itens"][0]["nome"], "Espeto Teste")
+        self.assertEqual(categoria["itens"][0]["quantidade"], 7)
+
+    def test_operacao_do_mesmo_dia_pode_ser_retomada_sem_nova_visita(self):
+        operacao_id = db.iniciar_operacao(self.local_id)
+        self.assertIsNotNone(operacao_id)
+        self.assertTrue(db.encerrar_operacao(operacao_id))
+
+        candidata = db.obter_operacao_retomavel(self.local_id)
+        self.assertEqual(candidata["id"], operacao_id)
+        self.assertEqual(candidata["status"], "encerrada")
+        self.assertEqual(
+            db.retomar_operacao(operacao_id, self.local_id),
+            operacao_id,
+        )
+        aberta = db.obter_operacao_retomavel(self.local_id)
+        self.assertEqual(aberta["status"], "aberta")
+
+        nova_id = db.iniciar_operacao(self.local_id)
+        self.assertNotEqual(nova_id, operacao_id)
+        operacoes = db.obter_operacoes([self.local_id])
+        self.assertEqual(len(operacoes), 2)
+        anterior = next(item for item in operacoes if item["id"] == operacao_id)
+        self.assertEqual(anterior["status"], "encerrada")
 
     def test_produto_com_historico_e_apenas_arquivado(self):
         pedido = self.novo_pedido(1)
@@ -745,7 +813,7 @@ class PDVTestCase(unittest.TestCase):
             )
             self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
 
-    def test_painel_decisao_classifica_mix_e_cobertura(self):
+    def test_painel_decisao_calcula_mix_e_cobertura(self):
         for nome, preco, custo in (
             ("Produto Volume", 20.00, 15.00),
             ("Produto Oportunidade", 15.00, 3.00),
@@ -785,14 +853,11 @@ class PDVTestCase(unittest.TestCase):
         fechamento = analytics.fechamento_operacional_v2(
             inicio, fim, "todos", 1, 50
         )
-        classificacoes = {
-            item["nome"]: item["classificacao"]
-            for item in fechamento["analiseProdutos"]
-        }
-        self.assertEqual(classificacoes["Espeto Teste"], "estrela")
-        self.assertEqual(classificacoes["Produto Volume"], "volume")
-        self.assertEqual(classificacoes["Produto Oportunidade"], "oportunidade")
-        self.assertEqual(classificacoes["Produto Revisar"], "revisar")
+        self.assertTrue(fechamento["analiseProdutos"])
+        self.assertNotIn("classificacao", fechamento["analiseProdutos"][0])
+        self.assertIsNone(
+            fechamento["analiseProdutos"][0]["frequenciaEstrelas"]
+        )
         self.assertEqual(fechamento["kpis"]["unidadesVendidas"], 8)
         self.assertEqual(fechamento["kpis"]["faturamentoLiquido"], 103.0)
         self.assertEqual(fechamento["kpis"]["resultadoOperacional"], 47.0)
@@ -825,6 +890,121 @@ class PDVTestCase(unittest.TestCase):
         self.assertEqual(
             sum(fechamento_semana["vendasPorPeriodo"]["data"]), 103.0
         )
+
+    def test_frequencia_avalia_apenas_visitas_com_disponibilidade(self):
+        nomes = (
+            "Frequência 60",
+            "Frequência 40",
+            "Frequência 20",
+            "Frequência 10",
+            "Frequência zero",
+        )
+        for nome in nomes:
+            self.assertTrue(
+                db.adicionar_novo_produto(
+                    nome, None, None, 10.00, 10, 4.00, 1, 0
+                )
+            )
+        produtos = {
+            produto["nome"]: produto["id"]
+            for produto in db.obter_todos_produtos_para_gestao()
+        }
+        limites = {
+            "Espeto Teste": 8,
+            "Frequência 60": 6,
+            "Frequência 40": 4,
+            "Frequência 20": 2,
+            "Frequência 10": 1,
+            "Frequência zero": 0,
+        }
+        pedidos = []
+        for indice_visita in range(10):
+            operacao_id = db.iniciar_operacao(self.local_id)
+            itens = [
+                {
+                    "id": produtos[nome],
+                    "quantidade": 1,
+                }
+                for nome, limite in limites.items()
+                if indice_visita < limite
+            ]
+            if itens:
+                pedido = db.salvar_novo_pedido(
+                    {
+                        "nome_cliente": f"Frequência {indice_visita}",
+                        "itens": itens,
+                        "metodo_pagamento": "pix",
+                        "modalidade": "local",
+                        "carrinho_id": f"frequencia-{indice_visita}",
+                    },
+                    self.local_id,
+                    operacao_id,
+                )
+                self.assertTrue(db.confirmar_pagamento_pedido(pedido["id"]))
+                pedidos.append(pedido)
+            self.assertTrue(db.encerrar_operacao(operacao_id))
+
+        inicio, fim = self.periodo_do_pagamento(pedidos[0]["id"])
+        fechamento = analytics.fechamento_operacional_v2(
+            inicio, fim, "todos", 1, 50
+        )
+        frequencias = {
+            item["nome"]: item
+            for item in fechamento["analiseProdutos"]
+        }
+        esperadas = {
+            "Espeto Teste": (5, 8, 80),
+            "Frequência 60": (4, 6, 60),
+            "Frequência 40": (3, 4, 40),
+            "Frequência 20": (2, 2, 20),
+            "Frequência 10": (1, 1, 10),
+            "Frequência zero": (0, 0, 0),
+        }
+        for nome, (estrelas, visitas_com_venda, percentual) in esperadas.items():
+            item = frequencias[nome]
+            self.assertEqual(item["frequenciaEstrelas"], estrelas)
+            self.assertEqual(item["visitasDisponivel"], 10)
+            self.assertEqual(item["visitasComVenda"], visitas_com_venda)
+            self.assertEqual(item["frequenciaPct"], percentual)
+
+    def test_frequencia_inclui_venda_comprovada_de_operacao_inferida(self):
+        operacao_id = db.iniciar_operacao(self.local_id)
+        pedido = db.salvar_novo_pedido(
+            {
+                "nome_cliente": "Histórico inferido",
+                "itens": [{"id": self.produto_id, "quantidade": 1}],
+                "metodo_pagamento": "pix",
+                "modalidade": "local",
+                "carrinho_id": "frequencia-inferida",
+            },
+            self.local_id,
+            operacao_id,
+        )
+        self.assertTrue(db.confirmar_pagamento_pedido(pedido["id"]))
+        self.assertTrue(db.encerrar_operacao(operacao_id))
+        with closing(database.conectar()) as conn:
+            conn.execute(
+                "UPDATE operacoes SET origem = 'inferida' WHERE id = ?",
+                (operacao_id,),
+            )
+            conn.execute(
+                "DELETE FROM operacao_estoque WHERE operacao_id = ?",
+                (operacao_id,),
+            )
+
+        inicio, fim = self.periodo_do_pagamento(pedido["id"])
+        fechamento = analytics.fechamento_operacional_v2(
+            inicio, fim, "todos", 1, 50
+        )
+        item = next(
+            produto
+            for produto in fechamento["analiseProdutos"]
+            if produto["produtoId"] == self.produto_id
+        )
+        self.assertEqual(item["frequenciaEstrelas"], 5)
+        self.assertEqual(item["frequenciaPct"], 100)
+        self.assertEqual(item["visitasComVenda"], 1)
+        self.assertEqual(item["visitasDisponivel"], 1)
 
     def test_dia_operacional_e_intervalo_final_exclusivo(self):
         inicio, fim = analytics.periodo_operacional("2026-07-29")

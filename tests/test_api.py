@@ -40,6 +40,10 @@ class APITestCase(unittest.TestCase):
         )
         self.assertEqual(resposta.status_code, 200)
         self.assertEqual(resposta.json["kpis"]["faturamentoLiquido"], 0)
+        cozinha = self.client.get("/cozinha").get_data(as_text=True)
+        self.assertIn('id="modal-pagamento"', cozinha)
+        self.assertIn('data-method="cartao_credito"', cozinha)
+        self.assertIn('id="pagamento-modal-confirmar"', cozinha)
 
     def test_fluxo_http_usa_valores_do_servidor(self):
         resposta = self.client.post(
@@ -89,7 +93,10 @@ class APITestCase(unittest.TestCase):
         self.assertEqual(fechamento.json["kpis"]["cmv"], 5.00)
         self.assertEqual(fechamento.json["kpis"]["unidadesVendidas"], 1)
         self.assertEqual(
-            fechamento.json["analiseProdutos"][0]["classificacao"], "estrela"
+            fechamento.json["analiseProdutos"][0]["frequenciaEstrelas"], 5
+        )
+        self.assertNotIn(
+            "classificacao", fechamento.json["analiseProdutos"][0]
         )
         self.assertTrue(fechamento.json["resumoExecutivo"]["insights"])
         self.assertEqual(len(fechamento.json["desempenhoPorHora"]), 24)
@@ -173,6 +180,10 @@ class APITestCase(unittest.TestCase):
         self.assertIn('data-section="locations"', relatorio)
         self.assertIn('id="location-products-table"', relatorio)
         self.assertIn('id="chart-location-hours"', relatorio)
+        self.assertIn('class="category-toggle"', relatorio)
+        self.assertIn('id="sales-context"', relatorio)
+        self.assertIn('class="frequency-heading"', relatorio)
+        self.assertIn('frequencyCell(item)', relatorio)
 
         criacao = self.client.post(
             "/api/produtos",

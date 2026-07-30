@@ -56,8 +56,15 @@ Uma falha em qualquer etapa desfaz toda a operação.
 ### Pagamento
 
 1. Apenas um pedido aguardando pagamento pode ser confirmado.
-2. A configuração da taxa é copiada para o evento imutável.
-3. O relatório passa a reconhecer a receita na data desse evento.
+2. A forma escolhida no pedido orienta o atendimento, mas a confirmação feita
+   pelo operador é a fonte financeira definitiva.
+3. Se o meio realmente usado for diferente, `pedidos.metodo_pagamento` é
+   substituído pelo confirmado; não é mantido um segundo histórico de intenção.
+4. As taxas de crédito, débito e Pix são configuradas na aba **Taxas**. Dinheiro
+   permanece sempre sem taxa.
+5. A configuração vigente é copiada para o evento imutável, preservando o
+   resultado histórico mesmo depois de uma alteração percentual.
+6. O relatório passa a reconhecer a receita na data desse evento.
 
 ### Cancelamento
 
@@ -99,9 +106,12 @@ gerenciais.
 O painel deriva informações gerenciais sem alterar as fontes contábeis:
 
 - margem bruta e operacional, taxa de estorno, participação de CMV e taxas;
-- matriz relativa de contribuição e margem dos produtos;
+- frequência de saída por produto, medida somente nas visitas em que havia
+  disponibilidade confiável;
 - concentração da receita nos três principais produtos;
 - desempenho por categoria, horário e forma de pagamento;
+- detalhamento expansível das categorias, com produtos de venda líquida
+  positiva ordenados da maior para a menor quantidade;
 - ritmo de saída e cobertura estimada do estoque global;
 - alertas determinísticos com o próximo ponto a investigar.
 - análise individual e comparação de até três locais;
@@ -113,8 +123,28 @@ estoque global é fotografado imediatamente antes da primeira venda, permitindo
 que a carga seja preparada depois que o servidor já estiver acessível. Se não
 houver venda, a fotografia inicial é feita no encerramento. Ao finalizar a
 operação, o saldo de retorno também é fotografado.
+
+Uma operação aberta do mesmo local e dia operacional é retomada
+automaticamente após uma interrupção. Se a visita mais recente já foi
+encerrada, o painel oferece **Continuar visita anterior** como opção principal
+e **Iniciar nova visita** como alternativa. Trocar de local ou iniciar um novo
+dia operacional sempre cria outra visita.
+
+Os quadros de comportamento identificam explicitamente valores totais e
+médias. A quantidade da amostra considera todas as visitas registradas no
+período, inclusive visitas sem venda, pois elas também são relevantes para as
+médias. O detalhamento mostra ainda a contagem por local.
+
 Produtos que não estiveram disponíveis não participam da média nem da lista de
 menor saída. Produtos disponíveis com venda zero participam normalmente.
+
+Na análise de produtos, a frequência usa uma escala de zero a cinco estrelas:
+80% ou mais recebe cinco; 60% a 79,99% recebe quatro; 40% a 59,99% recebe três;
+20% a 39,99% recebe duas; acima de zero e abaixo de 20% recebe uma; nenhuma
+venda recebe zero. Em operações antigas sem fotografia de estoque, uma venda
+comprovada conta como disponibilidade e saída somente para o produto vendido.
+Os demais produtos não entram no denominador dessa operação, pois sua
+disponibilidade não pode ser reconstruída com segurança.
 
 O usuário pode analisar todo o histórico, as últimas N visitas ou um período.
 O painel mostra fatos observados — médias, faixas, sobras e esgotamentos — sem

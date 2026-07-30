@@ -250,6 +250,22 @@
         }
         td { padding: 12px; border-bottom: 1px solid rgba(37, 58, 85, .66); vertical-align: middle; }
         tbody tr:hover { background: rgba(255,255,255,.025); }
+        .category-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 9px;
+            padding: 0;
+            color: inherit;
+            border: 0;
+            cursor: pointer;
+            background: transparent;
+            font-weight: 800;
+        }
+        .category-toggle i { width: 12px; color: var(--brand); transition: transform .16s ease; }
+        .category-toggle[aria-expanded="true"] i { transform: rotate(90deg); }
+        .category-product-row { background: rgba(96,165,250,.035); }
+        .category-product-row td:first-child { padding-left: 34px; }
+        .category-product-row .product-name { font-weight: 650; }
         .number { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
         .center { text-align: center; }
         .product-name { min-width: 155px; font-weight: 750; }
@@ -266,11 +282,42 @@
             font-weight: 800;
             white-space: nowrap;
         }
-        .badge.estrela, .badge.saudavel { color: var(--positive); background: var(--positive-soft); }
-        .badge.volume, .badge.atencao { color: var(--brand); background: var(--brand-soft); }
-        .badge.revisar, .badge.ruptura, .badge.critico { color: var(--danger); background: var(--danger-soft); }
+        .badge.saudavel { color: var(--positive); background: var(--positive-soft); }
+        .badge.atencao { color: var(--brand); background: var(--brand-soft); }
+        .badge.ruptura, .badge.critico { color: var(--danger); background: var(--danger-soft); }
         .badge.arquivado, .badge.sem_giro { color: var(--muted); background: rgba(145,164,188,.1); }
-        .recommendation { min-width: 260px; max-width: 360px; color: var(--muted); line-height: 1.4; }
+        .frequency-heading {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            cursor: help;
+        }
+        .frequency-help {
+            display: inline-grid;
+            width: 15px;
+            height: 15px;
+            place-items: center;
+            border: 1px solid var(--muted);
+            border-radius: 50%;
+            font-size: 9px;
+            line-height: 1;
+        }
+        .frequency-stars {
+            display: inline-flex;
+            min-width: 76px;
+            cursor: help;
+            font-size: 17px;
+            letter-spacing: 1px;
+            line-height: 1;
+            white-space: nowrap;
+        }
+        .frequency-filled { color: var(--brand); }
+        .frequency-empty { color: #41546c; }
+        .frequency-unavailable {
+            color: var(--muted);
+            cursor: help;
+            font-weight: 800;
+        }
         .empty {
             display: grid;
             min-height: 190px;
@@ -326,6 +373,7 @@
         .location-kpi { padding: 10px; border-radius: 10px; background: var(--surface-2); }
         .location-kpi span { display: block; color: var(--muted); font-size: 9px; font-weight: 800; text-transform: uppercase; }
         .location-kpi strong { display: block; margin-top: 4px; font-size: 15px; }
+        .location-kpi small { display: block; margin-top: 3px; color: var(--muted); font-size: 9px; }
         .top-products { display: grid; gap: 7px; margin-top: 12px; }
         .top-product {
             display: grid;
@@ -536,7 +584,7 @@
                     <article class="card surface">
                         <div class="section-heading">
                             <div><div class="eyebrow">Decisão de cardápio</div><h2>Contribuição e margem por produto</h2></div>
-                            <p>Classificação relativa ao mix vendido</p>
+                            <p>Frequência baseada em visitas com disponibilidade</p>
                         </div>
                         <div id="product-analysis" class="table-wrap"></div>
                     </article>
@@ -559,6 +607,7 @@
             </section>
 
             <section id="section-sales" class="section" hidden>
+                <div id="sales-context" class="surface" style="padding:14px 18px;"></div>
                 <div class="grid-equal">
                     <article class="card surface">
                         <div class="section-heading">
@@ -746,6 +795,17 @@
         const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
             '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
         })[char]);
+        const frequencyCell = item => {
+            if (item.frequenciaEstrelas == null) {
+                const tooltip = 'Sem visitas com disponibilidade confiável no período.';
+                return `<span class="frequency-unavailable" title="${tooltip}" aria-label="${tooltip}" tabindex="0">—</span>`;
+            }
+            const score = Math.min(Math.max(Number(item.frequenciaEstrelas), 0), 5);
+            const filled = '★'.repeat(score);
+            const emptyStars = '☆'.repeat(5 - score);
+            const tooltip = `Frequência de venda: vendeu em ${number.format(item.visitasComVenda)} de ${number.format(item.visitasDisponivel)} visitas com disponibilidade — ${percent(item.frequenciaPct)}.`;
+            return `<span class="frequency-stars" title="${escapeHtml(tooltip)}" aria-label="${escapeHtml(tooltip)}" tabindex="0"><span class="frequency-filled">${filled}</span><span class="frequency-empty">${emptyStars}</span></span>`;
+        };
         const empty = message => `<div class="empty"><div><i class="fas fa-chart-simple"></i>${escapeHtml(message)}</div></div>`;
         const paymentNames = { pix: 'Pix', cartao_credito: 'Crédito', cartao_debito: 'Débito', dinheiro: 'Dinheiro' };
         const statusNames = {
@@ -766,7 +826,8 @@
                 categorias: raw.categorias || [],
                 desempenhoPorHora: raw.desempenhoPorHora || [],
                 composicaoResultado: raw.composicaoResultado || [],
-                resumoExecutivo: raw.resumoExecutivo || { insights: [], alertasEstoque: 0 }
+                resumoExecutivo: raw.resumoExecutivo || { insights: [], alertasEstoque: 0 },
+                contextoAmostra: raw.contextoAmostra || { visitas: 0, locais: 0, visitasPorLocal: [], tipoValores: 'totais' }
             };
         }
 
@@ -884,25 +945,26 @@
             const products = data.analiseProdutos || [];
             const productTarget = document.getElementById('product-analysis');
             if (!products.length) {
-                productTarget.innerHTML = empty('Nenhum produto vendido no período.');
+                productTarget.innerHTML = empty('Nenhum produto disponível ou vendido no período.');
             } else {
                 productTarget.innerHTML = `
                     <table>
                         <thead><tr>
-                            <th>Produto</th><th>Leitura</th><th class="number">Qtd.</th>
+                            <th>Produto</th>
+                            <th><span class="frequency-heading" title="Percentual de visitas em que o produto vendeu, considerando somente as visitas em que estava disponível." tabindex="0">Frequência <span class="frequency-help">?</span></span></th>
+                            <th class="number">Qtd.</th>
                             <th class="number">Receita</th><th class="number">Lucro bruto</th>
-                            <th class="number">Margem</th><th class="number">Part.</th><th>Direção sugerida</th>
+                            <th class="number">Margem</th><th class="number">Part.</th>
                         </tr></thead>
                         <tbody>${products.map(item => `
                             <tr>
                                 <td class="product-name">${escapeHtml(item.nome)}<span class="product-sub">${escapeHtml(item.categoria)}</span></td>
-                                <td><span class="badge ${escapeHtml(item.classificacao)}">${escapeHtml(item.classificacaoLabel)}</span></td>
+                                <td>${frequencyCell(item)}</td>
                                 <td class="number">${number.format(item.quantidade)}</td>
                                 <td class="number">${money(item.receita)}</td>
                                 <td class="number">${money(item.lucro)}</td>
                                 <td class="number">${percent(item.margemPercentual)}</td>
                                 <td class="number">${percent(item.participacaoReceita)}</td>
-                                <td class="recommendation">${escapeHtml(item.recomendacao)}</td>
                             </tr>`).join('')}
                         </tbody>
                     </table>`;
@@ -962,6 +1024,38 @@
                 target.innerHTML = compact ? '' : empty('Nenhuma categoria vendida no período.');
                 return;
             }
+            if (!compact) {
+                target.innerHTML = `<table>
+                    <thead><tr><th>Categoria / produto</th><th class="number">Qtd.</th><th class="number">Receita</th><th class="number">Lucro</th><th class="number">Margem</th><th class="number">Part.</th></tr></thead>
+                    <tbody>${categories.map((category, index) => {
+                        const items = (category.itens || []).filter(item => Number(item.quantidade) >= 1);
+                        const categoryId = `category-products-${targetId}-${index}`;
+                        return `<tr>
+                            <td class="product-name">
+                                <button type="button" class="category-toggle" data-target="${categoryId}" aria-expanded="false" ${items.length ? '' : 'disabled'}>
+                                    <i class="fas fa-chevron-right"></i>
+                                    ${escapeHtml(category.nome)}
+                                    <span class="product-sub">${number.format(items.length)} produto(s) com venda</span>
+                                </button>
+                            </td>
+                            <td class="number"><strong>${number.format(category.quantidade)}</strong></td>
+                            <td class="number"><strong>${money(category.receita)}</strong></td>
+                            <td class="number"><strong>${money(category.lucro)}</strong></td>
+                            <td class="number">${percent(category.margemPercentual)}</td>
+                            <td class="number">${percent(category.participacaoReceita)}</td>
+                        </tr>
+                        ${items.map(item => `<tr class="category-product-row ${categoryId}" hidden>
+                            <td class="product-name">${escapeHtml(item.nome)}</td>
+                            <td class="number">${number.format(item.quantidade)}</td>
+                            <td class="number">${money(item.receita)}</td>
+                            <td class="number">${money(item.lucro)}</td>
+                            <td class="number">${percent(item.margemPercentual)}</td>
+                            <td class="number">${percent(item.participacaoReceita)}</td>
+                        </tr>`).join('')}`;
+                    }).join('')}</tbody>
+                </table>`;
+                return;
+            }
             target.innerHTML = `<table>
                 <thead><tr><th>Categoria</th>${compact ? '' : '<th class="number">Qtd.</th><th class="number">Receita</th><th class="number">Lucro</th>'}<th class="number">Margem</th><th class="number">Part.</th></tr></thead>
                 <tbody>${categories.map(item => `<tr>
@@ -975,6 +1069,24 @@
 
         function renderSales(data) {
             const hours = data.desempenhoPorHora || [];
+            const contexto = data.contextoAmostra || {};
+            const visitas = Number(contexto.visitas || 0);
+            const locais = Number(contexto.locais || 0);
+            const detalhesLocais = (contexto.visitasPorLocal || [])
+                .map(item => `${escapeHtml(item.nome)}: ${number.format(item.visitas)} visita(s)`)
+                .join(' · ');
+            document.getElementById('sales-context').innerHTML = `
+                <div class="section-heading" style="margin:0;align-items:center;">
+                    <div>
+                        <div class="eyebrow">Totais do período selecionado</div>
+                        <strong style="display:block;margin-top:5px;">
+                            ${number.format(data.kpis.pedidosPagos || 0)} pedido(s) ·
+                            ${number.format(data.kpis.unidadesVendidas || 0)} unidade(s) ·
+                            ${number.format(visitas)} visita(s) registrada(s) em ${number.format(locais)} local(is)
+                        </strong>
+                    </div>
+                    <p class="muted">${detalhesLocais || 'Nenhuma visita registrada no período'}</p>
+                </div>`;
             updateChart('hours', 'chart-hours', {
                 data: {
                     labels: hours.map(item => item.label),
@@ -1114,15 +1226,15 @@
                     <div class="eyebrow">Perfil do ponto</div>
                     <h3 class="location-title">${escapeHtml(local.nome)}</h3>
                     <div class="location-meta">
-                        ${number.format(local.visitas)} visita(s) analisada(s)
+                        <strong style="color:var(--text);">${number.format(local.visitas)} visita(s) analisada(s)</strong>
                         ${inferred ? ` · ${number.format(inferred)} reconstruída(s) do histórico` : ''}
                     </div>
                     <div class="location-kpis">
-                        <div class="location-kpi"><span>Faturamento/visita</span><strong>${money(k.faturamentoMedio)}</strong></div>
+                        <div class="location-kpi"><span>Faturamento/visita</span><strong>${money(k.faturamentoMedio)}</strong><small>${money(k.faturamentoTotal)} no total</small></div>
                         <div class="location-kpi"><span>Ticket médio</span><strong>${money(k.ticketMedio)}</strong></div>
-                        <div class="location-kpi"><span>Pedidos/visita</span><strong>${number.format(k.pedidosPorVisita)}</strong></div>
-                        <div class="location-kpi"><span>Unidades/visita</span><strong>${number.format(k.unidadesPorVisita)}</strong></div>
-                        <div class="location-kpi"><span>Contribuição/visita</span><strong>${money(k.resultadoMedio)}</strong></div>
+                        <div class="location-kpi"><span>Pedidos/visita</span><strong>${number.format(k.pedidosPorVisita)}</strong><small>${number.format(k.pedidosTotal)} no total</small></div>
+                        <div class="location-kpi"><span>Unidades/visita</span><strong>${number.format(k.unidadesPorVisita)}</strong><small>${number.format(k.unidadesTotal)} no total</small></div>
+                        <div class="location-kpi"><span>Contribuição/visita</span><strong>${money(k.resultadoMedio)}</strong><small>${money(k.resultadoTotal)} no total</small></div>
                         <div class="location-kpi"><span>Horário de pico</span><strong>${escapeHtml(local.pico?.label || 'Sem dados')}</strong></div>
                     </div>
                     <div class="kpi-label">5 itens com maior média</div>
@@ -1130,7 +1242,7 @@
                         top.length
                             ? top.map((item, index) => `<div class="top-product">
                                 <span class="position">${index + 1}º</span>
-                                <span>${escapeHtml(item.nome)}</span>
+                                <span>${escapeHtml(item.nome)}<small class="availability-note">${number.format(item.totalVendido)} no total · ${number.format(item.visitasDisponivel)} visita(s) disponível</small></span>
                                 <strong>${number.format(item.mediaPorVisita)}/visita</strong>
                             </div>`).join('')
                             : '<span class="muted" style="font-size:11px;">Sem produtos vendidos com disponibilidade conhecida.</span>'
@@ -1487,6 +1599,15 @@
         document.getElementById('order-history').addEventListener('click', event => {
             const button = event.target.closest('.order-detail');
             if (button) openOrderModal(button);
+        });
+        document.getElementById('category-detail').addEventListener('click', event => {
+            const button = event.target.closest('.category-toggle');
+            if (!button || button.disabled) return;
+            const expanded = button.getAttribute('aria-expanded') === 'true';
+            button.setAttribute('aria-expanded', String(!expanded));
+            document.querySelectorAll(`.${button.dataset.target}`).forEach(row => {
+                row.hidden = expanded;
+            });
         });
         document.getElementById('modal-close').addEventListener('click', () => { document.getElementById('order-modal').hidden = true; });
         document.getElementById('order-modal').addEventListener('click', event => {

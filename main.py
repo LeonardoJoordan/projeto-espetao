@@ -57,7 +57,8 @@ import os
 from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
                                QLabel, QTextEdit, QPushButton, QGroupBox, QGridLayout, 
                                QComboBox, QDialog, QListWidget, QLineEdit, 
-                               QListWidgetItem, QMessageBox, QTabWidget)
+                               QListWidgetItem, QMessageBox, QTabWidget,
+                               QDoubleSpinBox)
 from PySide6.QtCore import Qt, Signal, QObject, QTimer
 from PySide6.QtGui import QIcon, QPixmap, QFont
 import json
@@ -208,6 +209,7 @@ class ModalConfiguracoesGerais(QDialog):
         # Criar e adicionar as abas
         self.criar_aba_impressora()
         self.criar_aba_locais()
+        self.criar_aba_taxas()
         self.criar_aba_js_site()
 
     # --- MÉTODOS DA ABA IMPRESSORA (Movidos para cá) ---
@@ -336,6 +338,66 @@ class ModalConfiguracoesGerais(QDialog):
             self.carregar_locais()
         else:
             QMessageBox.warning(self, "Erro", "Não foi possível excluir o local.")
+
+    def criar_aba_taxas(self):
+        widget_aba = QWidget()
+        layout = QVBoxLayout(widget_aba)
+        grupo = QGroupBox("Taxas descontadas no pagamento")
+        grade = QGridLayout(grupo)
+        configuracoes = gerenciador_db.obter_configuracoes()
+
+        self.campos_taxas = {}
+        definicoes = (
+            ("taxa_credito", "Cartão de crédito"),
+            ("taxa_debito", "Cartão de débito"),
+            ("taxa_pix", "Pix"),
+        )
+        for linha, (chave, rotulo) in enumerate(definicoes):
+            campo = QDoubleSpinBox()
+            campo.setRange(0, 100)
+            campo.setDecimals(2)
+            campo.setSingleStep(0.1)
+            campo.setSuffix(" %")
+            campo.setValue(float(configuracoes.get(chave, 0)))
+            self.campos_taxas[chave] = campo
+            grade.addWidget(QLabel(f"{rotulo}:"), linha, 0)
+            grade.addWidget(campo, linha, 1)
+
+        dinheiro = QLabel("0,00 %")
+        dinheiro.setStyleSheet("color: #9ca3af;")
+        grade.addWidget(QLabel("Dinheiro:"), len(definicoes), 0)
+        grade.addWidget(dinheiro, len(definicoes), 1)
+
+        observacao = QLabel(
+            "A taxa vigente é fotografada quando o pagamento é confirmado. "
+            "Alterações futuras não modificam vendas antigas."
+        )
+        observacao.setWordWrap(True)
+        observacao.setStyleSheet("color: #9ca3af;")
+        self.label_status_taxas = QLabel("")
+        self.btn_salvar_taxas = QPushButton("Salvar taxas")
+        self.btn_salvar_taxas.clicked.connect(self.salvar_taxas)
+
+        layout.addWidget(grupo)
+        layout.addWidget(observacao)
+        layout.addWidget(self.label_status_taxas)
+        layout.addWidget(self.btn_salvar_taxas)
+        layout.addStretch()
+        self.tab_widget.addTab(widget_aba, "Taxas")
+
+    def salvar_taxas(self):
+        valores = {
+            chave: campo.value()
+            for chave, campo in self.campos_taxas.items()
+        }
+        if gerenciador_db.salvar_configuracoes(valores):
+            self.label_status_taxas.setText(
+                "<font color='#28a745'>Taxas salvas com sucesso.</font>"
+            )
+        else:
+            self.label_status_taxas.setText(
+                "<font color='#dc3545'>Não foi possível salvar as taxas.</font>"
+            )
 
     # --- MÉTODOS DA ABA JS SITE (Adicionar este bloco) ---
     def criar_aba_js_site(self):
@@ -655,6 +717,48 @@ class PainelControle(QWidget):
             self.iniciar_servidor()
         else:
             self.parar_servidor()
+
+    def selecionar_operacao_para_inicio(self, local_id):
+        """Retoma quedas automaticamente e pergunta sobre visitas já encerradas."""
+        candidata = gerenciador_db.obter_operacao_retomavel(local_id)
+        if not candidata:
+            return gerenciador_db.iniciar_operacao(local_id)
+
+        if candidata['status'] == 'aberta':
+            print("[Painel] Retomando automaticamente a visita interrompida.")
+            return gerenciador_db.retomar_operacao(candidata['id'], local_id)
+
+        dialogo = QMessageBox(self)
+        dialogo.setWindowTitle("Visita encontrada")
+        dialogo.setIcon(QMessageBox.Information)
+        dialogo.setText(
+            f"Já existe uma visita de hoje em “{candidata['local_nome']}”."
+        )
+        dialogo.setInformativeText(
+            "Você pode continuar a mesma visita ou iniciar uma nova operação "
+            "se realmente voltou ao local pela segunda vez."
+        )
+        btn_continuar = dialogo.addButton(
+            "Continuar visita anterior", QMessageBox.AcceptRole
+        )
+        btn_nova = dialogo.addButton(
+            "Iniciar nova visita", QMessageBox.ActionRole
+        )
+        btn_cancelar = dialogo.addButton(
+            "Cancelar", QMessageBox.RejectRole
+        )
+        dialogo.setDefaultButton(btn_continuar)
+        dialogo.exec()
+
+        if dialogo.clickedButton() is btn_continuar:
+            return gerenciador_db.retomar_operacao(
+                candidata['id'], local_id
+            )
+        if dialogo.clickedButton() is btn_nova:
+            return gerenciador_db.iniciar_operacao(local_id)
+        if dialogo.clickedButton() is btn_cancelar:
+            return None
+        return None
             
     def iniciar_servidor(self):
         local_id_selecionado = self.combo_locais.currentData()
@@ -663,11 +767,11 @@ class PainelControle(QWidget):
             return
 
         try:
-            self.operacao_id = gerenciador_db.iniciar_operacao(
+            self.operacao_id = self.selecionar_operacao_para_inicio(
                 local_id_selecionado
             )
             if self.operacao_id is None:
-                raise RuntimeError("Não foi possível registrar a operação do local.")
+                return
             self.servidor_process = ServidorProcess(
                 self.ip_servidor,
                 self.porta,

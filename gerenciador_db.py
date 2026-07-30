@@ -1223,7 +1223,7 @@ def salvar_novo_pedido(dados_do_pedido, local_id, operacao_id=None):
             conn.close()
 
 
-def confirmar_pagamento_pedido(id_do_pedido):
+def confirmar_pagamento_pedido(id_do_pedido, metodo_confirmado=None):
     conn = None
     try:
         conn = _conectar()
@@ -1239,12 +1239,18 @@ def confirmar_pagamento_pedido(id_do_pedido):
         if not pedido:
             conn.rollback()
             return False
+        metodo = str(
+            metodo_confirmado or pedido["metodo_pagamento"]
+        ).strip()
+        if metodo not in METODOS_PAGAMENTO:
+            conn.rollback()
+            return False
         chave_taxa = {
             "cartao_credito": "taxa_credito",
             "cartao_debito": "taxa_debito",
             "pix": "taxa_pix",
             "dinheiro": None,
-        }[pedido["metodo_pagamento"]]
+        }[metodo]
         taxa_percentual = 0.0
         if chave_taxa:
             row = cursor.execute(
@@ -1267,7 +1273,7 @@ def confirmar_pagamento_pedido(id_do_pedido):
             """,
             (
                 id_do_pedido,
-                pedido["metodo_pagamento"],
+                metodo,
                 pedido["valor_total_centavos"],
                 taxa_centavos,
                 agora,
@@ -1276,10 +1282,11 @@ def confirmar_pagamento_pedido(id_do_pedido):
         cursor.execute(
             """
             UPDATE pedidos
-            SET status = 'aguardando_producao', timestamp_pagamento = ?
+            SET status = 'aguardando_producao', timestamp_pagamento = ?,
+                metodo_pagamento = ?
             WHERE id = ?
             """,
-            (agora, id_do_pedido),
+            (agora, metodo, id_do_pedido),
         )
         conn.commit()
         return True
@@ -2034,6 +2041,99 @@ def iniciar_operacao(local_id):
             )
             operacao_id = int(operacao.lastrowid)
         return operacao_id
+    except (sqlite3.Error, ValueError, TypeError):
+        return None
+
+
+def obter_operacao_retomavel(local_id):
+    """Retorna a operação mais recente do local dentro do dia operacional."""
+    try:
+        inicio = _inicio_dia_operacional().isoformat()
+        with _conexao() as conn:
+            row = conn.execute(
+                """
+                SELECT o.*, l.nome AS local_nome
+                FROM operacoes o
+                JOIN locais l ON l.id = o.local_id
+                WHERE o.local_id = ? AND o.iniciada_em >= ?
+                  AND o.origem = 'real'
+                ORDER BY o.iniciada_em DESC, o.id DESC
+                LIMIT 1
+                """,
+                (int(local_id), inicio),
+            ).fetchone()
+            return dict(row) if row else None
+    except (sqlite3.Error, ValueError, TypeError):
+        return None
+
+
+def retomar_operacao(operacao_id, local_id):
+    """Reabre uma visita do mesmo local e dia sem alterar sua carga inicial."""
+    try:
+        inicio = _inicio_dia_operacional().isoformat()
+        with _conexao() as conn:
+            cursor = conn.cursor()
+            cursor.execute("BEGIN IMMEDIATE")
+            operacao = cursor.execute(
+                """
+                SELECT id FROM operacoes
+                WHERE id = ? AND local_id = ? AND iniciada_em >= ?
+                  AND origem = 'real'
+                """,
+                (int(operacao_id), int(local_id), inicio),
+            ).fetchone()
+            if not operacao:
+                return None
+
+            outras = cursor.execute(
+                """
+                SELECT id FROM operacoes
+                WHERE status = 'aberta' AND id != ?
+                """,
+                (int(operacao_id),),
+            ).fetchall()
+            agora = _agora()
+            for aberta in outras:
+                aberta_id = int(aberta["id"])
+                if not cursor.execute(
+                    """
+                    SELECT 1 FROM operacao_estoque
+                    WHERE operacao_id = ? LIMIT 1
+                    """,
+                    (aberta_id,),
+                ).fetchone():
+                    _fotografar_estoque_operacao(
+                        cursor, aberta_id, encerramento=False
+                    )
+                _fotografar_estoque_operacao(
+                    cursor, aberta_id, encerramento=True
+                )
+                cursor.execute(
+                    """
+                    UPDATE operacoes
+                    SET status = 'encerrada', encerrada_em = ?
+                    WHERE id = ?
+                    """,
+                    (agora, aberta_id),
+                )
+
+            cursor.execute(
+                """
+                UPDATE operacoes
+                SET status = 'aberta', encerrada_em = NULL
+                WHERE id = ?
+                """,
+                (int(operacao_id),),
+            )
+            cursor.execute(
+                """
+                UPDATE operacao_estoque
+                SET quantidade_final = NULL
+                WHERE operacao_id = ?
+                """,
+                (int(operacao_id),),
+            )
+        return int(operacao_id)
     except (sqlite3.Error, ValueError, TypeError):
         return None
 

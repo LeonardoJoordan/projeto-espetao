@@ -845,10 +845,19 @@ def rota_confirmar_pagamento(pedido_id):
     pedido = gerenciador_db.obter_pedido_por_id(pedido_id)
     if not pedido:
         return jsonify({"status": "erro", "mensagem": "Pedido não encontrado."}), 404
+    dados = request.get_json(silent=True) or {}
+    metodo_confirmado = dados.get('metodo_pagamento', pedido['metodo_pagamento'])
+    if metodo_confirmado not in gerenciador_db.METODOS_PAGAMENTO:
+        return jsonify({
+            "status": "erro",
+            "mensagem": "Selecione uma forma de pagamento válida.",
+        }), 400
 
     # Ação 1: O pagamento é sempre confirmado primeiro.
     # Isso move o pedido para o estado 'aguardando_producao'.
-    sucesso_pagamento = gerenciador_db.confirmar_pagamento_pedido(pedido_id)
+    sucesso_pagamento = gerenciador_db.confirmar_pagamento_pedido(
+        pedido_id, metodo_confirmado
+    )
 
     if not sucesso_pagamento:
         return jsonify({"status": "erro", "mensagem": "Falha ao confirmar o pagamento."}), 500
@@ -865,7 +874,10 @@ def rota_confirmar_pagamento(pedido_id):
 
     if sucesso:
         socketio.emit('novo_pedido', {'msg': mensagem_socket})
-        return jsonify({"status": "sucesso"})
+        return jsonify({
+            "status": "sucesso",
+            "metodo_pagamento": metodo_confirmado,
+        })
     else:
         return jsonify({"status": "erro", "mensagem": "Ação pós-pagamento falhou."}), 500
 

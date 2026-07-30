@@ -35,6 +35,47 @@
             border: 1px solid rgba(255, 255, 255, 0.2);
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.15);
         }
+        .payment-modal-card {
+            width: min(560px, 100%);
+            padding: 24px;
+            border: 1px solid rgba(255,255,255,.24);
+            border-radius: 20px;
+            background: #172033;
+            box-shadow: 0 25px 70px rgba(0,0,0,.42);
+        }
+        .payment-methods {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            margin: 18px 0;
+        }
+        .payment-method-option {
+            display: flex;
+            min-height: 82px;
+            align-items: center;
+            gap: 12px;
+            padding: 14px;
+            color: white;
+            text-align: left;
+            border: 2px solid rgba(255,255,255,.13);
+            border-radius: 14px;
+            background: rgba(255,255,255,.06);
+            cursor: pointer;
+        }
+        .payment-method-option i { width: 28px; font-size: 22px; text-align: center; }
+        .payment-method-option span { display: block; font-size: 15px; font-weight: 800; }
+        .payment-method-option small { display: block; margin-top: 3px; color: #aab6ca; font-size: 11px; }
+        .payment-method-option.selected {
+            color: #181004;
+            border-color: #fbbf24;
+            background: #fbbf24;
+            box-shadow: 0 0 0 4px rgba(251,191,36,.18);
+        }
+        .payment-method-option.selected small { color: #5e4309; }
+        .payment-actions { display: grid; grid-template-columns: 1fr 1.5fr; gap: 10px; }
+        @media (max-width: 560px) {
+            .payment-methods, .payment-actions { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body class="h-screen flex flex-col text-white overflow-hidden">
@@ -85,6 +126,44 @@
     <div id="modal-container" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-start md:items-center justify-center p-4 md:p-6 z-50 hidden opacity-0 overflow-y-auto">
         <div id="modal-content" class="w-full max-w-lg md:max-w-2xl transform scale-95">
 
+        </div>
+    </div>
+
+    <div id="modal-pagamento" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 hidden">
+        <div class="payment-modal-card">
+            <div class="flex justify-between items-start gap-4 border-b border-white/20 pb-4">
+                <div>
+                    <p class="text-sm text-yellow-300 font-bold uppercase tracking-wide">Confirmação financeira</p>
+                    <h2 id="pagamento-modal-titulo" class="text-2xl font-bold mt-1">Confirmar pagamento</h2>
+                    <p id="pagamento-modal-resumo" class="text-white/70 mt-1"></p>
+                </div>
+                <button id="pagamento-modal-fechar" type="button" class="text-3xl text-white/70 hover:text-white">&times;</button>
+            </div>
+            <div class="mt-4">
+                <p class="text-sm text-white/70">Forma indicada pelo cliente</p>
+                <p id="pagamento-metodo-indicado" class="text-lg font-bold text-yellow-300 mt-1"></p>
+                <p class="text-sm mt-4 font-semibold">Confirme como o pagamento foi realmente recebido:</p>
+            </div>
+            <div class="payment-methods">
+                <button type="button" class="payment-method-option" data-method="pix">
+                    <i class="fab fa-pix"></i><div><span>Pix</span><small>Pagamento confirmado via Pix</small></div>
+                </button>
+                <button type="button" class="payment-method-option" data-method="cartao_credito">
+                    <i class="fas fa-credit-card"></i><div><span>Crédito</span><small>Aplica a taxa de crédito vigente</small></div>
+                </button>
+                <button type="button" class="payment-method-option" data-method="cartao_debito">
+                    <i class="fas fa-credit-card"></i><div><span>Débito</span><small>Aplica a taxa de débito vigente</small></div>
+                </button>
+                <button type="button" class="payment-method-option" data-method="dinheiro">
+                    <i class="fas fa-money-bill-wave"></i><div><span>Dinheiro</span><small>Sem desconto de taxa</small></div>
+                </button>
+            </div>
+            <div class="payment-actions">
+                <button id="pagamento-modal-cancelar" type="button" class="bg-white/10 hover:bg-white/20 rounded-xl p-3 font-bold">Voltar</button>
+                <button id="pagamento-modal-confirmar" type="button" class="bg-green-500 hover:bg-green-600 rounded-xl p-3 font-bold">
+                    <i class="fas fa-check-circle mr-2"></i>Confirmar pagamento
+                </button>
+            </div>
         </div>
     </div>
     
@@ -201,6 +280,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const templates = document.getElementById('templates');
     const modalContainer = document.getElementById('modal-container');
     const modalContent = document.getElementById('modal-content');
+    const modalPagamento = document.getElementById('modal-pagamento');
+    const btnConfirmarPagamentoModal = document.getElementById('pagamento-modal-confirmar');
+    let pedidoPagamentoId = null;
+    let metodoPagamentoSelecionado = null;
     let firstAguardandoPagamentoId = null;
 
     // --- CONFIGURAÇÕES DE MAPEAMENTO ---
@@ -209,6 +292,12 @@ document.addEventListener('DOMContentLoaded', function() {
         'cartao_credito': 'fas fa-credit-card',
         'cartao_debito': 'fas fa-credit-card',
         'dinheiro': 'fas fa-money-bill-wave'
+    };
+    const pagamentosNome = {
+        'pix': 'Pix',
+        'cartao_credito': 'Cartão de crédito',
+        'cartao_debito': 'Cartão de débito',
+        'dinheiro': 'Dinheiro'
     };
 
     const statusMap = {
@@ -454,6 +543,80 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 300);
     }
 
+    function selecionarMetodoPagamento(metodo) {
+        metodoPagamentoSelecionado = metodo;
+        modalPagamento.querySelectorAll('.payment-method-option').forEach(option => {
+            option.classList.toggle('selected', option.dataset.method === metodo);
+        });
+    }
+
+    function abrirModalPagamento(pedidoId) {
+        const pedido = todosOsPedidos.find(item => item.id == pedidoId);
+        if (!pedido) return;
+        pedidoPagamentoId = pedido.id;
+        document.getElementById('pagamento-modal-titulo').textContent =
+            `Pedido #${pedido.senha_diaria} · ${pedido.nome_cliente}`;
+        document.getElementById('pagamento-modal-resumo').textContent =
+            `Total a receber: R$ ${Number(pedido.valor_total || 0).toFixed(2).replace('.', ',')}`;
+        document.getElementById('pagamento-metodo-indicado').textContent =
+            pagamentosNome[pedido.metodo_pagamento] || pedido.metodo_pagamento;
+        selecionarMetodoPagamento(pedido.metodo_pagamento);
+        hideModal();
+        modalPagamento.classList.remove('hidden');
+    }
+
+    function fecharModalPagamento() {
+        modalPagamento.classList.add('hidden');
+        pedidoPagamentoId = null;
+        metodoPagamentoSelecionado = null;
+        btnConfirmarPagamentoModal.disabled = false;
+        btnConfirmarPagamentoModal.innerHTML =
+            '<i class="fas fa-check-circle mr-2"></i>Confirmar pagamento';
+    }
+
+    modalPagamento.querySelectorAll('.payment-method-option').forEach(option => {
+        option.addEventListener('click', () => selecionarMetodoPagamento(option.dataset.method));
+    });
+    document.getElementById('pagamento-modal-fechar').addEventListener('click', fecharModalPagamento);
+    document.getElementById('pagamento-modal-cancelar').addEventListener('click', fecharModalPagamento);
+    modalPagamento.addEventListener('click', event => {
+        if (event.target === modalPagamento) fecharModalPagamento();
+    });
+    btnConfirmarPagamentoModal.addEventListener('click', async () => {
+        if (!pedidoPagamentoId || !metodoPagamentoSelecionado) return;
+        btnConfirmarPagamentoModal.disabled = true;
+        btnConfirmarPagamentoModal.innerHTML =
+            '<i class="fas fa-spinner fa-spin mr-2"></i>Confirmando...';
+        try {
+            const response = await fetch(`/pedido/confirmar_pagamento/${pedidoPagamentoId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ metodo_pagamento: metodoPagamentoSelecionado })
+            });
+            const resultado = await response.json();
+            if (!response.ok) {
+                throw new Error(resultado.mensagem || 'Falha ao confirmar pagamento');
+            }
+
+            fetch(`/api/pedido/${pedidoPagamentoId}/imprimir_comanda`, { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status !== 'impressao_enfileirada') {
+                        console.warn('Aviso de Impressão:', data.mensagem);
+                    }
+                })
+                .catch(err => console.error('Erro ao tentar imprimir:', err));
+
+            fecharModalPagamento();
+            carregarEAtualizarLayout();
+        } catch (error) {
+            alert(`Erro: ${error.message}. Tente novamente.`);
+            btnConfirmarPagamentoModal.disabled = false;
+            btnConfirmarPagamentoModal.innerHTML =
+                '<i class="fas fa-check-circle mr-2"></i>Confirmar pagamento';
+        }
+    });
+
     // --- GERENCIADOR DE EVENTOS PRINCIPAL ---
     document.body.addEventListener('click', async function(event) {
 
@@ -570,26 +733,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 carregarEAtualizarLayout(); 
             };
             if (btnConfirmarPagamento) {
-                processarBotao(btnConfirmarPagamento, 'Confirmando...');
-                const response = await fetch(`/pedido/confirmar_pagamento/${pedidoId}`, { method: 'POST' });
-                if (!response.ok) {
-                    throw new Error('Falha ao confirmar pagamento');
-                }
-
-                // --- NOVA LÓGICA DE IMPRESSÃO ---
-                // Dispara a impressão em "fire-and-forget" e não espera a resposta
-                fetch(`/api/pedido/${pedidoId}/imprimir_comanda`, { method: 'POST' })
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data.status !== 'impressao_enfileirada') {
-                        console.warn('Aviso de Impressão:', data.mensagem);
-                        }
-                    })
-                    .catch(err => console.error('Erro ao tentar imprimir:', err));
-                // ------------------------------------
-
-                onSucesso();
-                hideModal();
+                abrirModalPagamento(pedidoId);
+                return;
             
             } else if (btnIniciarPreparo) {
                 processarBotao(btnIniciarPreparo, 'Iniciando...');

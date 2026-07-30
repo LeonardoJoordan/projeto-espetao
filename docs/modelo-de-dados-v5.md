@@ -101,6 +101,27 @@ gerenciais.
 - Produtos, pedidos, pagamentos e custos já fotografados nas vendas não são
   alterados.
 
+## Início de um novo ciclo
+
+A função **Configurações → Manutenção de dados → Iniciar novo ciclo** remove o
+histórico operacional e financeiro para começar outro período de uso.
+
+- O servidor deve estar parado e a confirmação exige o texto
+  `ZERAR HISTÓRICO`.
+- Antes de qualquer exclusão, uma cópia SQLite consistente é criada na pasta
+  local `backups`, ao lado do banco em uso.
+- Pedidos, itens vendidos, pagamentos, estornos, visitas, fotografias
+  operacionais, reservas e movimentações de estoque são apagados juntos.
+- Produtos, categorias, imagens, tempos de preparo, acompanhamentos, taxas e
+  demais configurações são sempre preservados.
+- O usuário pode manter os locais ou removê-los.
+- Ao manter o estoque, cada camada FIFO com saldo é recriada como lote de
+  abertura, na mesma ordem e com o mesmo custo unitário.
+- Ao zerar o estoque, todos os lotes são removidos sem registrar perda ou
+  impacto financeiro no novo ciclo.
+- A exclusão ocorre em uma única transação e uma falha preserva o banco
+  original.
+
 ## Leituras para tomada de decisão
 
 O painel deriva informações gerenciais sem alterar as fontes contábeis:

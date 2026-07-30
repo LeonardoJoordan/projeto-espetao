@@ -38,6 +38,8 @@ repo-flatpak/
 *.db.*.tmp
 *.legacy-v1*.bak
 *.pre-v*.bak
+backups/
+PDV-Espetinho-antes-novo-ciclo-*.db
 
 # Configurações locais da aplicação
 config_impressora.json

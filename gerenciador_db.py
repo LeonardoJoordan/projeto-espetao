@@ -1966,6 +1966,164 @@ def salvar_configuracoes(novas_taxas):
         return False
 
 
+def obter_resumo_novo_ciclo():
+    """Resume o alcance do reset sem alterar nenhum dado."""
+    with _conexao() as conn:
+        saldo = conn.execute(
+            """
+            SELECT COALESCE(SUM(saldo), 0) AS quantidade,
+                   COALESCE(SUM(saldo * custo_unitario_centavos), 0) AS valor
+            FROM (
+                SELECT l.custo_unitario_centavos,
+                       l.quantidade_inicial + COALESCE(SUM(m.quantidade), 0) AS saldo
+                FROM estoque_lotes l
+                LEFT JOIN estoque_movimentacoes m ON m.lote_id = l.id
+                GROUP BY l.id
+                HAVING saldo > 0
+            )
+            """
+        ).fetchone()
+        return {
+            "pedidos": int(
+                conn.execute("SELECT COUNT(*) FROM pedidos").fetchone()[0]
+            ),
+            "pagamentos": int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM pagamentos WHERE tipo = 'pagamento'"
+                ).fetchone()[0]
+            ),
+            "estornos": int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM pagamentos WHERE tipo = 'estorno'"
+                ).fetchone()[0]
+            ),
+            "visitas": int(
+                conn.execute("SELECT COUNT(*) FROM operacoes").fetchone()[0]
+            ),
+            "movimentacoes_estoque": int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM estoque_movimentacoes"
+                ).fetchone()[0]
+            ),
+            "locais": int(
+                conn.execute("SELECT COUNT(*) FROM locais").fetchone()[0]
+            ),
+            "produtos": int(
+                conn.execute("SELECT COUNT(*) FROM produtos").fetchone()[0]
+            ),
+            "estoque_quantidade": int(saldo["quantidade"] or 0),
+            "estoque_valor": _para_reais(saldo["valor"]),
+        }
+
+
+def iniciar_novo_ciclo(*, manter_estoque=True, manter_locais=True):
+    """Apaga o histórico e, opcionalmente, reabre os saldos FIFO existentes."""
+    backup_path = None
+    conn = None
+    try:
+        resumo = obter_resumo_novo_ciclo()
+        backup_path = database.criar_backup_novo_ciclo()
+        conn = _conectar()
+        cursor = conn.cursor()
+        cursor.execute("BEGIN IMMEDIATE")
+
+        lotes_abertura = []
+        if manter_estoque:
+            lotes_abertura = cursor.execute(
+                """
+                SELECT l.produto_id, l.custo_unitario_centavos,
+                       l.quantidade_inicial
+                           + COALESCE(SUM(m.quantidade), 0) AS saldo
+                FROM estoque_lotes l
+                LEFT JOIN estoque_movimentacoes m ON m.lote_id = l.id
+                GROUP BY l.id
+                HAVING saldo > 0
+                ORDER BY l.recebido_em, l.id
+                """
+            ).fetchall()
+
+        cursor.execute("DELETE FROM reservas_carrinho")
+        cursor.execute(
+            "UPDATE estoque_movimentacoes SET movimento_origem_id = NULL"
+        )
+        cursor.execute("DELETE FROM estoque_movimentacoes")
+        cursor.execute("DELETE FROM pagamentos")
+        cursor.execute("DELETE FROM pedido_itens")
+        cursor.execute("DELETE FROM pedidos")
+        cursor.execute("DELETE FROM operacao_estoque")
+        cursor.execute("DELETE FROM operacoes")
+        cursor.execute("DELETE FROM estoque_lotes")
+        if not manter_locais:
+            cursor.execute("DELETE FROM locais")
+
+        sequencias = (
+            "operacoes",
+            "pedidos",
+            "pedido_itens",
+            "pagamentos",
+            "estoque_lotes",
+            "estoque_movimentacoes",
+        )
+        if not manter_locais:
+            sequencias += ("locais",)
+        placeholders = ",".join("?" for _ in sequencias)
+        cursor.execute(
+            f"DELETE FROM sqlite_sequence WHERE name IN ({placeholders})",
+            sequencias,
+        )
+
+        agora = _agora()
+        if manter_estoque:
+            cursor.executemany(
+                """
+                INSERT INTO estoque_lotes(
+                    produto_id, quantidade_inicial,
+                    custo_unitario_centavos, tipo,
+                    observacao, recebido_em
+                ) VALUES (?, ?, ?, 'saldo_inicial', ?, ?)
+                """,
+                [
+                    (
+                        int(lote["produto_id"]),
+                        int(lote["saldo"]),
+                        int(lote["custo_unitario_centavos"]),
+                        "Abertura automática do novo ciclo",
+                        agora,
+                    )
+                    for lote in lotes_abertura
+                ],
+            )
+
+        inconsistencias = cursor.execute(
+            "PRAGMA foreign_key_check"
+        ).fetchall()
+        if inconsistencias:
+            raise sqlite3.IntegrityError(
+                "O novo ciclo deixaria referências inconsistentes."
+            )
+        conn.commit()
+        return {
+            "sucesso": True,
+            "mensagem": "Novo ciclo iniciado com sucesso.",
+            "backup": str(backup_path),
+            "resumo_anterior": resumo,
+            "estoque_mantido": bool(manter_estoque),
+            "locais_mantidos": bool(manter_locais),
+            "lotes_abertura": len(lotes_abertura) if manter_estoque else 0,
+        }
+    except (OSError, sqlite3.Error, ValueError, TypeError) as exc:
+        if conn:
+            conn.rollback()
+        return {
+            "sucesso": False,
+            "mensagem": f"Não foi possível iniciar o novo ciclo: {exc}",
+            "backup": str(backup_path) if backup_path else None,
+        }
+    finally:
+        if conn:
+            conn.close()
+
+
 def adicionar_local(nome_local):
     nome = (nome_local or "").strip()
     if not nome:

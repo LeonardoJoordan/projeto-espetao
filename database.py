@@ -352,6 +352,27 @@ def _criar_backup_sqlite(path: Path, destino: Path) -> None:
         origem.close()
 
 
+def criar_backup_novo_ciclo(
+    db_path: str | os.PathLike[str] | None = None,
+) -> Path:
+    """Guarda uma cópia íntegra antes de remover o histórico operacional."""
+    path = Path(db_path or caminho_banco()).expanduser().resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"Banco não encontrado: {path}")
+    pasta = path.parent / "backups"
+    pasta.mkdir(parents=True, exist_ok=True)
+    instante = datetime.now(TIMEZONE_LOCAL).strftime("%Y%m%d-%H%M%S-%f")
+    destino = pasta / f"PDV-Espetinho-antes-novo-ciclo-{instante}.db"
+    _criar_backup_sqlite(path, destino)
+    verificacao = sqlite3.connect(destino)
+    try:
+        if verificacao.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+            raise sqlite3.DatabaseError("O backup criado não passou na integridade.")
+    finally:
+        verificacao.close()
+    return destino
+
+
 def _adicionar_coluna_se_ausente(
     conn: sqlite3.Connection,
     tabela: str,

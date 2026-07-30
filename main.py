@@ -58,7 +58,7 @@ from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
                                QLabel, QTextEdit, QPushButton, QGroupBox, QGridLayout, 
                                QComboBox, QDialog, QListWidget, QLineEdit, 
                                QListWidgetItem, QMessageBox, QTabWidget,
-                               QDoubleSpinBox)
+                               QDoubleSpinBox, QCheckBox, QInputDialog)
 from PySide6.QtCore import Qt, Signal, QObject, QTimer
 from PySide6.QtGui import QIcon, QPixmap, QFont
 import json
@@ -210,6 +210,7 @@ class ModalConfiguracoesGerais(QDialog):
         self.criar_aba_impressora()
         self.criar_aba_locais()
         self.criar_aba_taxas()
+        self.criar_aba_manutencao()
         self.criar_aba_js_site()
 
     # --- MÉTODOS DA ABA IMPRESSORA (Movidos para cá) ---
@@ -399,6 +400,189 @@ class ModalConfiguracoesGerais(QDialog):
                 "<font color='#dc3545'>Não foi possível salvar as taxas.</font>"
             )
 
+    def criar_aba_manutencao(self):
+        widget_aba = QWidget()
+        layout = QVBoxLayout(widget_aba)
+
+        grupo = QGroupBox("Iniciar novo ciclo")
+        grupo_layout = QVBoxLayout(grupo)
+        descricao = QLabel(
+            "Remove pedidos, pagamentos, estornos, visitas e movimentações "
+            "históricas. Produtos, categorias, imagens, taxas e configurações "
+            "do sistema são preservados."
+        )
+        descricao.setWordWrap(True)
+
+        self.label_resumo_novo_ciclo = QLabel()
+        self.label_resumo_novo_ciclo.setWordWrap(True)
+        self.label_resumo_novo_ciclo.setStyleSheet(
+            "background-color: #252525; border: 1px solid #444; "
+            "border-radius: 5px; padding: 10px;"
+        )
+
+        self.chk_manter_estoque = QCheckBox(
+            "Manter o estoque atual e seus custos FIFO"
+        )
+        self.chk_manter_estoque.setChecked(True)
+        self.chk_manter_estoque.setToolTip(
+            "Recria somente os lotes que ainda possuem saldo, preservando "
+            "quantidade, ordem FIFO e custo unitário."
+        )
+        self.chk_manter_locais = QCheckBox("Manter os locais cadastrados")
+        self.chk_manter_locais.setChecked(True)
+
+        self.label_aviso_novo_ciclo = QLabel(
+            "Antes da exclusão será criado automaticamente um backup completo "
+            "na pasta local de dados do PDV."
+        )
+        self.label_aviso_novo_ciclo.setWordWrap(True)
+        self.label_aviso_novo_ciclo.setStyleSheet("color: #FBBF24;")
+
+        self.btn_novo_ciclo = QPushButton("Iniciar novo ciclo")
+        self.btn_novo_ciclo.setObjectName("btn_parar")
+        self.btn_novo_ciclo.clicked.connect(self.confirmar_novo_ciclo)
+        servidor_ativo = bool(
+            self.parent()
+            and getattr(self.parent(), "servidor_rodando", False)
+        )
+        if servidor_ativo:
+            self.btn_novo_ciclo.setEnabled(False)
+            self.btn_novo_ciclo.setToolTip(
+                "Finalize o servidor para iniciar um novo ciclo."
+            )
+            self.label_aviso_novo_ciclo.setText(
+                "Finalize o servidor para liberar esta ação. As demais "
+                "configurações continuam disponíveis normalmente."
+            )
+
+        grupo_layout.addWidget(descricao)
+        grupo_layout.addWidget(self.label_resumo_novo_ciclo)
+        grupo_layout.addWidget(self.chk_manter_estoque)
+        grupo_layout.addWidget(self.chk_manter_locais)
+        grupo_layout.addWidget(self.label_aviso_novo_ciclo)
+        grupo_layout.addWidget(self.btn_novo_ciclo)
+        layout.addWidget(grupo)
+        layout.addStretch()
+        self.tab_widget.addTab(widget_aba, "Manutenção de dados")
+        self.atualizar_resumo_manutencao()
+
+    @staticmethod
+    def _formatar_reais(valor):
+        formatado = f"{float(valor or 0):,.2f}"
+        return "R$ " + formatado.replace(",", "X").replace(".", ",").replace("X", ".")
+
+    def atualizar_resumo_manutencao(self):
+        try:
+            resumo = gerenciador_db.obter_resumo_novo_ciclo()
+            self.label_resumo_novo_ciclo.setText(
+                f"<b>Histórico atual</b><br>"
+                f"{resumo['pedidos']} pedido(s) · "
+                f"{resumo['pagamentos']} pagamento(s) · "
+                f"{resumo['estornos']} estorno(s) · "
+                f"{resumo['visitas']} visita(s)<br>"
+                f"{resumo['movimentacoes_estoque']} movimentação(ões) de estoque · "
+                f"{resumo['locais']} local(is)<br>"
+                f"Saldo atual: {resumo['estoque_quantidade']} unidade(s), "
+                f"{self._formatar_reais(resumo['estoque_valor'])} a custo."
+            )
+        except Exception as exc:
+            self.label_resumo_novo_ciclo.setText(
+                f"Não foi possível carregar o resumo: {exc}"
+            )
+
+    def confirmar_novo_ciclo(self):
+        painel = self.parent()
+        if painel and getattr(painel, "servidor_rodando", False):
+            QMessageBox.warning(
+                self,
+                "Servidor em funcionamento",
+                "Finalize o servidor antes de iniciar um novo ciclo.",
+            )
+            return
+
+        resumo = gerenciador_db.obter_resumo_novo_ciclo()
+        manter_estoque = self.chk_manter_estoque.isChecked()
+        manter_locais = self.chk_manter_locais.isChecked()
+        estoque_texto = (
+            "será mantido com os custos FIFO atuais"
+            if manter_estoque
+            else "será completamente zerado"
+        )
+        locais_texto = (
+            "serão mantidos"
+            if manter_locais
+            else "serão removidos"
+        )
+        mensagem = (
+            f"Serão removidos permanentemente:\n\n"
+            f"• {resumo['pedidos']} pedido(s)\n"
+            f"• {resumo['pagamentos']} pagamento(s) e "
+            f"{resumo['estornos']} estorno(s)\n"
+            f"• {resumo['visitas']} visita(s)\n"
+            f"• {resumo['movimentacoes_estoque']} movimentação(ões) de estoque\n\n"
+            f"O estoque {estoque_texto}.\n"
+            f"Os locais cadastrados {locais_texto}.\n\n"
+            f"Um backup completo será criado antes da exclusão."
+        )
+        resposta = QMessageBox.question(
+            self,
+            "Confirmar novo ciclo",
+            mensagem,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if resposta != QMessageBox.StandardButton.Yes:
+            return
+
+        texto, confirmado = QInputDialog.getText(
+            self,
+            "Confirmação final",
+            "Digite ZERAR HISTÓRICO para continuar:",
+        )
+        if not confirmado:
+            return
+        if texto.strip().upper() != "ZERAR HISTÓRICO":
+            QMessageBox.warning(
+                self,
+                "Confirmação incorreta",
+                "O texto informado não corresponde a ZERAR HISTÓRICO.",
+            )
+            return
+
+        self.btn_novo_ciclo.setEnabled(False)
+        self.btn_novo_ciclo.setText("Criando backup e iniciando...")
+        QApplication.processEvents()
+        try:
+            resultado = gerenciador_db.iniciar_novo_ciclo(
+                manter_estoque=manter_estoque,
+                manter_locais=manter_locais,
+            )
+            if not resultado["sucesso"]:
+                QMessageBox.critical(
+                    self,
+                    "Novo ciclo não iniciado",
+                    resultado["mensagem"]
+                    + (
+                        f"\n\nBackup preservado em:\n{resultado['backup']}"
+                        if resultado.get("backup")
+                        else ""
+                    ),
+                )
+                return
+            QMessageBox.information(
+                self,
+                "Novo ciclo iniciado",
+                "O histórico foi removido com sucesso.\n\n"
+                f"Backup completo:\n{resultado['backup']}",
+            )
+            self.carregar_locais()
+            self.atualizar_resumo_manutencao()
+            if painel and hasattr(painel, "carregar_locais"):
+                painel.carregar_locais()
+        finally:
+            self.btn_novo_ciclo.setEnabled(True)
+            self.btn_novo_ciclo.setText("Iniciar novo ciclo")
+
     # --- MÉTODOS DA ABA JS SITE (Adicionar este bloco) ---
     def criar_aba_js_site(self):
         widget_aba = QWidget()
@@ -547,8 +731,8 @@ class PainelControle(QWidget):
             QPushButton#btn_toggle_servidor_iniciar { background-color: #28a745; color: white; }
             QPushButton#btn_toggle_servidor_parar { background-color: #dc3545; color: white; }               
 
-            QPushButton#btn_atalho, QPushButton#btn_gerenciar { background-color: #007bff; color: white; }
-            QPushButton#btn_atalho:disabled, QPushButton#btn_gerenciar:disabled { background-color: #555; }
+            QPushButton#btn_atalho, QPushButton#btn_gerenciar, QPushButton#btn_config_geral { background-color: #007bff; color: white; }
+            QPushButton#btn_atalho:disabled, QPushButton#btn_gerenciar:disabled, QPushButton#btn_config_geral:disabled { background-color: #555; }
             QLabel { font-size: 14px; }
             QTextEdit {
                 background-color: #121212; color: #f0f0f0; font-family: 'Consolas', 'Courier New', monospace;
@@ -577,7 +761,7 @@ class PainelControle(QWidget):
 
         # Novo botão de configurações (engrenagem)
         self.btn_config_geral = QPushButton("⚙️") # Usando o caractere de engrenagem
-        self.btn_config_geral.setObjectName("btn_atalho") # Reutilizando um estilo
+        self.btn_config_geral.setObjectName("btn_config_geral")
         self.btn_config_geral.setFixedSize(50, 42) # Ajusta o tamanho para parecer um ícone
         self.btn_config_geral.clicked.connect(self.abrir_modal_configuracoes)
         layout_controle.addWidget(self.btn_config_geral, 1, 2) # Adiciona na posição 2
@@ -854,14 +1038,14 @@ class PainelControle(QWidget):
             self.btn_toggle_servidor.setText("Finalizar Servidor")
             self.btn_toggle_servidor.setObjectName("btn_toggle_servidor_parar")
             self.combo_locais.setEnabled(False)
-            self.btn_config_geral.setEnabled(False) # Desabilita config com servidor rodando
+            self.btn_config_geral.setEnabled(True)
         else:
             self.label_status.setText(f"<b>Status:</b> <font color='#dc3545'>Parado</font><br><b>IP para acesso:</b> <font color='#FBBF24'>{self.ip_servidor}</font>")
             self.carregar_locais() 
             self.btn_toggle_servidor.setText("Iniciar Servidor")
             self.btn_toggle_servidor.setObjectName("btn_toggle_servidor_iniciar")
             self.combo_locais.setEnabled(True)
-            self.btn_config_geral.setEnabled(True) # Habilita config com servidor parado
+            self.btn_config_geral.setEnabled(True)
 
         # Aplica o estilo dinamicamente
         self.btn_toggle_servidor.style().polish(self.btn_toggle_servidor)

@@ -5,6 +5,8 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from datetime import datetime, timedelta
+from pathlib import Path
+from unittest.mock import patch
 
 import analytics
 import database
@@ -664,6 +666,153 @@ class PDVTestCase(unittest.TestCase):
         self.assertEqual(
             db.obter_disponibilidade_para_produtos([self.produto_id, segundo_id]),
             {self.produto_id: 0, segundo_id: 0},
+        )
+
+    def test_novo_ciclo_preserva_produtos_locais_e_camadas_fifo(self):
+        self.assertTrue(db.adicionar_estoque(self.produto_id, 5, 6.00))
+        operacao_id = db.iniciar_operacao(self.local_id)
+        pedido = db.salvar_novo_pedido(
+            {
+                "nome_cliente": "Antes do novo ciclo",
+                "itens": [{"id": self.produto_id, "quantidade": 8}],
+                "metodo_pagamento": "cartao_credito",
+                "modalidade": "local",
+                "carrinho_id": "novo-ciclo-manter",
+            },
+            self.local_id,
+            operacao_id,
+        )
+        self.assertTrue(db.confirmar_pagamento_pedido(pedido["id"]))
+        self.assertTrue(db.encerrar_operacao(operacao_id))
+        self.assertTrue(db.salvar_configuracoes({"taxa_credito": 3}))
+
+        resumo = db.obter_resumo_novo_ciclo()
+        self.assertEqual(resumo["pedidos"], 1)
+        self.assertEqual(resumo["pagamentos"], 1)
+        self.assertEqual(resumo["visitas"], 1)
+        self.assertEqual(resumo["estoque_quantidade"], 7)
+        self.assertEqual(resumo["estoque_valor"], 38)
+
+        resultado = db.iniciar_novo_ciclo(
+            manter_estoque=True,
+            manter_locais=True,
+        )
+        self.assertTrue(resultado["sucesso"], resultado["mensagem"])
+        backup = Path(resultado["backup"])
+        self.assertTrue(backup.is_file())
+        self.assertEqual(resultado["lotes_abertura"], 2)
+
+        with closing(sqlite3.connect(backup)) as conn_backup:
+            self.assertEqual(
+                conn_backup.execute("PRAGMA integrity_check").fetchone()[0],
+                "ok",
+            )
+            self.assertEqual(
+                conn_backup.execute("SELECT COUNT(*) FROM pedidos").fetchone()[0],
+                1,
+            )
+            self.assertEqual(
+                conn_backup.execute("SELECT COUNT(*) FROM pagamentos").fetchone()[0],
+                1,
+            )
+
+        with closing(database.conectar()) as conn:
+            for tabela in (
+                "pedidos",
+                "pedido_itens",
+                "pagamentos",
+                "operacoes",
+                "operacao_estoque",
+                "estoque_movimentacoes",
+                "reservas_carrinho",
+            ):
+                self.assertEqual(
+                    conn.execute(f"SELECT COUNT(*) FROM {tabela}").fetchone()[0],
+                    0,
+                    tabela,
+                )
+            lotes = conn.execute(
+                """
+                SELECT quantidade_inicial, custo_unitario_centavos, tipo, observacao
+                FROM estoque_lotes
+                WHERE produto_id = ?
+                ORDER BY id
+                """,
+                (self.produto_id,),
+            ).fetchall()
+            self.assertEqual(
+                [
+                    (row["quantidade_inicial"], row["custo_unitario_centavos"])
+                    for row in lotes
+                ],
+                [(2, 400), (5, 600)],
+            )
+            self.assertTrue(
+                all(row["tipo"] == "saldo_inicial" for row in lotes)
+            )
+            self.assertTrue(
+                all("novo ciclo" in row["observacao"] for row in lotes)
+            )
+            self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+        self.assertEqual(len(db.obter_todos_produtos_para_gestao()), 1)
+        self.assertEqual(len(db.obter_todos_locais()), 1)
+        self.assertEqual(
+            db.obter_disponibilidade_para_produtos([self.produto_id])[
+                self.produto_id
+            ],
+            7,
+        )
+        self.assertEqual(db.obter_configuracoes()["taxa_credito"], 3)
+
+    def test_novo_ciclo_pode_zerar_estoque_e_remover_locais(self):
+        pedido = self.novo_pedido(1)
+        self.assertTrue(db.confirmar_pagamento_pedido(pedido["id"]))
+
+        resultado = db.iniciar_novo_ciclo(
+            manter_estoque=False,
+            manter_locais=False,
+        )
+        self.assertTrue(resultado["sucesso"], resultado["mensagem"])
+        self.assertTrue(Path(resultado["backup"]).is_file())
+        self.assertEqual(db.obter_todos_locais(), [])
+        self.assertEqual(len(db.obter_todos_produtos_para_gestao()), 1)
+        self.assertEqual(
+            db.obter_disponibilidade_para_produtos([self.produto_id])[
+                self.produto_id
+            ],
+            0,
+        )
+        with closing(database.conectar()) as conn:
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM estoque_lotes").fetchone()[0],
+                0,
+            )
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM pedidos").fetchone()[0],
+                0,
+            )
+            self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+    def test_novo_ciclo_nao_apaga_nada_quando_backup_falha(self):
+        pedido = self.novo_pedido(1)
+        with patch.object(
+            database,
+            "criar_backup_novo_ciclo",
+            side_effect=OSError("falha simulada"),
+        ):
+            resultado = db.iniciar_novo_ciclo(
+                manter_estoque=False,
+                manter_locais=False,
+            )
+        self.assertFalse(resultado["sucesso"])
+        self.assertIsNotNone(db.obter_pedido_por_id(pedido["id"]))
+        self.assertEqual(len(db.obter_todos_locais()), 1)
+        self.assertEqual(
+            db.obter_disponibilidade_para_produtos([self.produto_id])[
+                self.produto_id
+            ],
+            9,
         )
 
     def test_analise_por_local_respeita_visitas_e_disponibilidade(self):

@@ -196,6 +196,9 @@ class ModalConfiguracoesGerais(QDialog):
         super().__init__(parent)
         self.ip_servidor = ip_servidor
         self.porta = porta
+        self.servidor_ativo = bool(
+            parent and getattr(parent, "servidor_rodando", False)
+        )
 
         self.setWindowTitle("Configurações Gerais")
         self.setMinimumSize(500, 400)
@@ -246,17 +249,50 @@ class ModalConfiguracoesGerais(QDialog):
         self.carregar_configuracao_atual_impressora()
 
     def carregar_configuracao_atual_impressora(self):
+        if not self.servidor_ativo:
+            configuracao_local = _obter_config_impressora_localmente()
+            self.input_ip_impressora.setText(
+                configuracao_local.get("ip", "")
+            )
+            self.input_ip_impressora.setEnabled(False)
+            self.btn_salvar_impressora.setEnabled(False)
+            self.btn_testar_impressora.setEnabled(False)
+            self.label_status_impressora.setText(
+                "<font color='#FBBF24'>Servidor não conectado. Inicie o "
+                "servidor para configurar e testar a impressora.</font>"
+            )
+            return
+
+        self.input_ip_impressora.setEnabled(True)
+        self.btn_salvar_impressora.setEnabled(True)
+        self.btn_testar_impressora.setEnabled(True)
         try:
             url = f'http://{self.ip_servidor}:{self.porta}/api/config/impressora'
             response = requests.get(url, timeout=3)
             if response.status_code == 200:
                 self.input_ip_impressora.setText(response.json().get('ip', ''))
+                self.label_status_impressora.setText(
+                    "<font color='#28a745'>Servidor conectado. A impressora "
+                    "pode ser configurada e testada.</font>"
+                )
             else:
-                self.label_status_impressora.setText("<font color='#dc3545'>Servidor não respondeu.</font>")
+                self.label_status_impressora.setText(
+                    "<font color='#dc3545'>O servidor foi iniciado, mas não "
+                    "respondeu à configuração da impressora.</font>"
+                )
         except requests.exceptions.RequestException:
-            self.label_status_impressora.setText("<font color='#dc3545'>Erro ao conectar ao servidor.</font>")
+            self.label_status_impressora.setText(
+                "<font color='#dc3545'>O servidor foi iniciado, mas a conexão "
+                "não está disponível. Tente novamente.</font>"
+            )
 
     def salvar_configuracao_impressora(self):
+        if not self.servidor_ativo:
+            self.label_status_impressora.setText(
+                "<font color='#FBBF24'>Servidor não conectado. Inicie o "
+                "servidor antes de salvar.</font>"
+            )
+            return
         ip_digitado = self.input_ip_impressora.text().strip()
         try:
             url = f'http://{self.ip_servidor}:{self.porta}/api/config/impressora'
@@ -269,6 +305,12 @@ class ModalConfiguracoesGerais(QDialog):
             self.label_status_impressora.setText("<font color='#dc3545'>Erro de comunicação.</font>")
 
     def testar_conexao_impressora(self):
+        if not self.servidor_ativo:
+            self.label_status_impressora.setText(
+                "<font color='#FBBF24'>Servidor não conectado. Inicie o "
+                "servidor para testar a impressora.</font>"
+            )
+            return
         self.label_status_impressora.setText("<font color='#FBBF24'>Testando, aguarde...</font>")
         QApplication.processEvents()
         try:
@@ -299,7 +341,23 @@ class ModalConfiguracoesGerais(QDialog):
 
         self.btn_excluir_local = QPushButton("Excluir Selecionado")
         self.btn_excluir_local.setObjectName("btn_parar")
+        self.label_status_locais = QLabel("")
+        self.label_status_locais.setWordWrap(True)
+        if self.servidor_ativo:
+            self.input_novo_local.setEnabled(False)
+            self.btn_adicionar_local.setEnabled(False)
+            self.btn_excluir_local.setEnabled(False)
+            self.label_status_locais.setText(
+                "<font color='#FBBF24'>O local da visita atual está em uso. "
+                "Finalize o servidor para adicionar ou excluir locais.</font>"
+            )
+        else:
+            self.label_status_locais.setText(
+                "<font color='#28a745'>Servidor parado. Os locais podem ser "
+                "adicionados ou excluídos com segurança.</font>"
+            )
 
+        layout.addWidget(self.label_status_locais)
         layout.addLayout(layout_botoes)
         layout.addWidget(self.lista_locais)
         layout.addWidget(self.btn_excluir_local)
@@ -321,6 +379,13 @@ class ModalConfiguracoesGerais(QDialog):
                 self.lista_locais.addItem(item)
 
     def adicionar_local(self):
+        if self.servidor_ativo:
+            QMessageBox.warning(
+                self,
+                "Servidor em funcionamento",
+                "Finalize o servidor antes de alterar os locais.",
+            )
+            return
         nome_local = self.input_novo_local.text().strip()
         if nome_local and gerenciador_db.adicionar_local(nome_local):
             self.input_novo_local.clear()
@@ -329,6 +394,13 @@ class ModalConfiguracoesGerais(QDialog):
             QMessageBox.warning(self, "Erro", "Não foi possível adicionar o local.")
 
     def excluir_local(self):
+        if self.servidor_ativo:
+            QMessageBox.warning(
+                self,
+                "Servidor em funcionamento",
+                "Finalize o servidor antes de alterar os locais.",
+            )
+            return
         item_selecionado = self.lista_locais.currentItem()
         if not item_selecionado or not item_selecionado.data(Qt.UserRole):
             return
@@ -371,7 +443,8 @@ class ModalConfiguracoesGerais(QDialog):
 
         observacao = QLabel(
             "A taxa vigente é fotografada quando o pagamento é confirmado. "
-            "Alterações futuras não modificam vendas antigas."
+            "Alterações não modificam vendas antigas e passam a valer somente "
+            "nos próximos pagamentos, mesmo com o servidor em funcionamento."
         )
         observacao.setWordWrap(True)
         observacao.setStyleSheet("color: #9ca3af;")
@@ -441,11 +514,7 @@ class ModalConfiguracoesGerais(QDialog):
         self.btn_novo_ciclo = QPushButton("Iniciar novo ciclo")
         self.btn_novo_ciclo.setObjectName("btn_parar")
         self.btn_novo_ciclo.clicked.connect(self.confirmar_novo_ciclo)
-        servidor_ativo = bool(
-            self.parent()
-            and getattr(self.parent(), "servidor_rodando", False)
-        )
-        if servidor_ativo:
+        if self.servidor_ativo:
             self.btn_novo_ciclo.setEnabled(False)
             self.btn_novo_ciclo.setToolTip(
                 "Finalize o servidor para iniciar um novo ciclo."
@@ -599,7 +668,14 @@ class ModalConfiguracoesGerais(QDialog):
         self.text_area_js.setFont(QFont("Courier New", 10))
 
         self.btn_copiar_js = QPushButton("2. Copiar Conteúdo para a Área de Transferência")
+        observacao = QLabel(
+            "Esta ferramenta lê somente os cadastros locais e pode ser usada "
+            "com o servidor ligado ou desligado."
+        )
+        observacao.setWordWrap(True)
+        observacao.setStyleSheet("color: #9ca3af;")
         
+        layout_gerador.addWidget(observacao)
         layout_gerador.addWidget(self.btn_atualizar_js)
         layout_gerador.addWidget(self.text_area_js)
         layout_gerador.addWidget(self.btn_copiar_js)

@@ -122,6 +122,20 @@ histórico operacional e financeiro para começar outro período de uso.
 - A exclusão ocorre em uma única transação e uma falha preserva o banco
   original.
 
+## Configurações e estado do servidor
+
+| Área | Servidor parado | Servidor rodando |
+| --- | --- | --- |
+| Impressora | Somente leitura; salvar e testar ficam bloqueados | Configurar e testar |
+| Locais | Adicionar e excluir | Somente visualizar |
+| Taxas | Consultar e alterar | Consultar e alterar; vale nos próximos pagamentos |
+| Manutenção de dados | Iniciar novo ciclo | Ação bloqueada |
+| Gerador JS | Disponível | Disponível |
+
+O modal de configurações permanece acessível nos dois estados. Cada aba explica
+por que uma ação está indisponível, sem apresentar falha de conexão como se
+fosse um erro do usuário.
+
 ## Leituras para tomada de decisão
 
 O painel deriva informações gerenciais sem alterar as fontes contábeis:
